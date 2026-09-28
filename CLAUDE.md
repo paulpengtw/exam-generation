@@ -882,6 +882,37 @@ If `choom` is unavailable, preserve the lane cap and avoid broad parallel pytest
 
 Tests that launch a real Playwright Chromium browser are marked `@pytest.mark.requires_browser`.  Before the session runs any such test a single probe is made; if the browser is absent or broken, all marked tests are skipped with a message naming the fix command (`uv run playwright install chromium`), and the cause is written once to the terminal summary.  If no marked tests are collected the probe is skipped entirely, adding no startup cost.
 
+### Postgres marker (`postgres`)
+
+Tests that require a real Postgres 16 instance are marked `@pytest.mark.postgres`.  Before any such test runs the plugin checks for the `TEST_POSTGRES_URL` environment variable; if absent, all marked tests are skipped with a message naming the variable, and the cause is written once to the terminal summary.  If no postgres-marked tests are collected the check is skipped entirely, adding zero startup cost.
+
+Unmarked tests are never affected: they continue to use the default SQLite engine from `server/db.py` (`DATABASE_URL` is intentionally not set by this mechanism).  The dedicated variable `TEST_POSTGRES_URL` (not `DATABASE_URL`) is used because `server/db.py` reads `DATABASE_URL` at import time to build the module-level engine; overriding it would silently route every test that imports `server.db` through Postgres.
+
+To run postgres-marked tests locally you need a Postgres 16 instance.  The easiest way is to start one with `docker run` or to use the bundled `pgserver` package:
+
+```bash
+# Option A – Docker
+docker run --rm -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+
+TEST_POSTGRES_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/postgres \
+    uv run pytest -m postgres -v
+
+# Option B – pgserver (bundled in dev dependencies, no Docker needed)
+# pgserver listens on a Unix socket; pass the socket directory as the host.
+# Example (one-liner):
+PGDATA=$(mktemp -d) uv run python -c "
+import pgserver, os
+s = pgserver.get_server(os.environ['PGDATA'], cleanup_mode=None)
+uri = s.get_uri()          # postgresql://postgres:@/postgres?host=<path>
+socket_dir = uri.split('?host=')[1]
+print(socket_dir)
+"
+# Then set TEST_POSTGRES_URL to point at the socket (asyncpg host= kwarg form):
+# TEST_POSTGRES_URL is not directly the socket URI; use the test fixture below.
+```
+
+In CI a Postgres 16 service container is started automatically and `TEST_POSTGRES_URL` is injected by the workflow; no manual setup is required there.  See `docs/adr/0035-run-claim-tests-target-postgres-in-ci.md` and the `services.postgres` block in `.github/workflows/ci.yml`.
+
 ### Environment Variables
 
 - `LLM_EXCHANGE_RETENTION_DAYS` (default `30`) — window in days for retaining `llm_exchanges` rows. Set to `0` to disable persistence entirely (no rows written, no pruning).

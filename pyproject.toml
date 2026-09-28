@@ -51,6 +51,7 @@ select = ["E", "F", "I", "W"]
 testpaths = ["tests"]
 markers = [
     "requires_browser: mark test as requiring a working Playwright Chromium browser",
+    "postgres: mark test as requiring a Postgres 16 database (set TEST_POSTGRES_URL=postgresql+asyncpg://... to enable)",
 ]
 
 [dependency-groups]

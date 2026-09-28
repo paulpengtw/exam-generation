@@ -8,7 +8,7 @@
 
 ## 2. Groundwork (slice 2)
 
-- [ ] 2.1 Add a Postgres 16 service container to `.github/workflows/ci.yml`, plus a `postgres` pytest marker and a fixture using `DATABASE_URL`. Verify: CI runs a marked smoke test against Postgres, and unmarked tests still use SQLite.
+- [x] 2.1 Add a Postgres 16 service container to `.github/workflows/ci.yml`, plus a `postgres` pytest marker and a fixture using `DATABASE_URL`. Verify: CI runs a marked smoke test against Postgres, and unmarked tests still use SQLite.
 - [ ] 2.2 Add migrations that give `generation_status` the values `queued`, `running` and `cancelled`, each with `ALTER TYPE … ADD VALUE` in its own transaction. Update `GenerationStatus` and `tests/server/test_db_models.py`. Verify: the enum test and a Postgres-marked migration test pass.
 - [ ] 2.3 Add a migration adding `generation_logs` columns `heartbeat_at`, `attempts`, `claimed_by`, `started_at`, `cancel_requested`, `submission_key`, with a unique constraint on `(user_id, submission_key)`. Verify: the migration round-trips on Postgres, and the 人工審題修正 route tests still pass.
 - [ ] 2.4 Add a migration and model for `generation_question_states`. Columns: identity, `index`, `processing`, `current_step`, `termination_reason`, `terminal_json`, `generation_record_id`, `error`, `updated_at`. Add a unique constraint on `(generation_log_id, question_id)`. Verify: model tests pass, and an exactly-once update (`WHERE termination_reason IS NULL`) test passes on Postgres.
