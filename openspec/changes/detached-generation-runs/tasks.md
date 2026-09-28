@@ -50,7 +50,7 @@
   - Cancel works, and the per-teacher limits apply.
 
   Verify: record the results in the change notes.
-- [ ] 5.4 Update CONTEXT.md:
+- [x] 5.4 Update CONTEXT.md:
   - add 生成執行, 排隊中, 取消中, 尚未結束;
   - redefine 受理;
   - note that 處理狀態 is persisted per question.

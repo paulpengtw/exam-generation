@@ -102,3 +102,11 @@ The goal, confirmed by the user on 2026-09-28: a generation that takes longer th
     - [決定重返批次時的恢復、權限與一致性契約](https://github.com/paulpengtw/exam-generation/issues/737#issuecomment-5873170071)
     - [決定續跑與恢復能力的發布、回滾及驗收](https://github.com/paulpengtw/exam-generation/issues/738#issuecomment-5873170541)
   - The user chose to create this change before those tickets are formally resolved. Any divergence found when they are resolved must be folded back with `/opsx:update`.
+
+## ADRs
+
+The following ADRs record decisions made for this change:
+
+- [ADR 0033](../../../../docs/adr/0033-only-the-owner-cancels-a-generation-run.md) — only the owner cancels a 生成執行; observer disconnection does not
+- [ADR 0034](../../../../docs/adr/0034-there-is-no-host-protocol.md) — there is no Host protocol: in-backend host and worker service run the same loop
+- [ADR 0035](../../../../docs/adr/0035-run-claim-tests-target-postgres-in-ci.md) — run-claim tests target Postgres in CI because SQLite cannot exercise SKIP LOCKED or native enums
