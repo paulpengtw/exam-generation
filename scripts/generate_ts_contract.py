@@ -20,6 +20,7 @@ from typing import Literal, Union, get_args, get_origin
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from server.generate.event_protocol import StartedPayload  # noqa: E402
 from server.generate.marshalling import EMITTED_EVENT_NAMES, SSEEventName  # noqa: E402
 from server.generate.models import (  # noqa: E402
     SERVER_ONLY_GENERATE_FIELDS,
@@ -49,9 +50,15 @@ def _ts_type(annotation: object) -> tuple[str, bool]:
     origin = get_origin(annotation)
     args = get_args(annotation)
 
-    # Literal["a", "b"] -> '"a" | "b"'
+    # Literal["a", "b"] -> '"a" | "b"'; Literal[2] -> '2'
     if origin is Literal:
-        return " | ".join(f'"{a}"' for a in args), False
+        parts = []
+        for a in args:
+            parts.append(f'"{a}"' if isinstance(a, str) else str(a))
+        return " | ".join(parts), False
+
+    if annotation is dict:
+        return "Record<string, unknown>", False
 
     # list[X] -> X[]
     if origin is list:
@@ -187,6 +194,45 @@ def _generate_resolve_block() -> str:
     )
 
 
+def _generate_started_payload_block() -> str:
+    """Emit the StartedPayload TypeScript interface."""
+    import types as _types
+    import typing
+
+    def _ts_type_nullable(annotation: object) -> tuple[str, bool]:
+        """Like _ts_type but emits 'T | null' for Union[T, None] instead of just 'T'."""
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        if origin is Union or (
+            hasattr(_types, "UnionType") and isinstance(annotation, _types.UnionType)  # type: ignore[attr-defined]
+        ):
+            non_none = [a for a in args if a is not type(None)]
+            has_none = any(a is type(None) for a in args)
+            if len(non_none) == 1 and has_none:
+                inner, _ = _ts_type(non_none[0])
+                return f"{inner} | null", True
+        return _ts_type(annotation)
+
+    lines: list[str] = []
+    lines.append("/**")
+    lines.append(" * Payload of the 'started' SSE event.")
+    lines.append(" * Source of truth: server/generate/event_protocol.py:StartedPayload")
+    lines.append(" */")
+    lines.append("export interface StartedPayload {")
+
+    hints = typing.get_type_hints(StartedPayload)
+    for field_name, field_info in StartedPayload.model_fields.items():
+        annotation = hints.get(field_name, field_info.annotation)
+        ts_type, optional = _ts_type_nullable(annotation)
+        has_default = _field_is_optional(field_info)
+        optional = optional or has_default
+        suffix = "?" if optional else ""
+        lines.append(f"  {field_name}{suffix}: {ts_type};")
+
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def generate_contract() -> str:
     """Return the full contract.ts content as a string (callable from tests)."""
     header = textwrap.dedent(f"""\
@@ -196,12 +242,14 @@ def generate_contract() -> str:
         // Source of truth:
         //   server/generate/models.py       -> GenerateParams
         //   server/generate/models.py       -> ResolveRequest, ResolveResponse, ResolveFieldError
+        //   server/generate/event_protocol.py -> StartedPayload
         //   server/generate/marshalling.py  -> SSEEventName, EMITTED_EVENT_NAMES
     """)
 
     params_block = _generate_params_block()
     resolve_block = _generate_resolve_block()
     sse_block = _generate_sse_block()
+    started_payload_block = _generate_started_payload_block()
 
     sections = [
         header,
@@ -222,6 +270,12 @@ def generate_contract() -> str:
         "// ---------------------------------------------------------------------------",
         "",
         sse_block,
+        "",
+        "// ---------------------------------------------------------------------------",
+        "// SSE started event payload",
+        "// ---------------------------------------------------------------------------",
+        "",
+        started_payload_block,
     ]
     return "\n".join(sections) + "\n"
 

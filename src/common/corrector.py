@@ -16,13 +16,13 @@ where SS was already tolerant and NS was not (issue #158 AC3).
 
 from __future__ import annotations
 
-import inspect
 import json
 from copy import deepcopy
 from typing import Any, Callable
 
 from src.common.correction_decision import CorrectionDecision, CorrectionRejection
 from src.common.generation_events import OperationScope
+from src.common.kwarg_compat import accepts_kwarg
 from src.llm_client import LLMClient, emit_stage, extract_json
 
 # Callable: (sq_raw, original_sq, idx) -> SubQuestion | None
@@ -37,17 +37,8 @@ def _call_client_with_optional_scope(
     **kwargs: Any,
 ) -> Any:
     """Pass scope to real clients without breaking legacy correction fakes."""
-    if scope is not None:
-        try:
-            parameters = inspect.signature(method).parameters
-            accepts_scope = "scope" in parameters or any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters.values()
-            )
-        except (TypeError, ValueError):
-            accepts_scope = False
-        if accepts_scope:
-            kwargs["scope"] = scope
+    if scope is not None and accepts_kwarg(method, "scope"):
+        kwargs["scope"] = scope
     return method(*args, **kwargs)
 
 

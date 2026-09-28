@@ -14,7 +14,6 @@ from ``src.*`` only.
 from __future__ import annotations
 
 import concurrent.futures
-import inspect
 import json
 import logging
 import sys
@@ -34,6 +33,7 @@ from src.common.generation_events import (
     new_operation_scope,
     new_run_id,
 )
+from src.common.kwarg_compat import accepts_kwarg
 from src.common.subject_spec import SubjectGenerationSpec
 from src.common.verification_trail import (
     VerificationTrailEvent,
@@ -125,26 +125,10 @@ def _call_with_optional_scope(
     preserves those adapters without catching ``TypeError`` from the hook
     body, while production hooks receive ownership explicitly.
     """
-    if scope is not None or "content_revision" in kwargs:
-        try:
-            signature = inspect.signature(function)
-            parameters = signature.parameters.values()
-            accepts_kwargs = any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters
-            )
-        except (TypeError, ValueError):
-            accepts_kwargs = False
-            signature = None
-        if scope is not None and (
-            accepts_kwargs or (signature is not None and "scope" in signature.parameters)
-        ):
-            kwargs["scope"] = scope
-        if "content_revision" in kwargs and (
-            accepts_kwargs
-            or (signature is not None and "content_revision" in signature.parameters)
-        ) is False:
-            kwargs.pop("content_revision")
+    if scope is not None and accepts_kwarg(function, "scope"):
+        kwargs["scope"] = scope
+    if "content_revision" in kwargs and not accepts_kwarg(function, "content_revision"):
+        kwargs.pop("content_revision")
     nested_client = next(
         (argument for argument in args if hasattr(argument, "set_scope")),
         None,
@@ -162,26 +146,10 @@ def _callback_with_optional_scope(
     """Invoke an event callback with scope when its seam supports it."""
     if callback is None:
         return None
-    if scope is not None or "content_revision" in kwargs:
-        try:
-            signature = inspect.signature(callback)
-            parameters = signature.parameters.values()
-            accepts_kwargs = any(
-                parameter.kind is inspect.Parameter.VAR_KEYWORD
-                for parameter in parameters
-            )
-        except (TypeError, ValueError):
-            accepts_kwargs = False
-            signature = None
-        if scope is not None and (
-            accepts_kwargs or (signature is not None and "scope" in signature.parameters)
-        ):
-            kwargs["scope"] = scope
-        if "content_revision" in kwargs and (
-            accepts_kwargs
-            or (signature is not None and "content_revision" in signature.parameters)
-        ) is False:
-            kwargs.pop("content_revision")
+    if scope is not None and accepts_kwarg(callback, "scope"):
+        kwargs["scope"] = scope
+    if "content_revision" in kwargs and not accepts_kwarg(callback, "content_revision"):
+        kwargs.pop("content_revision")
     return callback(*args, **kwargs)
 
 

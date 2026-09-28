@@ -660,7 +660,12 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
   const activity = evidence.activity;
   const steps = activity ? selectGenerationSteps(evidence) : [];
   const operations = activity ? Object.values(activity.operations) : [];
-  if (steps.length === 0) return null;
+  // Guard: nothing to show when no operations have ever been tracked.
+  if (operations.length === 0) return null;
+
+  // Issue #854: summary only reflects in-progress (active) work.
+  // Finished or superseded work must not appear as "0" counts.
+  const activeSteps = steps.filter((step) => step.active > 0);
 
   return (
     <section
@@ -677,7 +682,9 @@ function QuestionActivityPanel({ evidence }: { evidence: QuestionEvidence }) {
       >
         <span>
           {t("card.activityTitle")}：{" "}
-          {steps.map((step) => `${activityLabel(step.step, t)} ${step.active}`).join("、")}
+          {activeSteps.length > 0
+            ? activeSteps.map((step) => `${activityLabel(step.step, t)} ${step.active}`).join("、")
+            : t("card.activityNoStepsInProgress")}
         </span>
         <span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
       </button>

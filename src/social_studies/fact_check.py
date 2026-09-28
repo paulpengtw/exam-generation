@@ -14,13 +14,13 @@ The public surface is two pure/near-pure functions:
 
 from __future__ import annotations
 
-import inspect
 import logging
 import re
 from collections.abc import Callable
 from typing import Protocol
 
 from src.common.generation_events import OperationScope
+from src.common.kwarg_compat import accepts_kwarg
 from src.llm_client import Citation, extract_json, resolve_provider
 from src.social_studies.schemas import ExamQuestion, FactCheckResult
 
@@ -161,36 +161,26 @@ def fact_check_question(
     user_prompt = _build_user_prompt(question)
 
     try:
-        def _supports_scope(method: object) -> bool:
-            try:
-                parameters = inspect.signature(method).parameters
-                return "scope" in parameters or any(
-                    parameter.kind is inspect.Parameter.VAR_KEYWORD
-                    for parameter in parameters.values()
-                )
-            except (TypeError, ValueError):
-                return False
-
         if provider == "anthropic":
-            tool_kwargs = {
+            tool_kwargs: dict[str, object] = {
                 "system": _FACT_CHECK_SYSTEM_PROMPT,
                 "user": user_prompt,
                 "tools": tools,
                 "purpose": "fact_check",
             }
-            if scope is not None and _supports_scope(client.generate_with_tools):
+            if scope is not None and accepts_kwarg(client.generate_with_tools, "scope"):
                 tool_kwargs["scope"] = scope
             text, citations = client.generate_with_tools(
                 **tool_kwargs,
             )
         else:
-            search_kwargs = {
+            search_kwargs: dict[str, object] = {
                 "system": _FACT_CHECK_SYSTEM_PROMPT,
                 "user": user_prompt,
                 "purpose": "fact_check",
                 "max_uses": max_uses,
             }
-            if scope is not None and _supports_scope(client.generate_with_google_search):
+            if scope is not None and accepts_kwarg(client.generate_with_google_search, "scope"):
                 search_kwargs["scope"] = scope
             text, citations = client.generate_with_google_search(**search_kwargs)
     except Exception as exc:  # noqa: BLE001 — fail-open by design

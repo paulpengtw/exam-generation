@@ -77,6 +77,7 @@ class StartedPayload(BaseModel):
     protocol_version: Literal[2]
     total: int
     questions: list[dict]
+    generation_log_id: str | None = None
 
     @model_validator(mode="after")
     def _validate_questions(self) -> "StartedPayload":

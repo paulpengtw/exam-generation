@@ -20,11 +20,12 @@ from datetime import datetime
 from typing import Any
 
 import anyio
+from pydantic import ValidationError
 
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.drain import get_drain
-from server.generate.event_protocol import QuestionTerminalPayload
+from server.generate.event_protocol import QuestionTerminalPayload, StartedPayload
 from server.generate.marshalling import (
     SSEEventName,
     make_combined_observer,
@@ -44,6 +45,12 @@ from server.generate.persistence import (
     persist_generation_record,
 )
 from server.generate.publisher import GenerationPublisher
+from server.generate.question_terminal import (
+    _compute_delivery_status,
+    _compute_expected_delivered_missing,
+    _compute_review,
+    _QuestionPositionResolution,
+)
 from server.generate.snapshot_ledger import QuestionSnapshotLedger
 from server.generate.subjects import (
     SUBJECTS,
@@ -349,252 +356,72 @@ def _build_question_terminal_payload(
     params: GenerateParams,
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
+    # Legacy kwargs — kept so that existing callers and tests continue to work
+    # without modification.  New exits should supply ``resolution`` directly.
     announced_slots: list[dict[str, Any]] | None = None,
     verification_trail: list[dict[str, Any]] | None = None,
     resolved_subquestion_configs: list[Any] | None | object = _UNSET_SUBQUESTION_RESOLUTION,
     resolved_subquestion_count: int | None | object = _UNSET_SUBQUESTION_RESOLUTION,
+    # New typed bundle (preferred; all internal exits pass it)
+    resolution: _QuestionPositionResolution | None = None,
 ) -> dict[str, Any]:
     """Build a QuestionTerminalPayload dict; validated before returning.
+
+    Thin composition point that delegates to three independently testable units:
+      _compute_review, _compute_expected_delivered_missing, _compute_delivery_status.
 
     On any validation failure, returns a minimal 'unknown' delivery payload
     so the worker never crashes.
 
-    Fixed grouped slots are identified by the announced plan (or, before a
-    plan can be emitted, by the resolved grouped count).  The helper
-    deliberately keeps renderer mode out of the obligation set: only an
-    adopted chart/image or an explicitly visual subquestion configuration
-    creates an image slot.
+    Legacy callers that pass the individual keyword arguments are handled by
+    constructing a ``_QuestionPositionResolution`` from those arguments so the
+    shared units receive a uniform input type.
     """
-    from pathlib import Path as _Path
-
-    # --- review ---
-    if not has_final:
-        review: dict[str, Any] = {
-            "status": "unknown",
-            "reason": unknown_reason or "no final content",
-        }
-    elif params.skip_verify:
-        review = {
-            "status": "skipped",
-            "content_revision": final_revision,
-        }
-    elif question is not None and getattr(question, "verification", None) is not None:
-        verification_entries = [
-            entry
-            for entry in reversed(verification_trail or [])
-            if isinstance(entry, Mapping) and entry.get("kind") == "verification"
-        ]
-        verification_revision = (
-            verification_entries[0].get("content_revision")
-            if verification_entries
-            else None
-        )
-        if (
-            isinstance(verification_revision, int)
-            and not isinstance(verification_revision, bool)
-            and verification_revision == final_revision
-        ):
-            passed = question.verification.passed
-            review = {
-                "status": "passed" if passed else "failed",
-                "content_revision": final_revision,
-            }
-        else:
-            review = {
-                "status": "unknown",
-                "reason": (
-                    "no matching verification evidence"
-                    if verification_entries
-                    else "no verification evidence"
-                ),
-            }
-    else:
-        review = {
-            "status": "unknown",
-            "reason": "no verification evidence",
-        }
-
-    # --- fixed grouped slots and image assets ---
-    expected: list[dict] = []
-    delivered: list[dict] = []
-    missing: list[dict] = []
-
-    # The shared core announces a manifest for every fixed-slot adapter.  Once
-    # a worker has resolved its own row, its count is authoritative—even when
-    # it is None for a flat math question.  Only older/direct callers that did
-    # not provide per-question resolution may fall back to batch params.
-    has_per_question_resolution = (
-        resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
-        or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
-    )
-    per_question_count = (
-        resolved_subquestion_count
-        if resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
-        else None
-    )
-    is_fixed_group = announced_slots is not None or (
-        has_per_question_resolution
-        and per_question_count is not None
-    ) or (
-        not has_per_question_resolution
-        and getattr(params, "sub_question_count", None) is not None
-    )
-
-    def add_image_slot(
-        *,
-        subquestion_id: str | None,
-        filename: str | None,
-        adopted: bool,
-        reason: str,
-        subquestion_index: int | None = None,
-    ) -> None:
-        if not adopted and not filename:
-            return
-        slot: dict[str, Any] = {
-            "kind": "image",
-            "question_id": question_id,
-            "subquestion_id": subquestion_id,
-        }
-        if subquestion_index is not None:
-            slot["subquestion_index"] = subquestion_index
-        expected.append(slot)
-        if filename and output_dir is not None:
-            img_path = _Path(output_dir) / filename
-            if img_path.exists():
-                delivered.append(slot)
-                return
-        missing.append({**slot, "reason": reason})
-
-    if is_fixed_group:
-        if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION:
-            configs = getattr(params, "subquestion_configs", None) or []
-        else:
-            configs = resolved_subquestion_configs or []
-        if isinstance(configs, str):
-            try:
-                decoded_configs = json.loads(configs)
-            except (TypeError, json.JSONDecodeError):
-                decoded_configs = []
-            configs = decoded_configs if isinstance(decoded_configs, list) else []
-
-        slot_manifest = announced_slots
-        if slot_manifest is None and not has_final and termination_reason == "failed":
-            if has_per_question_resolution:
-                slot_count = per_question_count or len(configs) or 0
-            else:
-                slot_count = (
-                    getattr(params, "sub_question_count", None)
-                    or len(configs)
-                    or 0
-                )
-            slot_manifest = [
-                {
-                    "subquestion_index": slot_index,
-                    "id": f"{question_id}-sq{slot_index + 1:03d}",
-                    "序號": slot_index + 1,
-                }
-                for slot_index in range(slot_count)
-            ]
-
-        visual_types = {"含圖片", "graphs/charts/tables"}
-
-        def config_value(config: Any, key: str) -> Any:
-            if isinstance(config, dict):
-                return config.get(key)
-            return getattr(config, key, None)
-
-        if slot_manifest is not None:
-            subquestions = (
-                list(getattr(question, "subquestions", []) or [])
-                if question is not None
-                else []
-            )
-            by_id = {
-                getattr(sub, "id", None): sub
-                for sub in subquestions
-                if getattr(sub, "id", None)
-            }
-            for position, raw_slot in enumerate(slot_manifest):
-                slot_index = raw_slot.get("subquestion_index")
-                if not isinstance(slot_index, int) or slot_index < 0:
-                    slot_index = position
-                raw_id = raw_slot.get("id") or raw_slot.get("subquestion_id")
-                subquestion_id = (
-                    raw_id
-                    if isinstance(raw_id, str) and raw_id
-                    else f"{question_id}-sq{slot_index + 1:03d}"
-                )
-                sub_slot = {
-                    "kind": "subquestion",
-                    "question_id": question_id,
-                    "subquestion_id": subquestion_id,
-                    "subquestion_index": slot_index,
-                }
-                expected.append(sub_slot)
-                sub = by_id.get(subquestion_id)
-                if sub is None:
-                    missing.append({**sub_slot, "reason": "subquestion not delivered"})
-                else:
-                    delivered.append(sub_slot)
-
-                if has_final and question is not None:
-                    config = configs[slot_index] if slot_index < len(configs) else None
-                    adopted = bool(
-                        sub is not None
-                        and (
-                            getattr(sub, "chart_spec", None) is not None
-                            or getattr(sub, "image_spec", None) is not None
-                        )
-                    )
-                    explicitly_visual = bool(
-                        config is not None
-                        and (
-                            config_value(config, "content_type") in visual_types
-                            or config_value(config, "figure_kind")
-                        )
-                    )
-                    add_image_slot(
-                        subquestion_id=subquestion_id,
-                        filename=getattr(sub, "圖片", None) if sub is not None else None,
-                        adopted=adopted or explicitly_visual,
-                        reason="image not delivered",
-                        subquestion_index=slot_index,
-                    )
-
-        if has_final and question is not None:
-            add_image_slot(
-                subquestion_id=None,
-                filename=getattr(question, "圖片", None),
-                adopted=(
-                    getattr(question, "chart_spec", None) is not None
-                    or getattr(question, "image_spec", None) is not None
-                ),
-                reason="image not delivered",
-            )
-    elif has_final and question is not None:
-        # An image slot exists when the pipeline adopted an image
-        # (i.e. chart_spec or image_spec is non-None on the final question)
-        has_image_spec = (
-            getattr(question, "chart_spec", None) is not None
-            or getattr(question, "image_spec", None) is not None
-        )
-        add_image_slot(
-            subquestion_id=None,
-            filename=getattr(question, "圖片", None),
-            adopted=has_image_spec,
-            reason="image not delivered",
+    # Build resolution from legacy kwargs when not supplied directly.
+    if resolution is None:
+        resolution = _QuestionPositionResolution(
+            announced_slots=announced_slots,
+            verification_trail=verification_trail,
+            resolved_subquestion_configs=(
+                None
+                if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION
+                else resolved_subquestion_configs
+            ),
+            resolved_subquestion_count=(
+                None
+                if resolved_subquestion_count is _UNSET_SUBQUESTION_RESOLUTION
+                else resolved_subquestion_count
+            ),
+            has_per_question_resolution=(
+                resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
+                or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
+            ),
         )
 
-    # --- delivery_status ---
-    if not has_final:
-        if termination_reason == "cancelled":
-            delivery_status = "unknown"
-        else:
-            delivery_status = "none"
-    elif missing:
-        delivery_status = "partial"
-    else:
-        delivery_status = "complete"
+    review = _compute_review(
+        has_final=has_final,
+        skip_verify=getattr(params, "skip_verify", False),
+        question=question,
+        final_revision=final_revision,
+        unknown_reason=unknown_reason,
+        verification_trail=resolution.verification_trail,
+    )
+
+    expected, delivered, missing = _compute_expected_delivered_missing(
+        question_id=question_id,
+        question=question,
+        params=params,
+        output_dir=output_dir,
+        has_final=has_final,
+        termination_reason=termination_reason,
+        resolution=resolution,
+    )
+
+    delivery_status = _compute_delivery_status(
+        has_final=has_final,
+        termination_reason=termination_reason,
+        missing=missing,
+    )
 
     raw_payload: dict[str, Any] = {
         "termination_reason": termination_reason,
@@ -651,29 +478,41 @@ def _publish_question_terminal(
     )
 
 
-def _worker_one(
+# ---------------------------------------------------------------------------
+# Issue #858 – per-question worker split: setup, execution, shared finalize
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _WorkerRecorderSetup:
+    """Bundle of per-question recording and trail-capture seams.
+
+    Returned by _setup_worker_recorders.  The trail lists grow in-place during
+    generation; the callable fields are closures that reference ctx and the
+    lists.  Callers must NOT replace the list fields after construction.
+    """
+
+    emit_question_update: Any   # Callable[[Any, str], int]
+    capture_trail_entry: Any    # Callable[..., None]
+    capture_figure_policy_entry: Any    # Callable[..., None]
+    capture_reference_example_entry: Any    # Callable[..., None]
+    verification_trail: list    # list[dict[str, Any]] – mutated by capture_trail_entry
+    figure_policy_trail: list   # list[dict[str, Any]] – mutated by capture_figure_policy_entry
+    reference_example_entries: list  # list[dict[str, Any]] – mutated by capture_reference_example_entry  # noqa: E501
+
+
+def _setup_worker_recorders(
     i: int,
     question_client: LLMClient,
     ctx: _RunContext,
-    batch_briefs: list,
-) -> None:
-    """Execute one question-generation worker; enqueues result/error events."""
-    with ctx.drain_telemetry.ctx_active_worker():
-        _worker_one_body(i, question_client, ctx, batch_briefs)
+) -> _WorkerRecorderSetup:
+    """Create the exchange recorder, observer, and trail-capture callbacks for one worker.
 
-
-def _worker_one_body(
-    i: int,
-    question_client: LLMClient,
-    ctx: _RunContext,
-    batch_briefs: list,
-) -> None:
-    """Run the v2 worker body inside the drain telemetry wrapper."""
-    question_id = ctx.manifest[i].question_id
-    if ctx.publisher.is_terminal_sealed(question_id):
-        logger.warning("worker %s was submitted after terminal sealing", question_id)
-        return
-
+    Registers the exchange recorder with ctx.exchange_recorders and wires the
+    LLM observer onto question_client.  Returns a _WorkerRecorderSetup bundle
+    that can be exercised in tests without running generation (issue #858
+    acceptance criterion 2).
+    """
     worker_recorder = make_exchange_recorder(
         generation_log_id=ctx.generation_log_id,
         retention_days=ctx.retention_days,
@@ -701,14 +540,10 @@ def _worker_one_body(
     question_client.set_observer(
         make_combined_observer(observe_worker_event, worker_recorder)
     )
-    # Wrap emit_question_update to commit to the snapshot ledger and carry
-    # content_revision in every question_update context (slice 5).
-    _revision_tracker: list[int | None] = [None]  # mutable container for core revision binding
 
     def emit_question_update(question: Any, phase: str) -> int:
         q_dict = json.loads(question.model_dump_json(exclude_none=True))
         rev, _ = ctx.snapshot_ledger.commit(q_dict, ctx.config.output_dir)
-        _revision_tracker[0] = rev
         _upd_payload: dict[str, Any] = {
             "index": ctx.manifest[i].index,
             "phase": phase,
@@ -773,6 +608,120 @@ def _worker_one_body(
         if reference_example_recorder is not None:
             reference_example_recorder(entry)
 
+    return _WorkerRecorderSetup(
+        emit_question_update=emit_question_update,
+        capture_trail_entry=capture_trail_entry,
+        capture_figure_policy_entry=capture_figure_policy_entry,
+        capture_reference_example_entry=capture_reference_example_entry,
+        verification_trail=verification_trail,
+        figure_policy_trail=figure_policy_trail,
+        reference_example_entries=reference_example_entries,
+    )
+
+
+def _finalize_worker_terminal(
+    ctx: _RunContext,
+    *,
+    index: int,
+    question_id: str,
+    already_sealed: bool = False,
+    termination_reason: str = "",
+    has_final: bool = False,
+    final_revision: int | None = None,
+    question: Any | None = None,
+    rng_params: Any | None = None,
+    verification_trail: list[dict[str, Any]] | None = None,
+    unknown_reason: str | None = None,
+) -> None:
+    """Shared finalize path: seals the ledger and emits question_terminal.
+
+    Every terminal exit in _worker_one_body and _wait_and_signal routes here
+    (issue #858 acceptance criterion 1).
+
+    When already_sealed is True (ledger sealed but publisher not yet confirmed)
+    the immutable sealed payload is re-sent without re-building or re-sealing
+    the terminal.  The other parameters are ignored in that case.
+    """
+    if already_sealed:
+        sealed_payload = ctx.snapshot_ledger.get_terminal(question_id)
+        if sealed_payload is not None:
+            try:
+                ctx.publisher.publish(
+                    SSEEventName.QUESTION_TERMINAL,
+                    question_id=question_id,
+                    index=index,
+                    payload=sealed_payload,
+                )
+            except Exception as retry_exc:  # noqa: BLE001 — terminal remains sealed
+                logger.warning(
+                    "sealed terminal delivery failed for %s: %s",
+                    question_id,
+                    type(retry_exc).__name__,
+                )
+        return
+
+    resolution = _QuestionPositionResolution(
+        announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+        verification_trail=verification_trail,
+        resolved_subquestion_configs=(
+            getattr(rng_params, "subquestion_configs", None)
+            if rng_params is not None
+            else None
+        ),
+        resolved_subquestion_count=(
+            getattr(rng_params, "sub_question_count", None)
+            if rng_params is not None
+            else None
+        ),
+        has_per_question_resolution=rng_params is not None,
+    )
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason=termination_reason,
+        has_final=has_final,
+        final_revision=final_revision,
+        question=question,
+        params=ctx.params,
+        output_dir=ctx.config.output_dir,
+        unknown_reason=unknown_reason,
+        resolution=resolution,
+    )
+    _publish_question_terminal(ctx, index=index, payload=payload)
+
+
+def _worker_one(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
+) -> None:
+    """Execute one question-generation worker; enqueues result/error events."""
+    with ctx.drain_telemetry.ctx_active_worker():
+        _worker_one_body(i, question_client, ctx, batch_briefs)
+
+
+def _worker_one_body(
+    i: int,
+    question_client: LLMClient,
+    ctx: _RunContext,
+    batch_briefs: list,
+) -> None:
+    """Run the v2 worker body inside the drain telemetry wrapper.
+
+    Structured in three single-responsibility phases (issue #858):
+      1. _setup_worker_recorders – recorder + observer + trail-capture setup.
+      2. Generation execution    – resolves params, calls do_generate, publishes result.
+      3. _finalize_worker_terminal – shared finalize path for every exit kind.
+    """
+    question_id = ctx.manifest[i].question_id
+    if ctx.publisher.is_terminal_sealed(question_id):
+        logger.warning("worker %s was submitted after terminal sealing", question_id)
+        return
+
+    # Phase 1 – recorder & trail-capture setup (testable without generation).
+    setup = _setup_worker_recorders(i, question_client, ctx)
+
+    # Phase 2 – generation execution.
     ctx.emit_pipeline("question_start", index=i, total=ctx.count)
     with ctx.prior_scopes_lock:
         prior_snapshot = list(ctx.prior_scopes)
@@ -812,10 +761,10 @@ def _worker_one_body(
             user_core_question=ctx.params.core_question,
             text_instruction=_per_question_text_instruction(i, ctx.params),
             core_question_callback=ctx.params.core_question_callback,
-            on_question_update=emit_question_update,
-            on_trail_entry=None if ctx.params.skip_verify else capture_trail_entry,
-            on_figure_policy_entry=capture_figure_policy_entry,
-            on_reference_example_entry=capture_reference_example_entry,
+            on_question_update=setup.emit_question_update,
+            on_trail_entry=None if ctx.params.skip_verify else setup.capture_trail_entry,
+            on_figure_policy_entry=setup.capture_figure_policy_entry,
+            on_reference_example_entry=setup.capture_reference_example_entry,
             prior_scopes=prior_snapshot,
             balanced_batch=ctx.balanced_batch,
             is_cancelled=ctx.cancel_event.is_set,
@@ -842,19 +791,18 @@ def _worker_one_body(
         sidecars: dict[str, Any] = {
             "reference_example_record": {
                 "disabled": bool(ctx.params.disable_reference_fewshot),
-                "entries": reference_example_entries,
+                "entries": setup.reference_example_entries,
             },
         }
-        if verification_trail:
-            sidecars["verification_trail"] = verification_trail
-        if figure_policy_trail:
-            sidecars["figure_policy_trail"] = figure_policy_trail
+        if setup.verification_trail:
+            sidecars["verification_trail"] = setup.verification_trail
+        if setup.figure_policy_trail:
+            sidecars["figure_policy_trail"] = setup.figure_policy_trail
         # Commit the final question to the ledger (unchanged content keeps revision).
         _q_final_dict = json.loads(question.model_dump_json(exclude_none=True))
         _final_revision, _ = ctx.snapshot_ledger.commit(
             _q_final_dict, ctx.config.output_dir
         )
-        _revision_tracker[0] = _final_revision
         ctx.publisher.publish(
             SSEEventName.RESULT,
             question_id=question_id,
@@ -864,51 +812,37 @@ def _worker_one_body(
             sidecars=sidecars,
         )
         final_published_revision = _final_revision
-        # Normal terminal – published AFTER the result event.
-        _terminal_payload = _build_question_terminal_payload(
+        # Phase 3 – normal terminal: published AFTER the result event.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
             question_id=question_id,
             termination_reason="normal",
             has_final=True,
             final_revision=_final_revision,
             question=question,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            resolved_subquestion_configs=getattr(rng_params, "subquestion_configs", None),
-            resolved_subquestion_count=getattr(rng_params, "sub_question_count", None),
+            rng_params=rng_params,
+            verification_trail=setup.verification_trail,
         )
-        _publish_question_terminal(ctx, index=i, payload=_terminal_payload)
     except GenerationCancelled:
         # A client disconnect is not proof that cancellation was confirmed by
         # the generation boundary.  Only an explicit internal confirmation may
         # produce the cancelled terminal conclusion.
         if not ctx.confirmed_cancel_event.is_set():
             return
-        _qid_cancel = ctx.manifest[i].question_id
-        _cancel_resolution_kwargs: dict[str, Any] = {}
-        if rng_params is not None:
-            _cancel_resolution_kwargs = {
-                "resolved_subquestion_configs": getattr(
-                    rng_params, "subquestion_configs", None
-                ),
-                "resolved_subquestion_count": getattr(
-                    rng_params, "sub_question_count", None
-                ),
-            }
-        _cancel_payload = _build_question_terminal_payload(
-            question_id=_qid_cancel,
+        # Phase 3 – confirmed-cancellation terminal.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
+            question_id=ctx.manifest[i].question_id,
             termination_reason="cancelled",
             has_final=False,
             final_revision=None,
             question=None,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(_qid_cancel),
-            **_cancel_resolution_kwargs,
+            rng_params=rng_params,
+            verification_trail=None,
             unknown_reason="cancelled before completion",
         )
-        _publish_question_terminal(ctx, index=i, payload=_cancel_payload)
     except Exception as exc:
         if ctx.publisher.is_terminal_sealed(question_id):
             logger.warning(
@@ -922,21 +856,13 @@ def _worker_one_body(
             # failed after the ledger sealed, retry the exact immutable summary
             # once so a transient enqueue failure cannot turn a normal final
             # into a contradictory failure.  No new error event is emitted.
-            sealed_payload = ctx.snapshot_ledger.get_terminal(question_id)
-            if sealed_payload is not None:
-                try:
-                    ctx.publisher.publish(
-                        SSEEventName.QUESTION_TERMINAL,
-                        question_id=question_id,
-                        index=i,
-                        payload=sealed_payload,
-                    )
-                except Exception as retry_exc:  # noqa: BLE001 — terminal remains sealed
-                    logger.warning(
-                        "sealed terminal delivery failed for %s: %s",
-                        question_id,
-                        type(retry_exc).__name__,
-                    )
+            # Phase 3 – resend of already-sealed summary.
+            _finalize_worker_terminal(
+                ctx,
+                index=i,
+                question_id=question_id,
+                already_sealed=True,
+            )
             return
         record_generation_outcome(ctx.params.subject, "failure")
         ctx.publisher.publish(
@@ -949,34 +875,23 @@ def _worker_one_body(
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
-        _failed_resolution_kwargs: dict[str, Any] = {}
-        if rng_params is not None:
-            _failed_resolution_kwargs = {
-                "resolved_subquestion_configs": getattr(
-                    rng_params, "subquestion_configs", None
-                ),
-                "resolved_subquestion_count": getattr(
-                    rng_params, "sub_question_count", None
-                ),
-            }
-        _failed_payload = _build_question_terminal_payload(
+        # Phase 3 – final-failure terminal.
+        _finalize_worker_terminal(
+            ctx,
+            index=i,
             question_id=question_id,
             termination_reason="failed",
             has_final=final_published_revision is not None,
             final_revision=final_published_revision,
             question=question if final_published_revision is not None else None,
-            params=ctx.params,
-            output_dir=ctx.config.output_dir,
-            announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
-            verification_trail=verification_trail,
-            **_failed_resolution_kwargs,
+            rng_params=rng_params,
+            verification_trail=setup.verification_trail,
             unknown_reason=(
                 "no final content"
                 if final_published_revision is None
                 else "terminal completion failed after final delivery"
             ),
         )
-        _publish_question_terminal(ctx, index=i, payload=_failed_payload)
 
 
 def _track_active_run(
@@ -1088,18 +1003,32 @@ async def generate_question_stream(
         run_id=_run_id,
     )
 
-    ctx.publisher.publish(
-        SSEEventName.STARTED,
-        payload={
-            "protocol_version": 2,
-            "total": ctx.count,
-            "questions": [
-                {"index": qc.index, "question_id": qc.question_id}
-                for qc in ctx.manifest
-            ],
-            "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
-        },
-    )
+    _started_payload: dict[str, Any] = {
+        "protocol_version": 2,
+        "total": ctx.count,
+        "questions": [
+            {"index": qc.index, "question_id": qc.question_id}
+            for qc in ctx.manifest
+        ],
+        "generation_log_id": str(generation_log_id) if generation_log_id is not None else None,
+    }
+    try:
+        StartedPayload.model_validate(_started_payload)
+    except ValidationError as exc:
+        logger.warning(
+            "started payload validation failed; rejecting generation (%s)",
+            type(exc).__name__,
+        )
+        ctx.publisher.publish(
+            SSEEventName.ERROR,
+            payload=build_sse_error("started_invalid", "generation manifest validation failed"),
+        )
+        await asyncio.sleep(0)
+        yield queue.get_nowait()
+        _drain.unregister_queue(queue)
+        return
+
+    ctx.publisher.publish(SSEEventName.STARTED, payload=_started_payload)
     await asyncio.sleep(0)
     yield queue.get_nowait()
 
@@ -1327,18 +1256,19 @@ async def generate_question_stream(
                 ),
             )
             for i, question in enumerate(ctx.manifest):
-                terminal = _build_question_terminal_payload(
+                # Phase 3 – batch-planning-failure terminal (shared finalize path).
+                _finalize_worker_terminal(
+                    ctx,
+                    index=i,
                     question_id=question.question_id,
                     termination_reason="failed",
                     has_final=False,
                     final_revision=None,
                     question=None,
-                    params=ctx.params,
-                    output_dir=ctx.config.output_dir,
-                    announced_slots=None,
+                    rng_params=None,
+                    verification_trail=None,
                     unknown_reason="batch failed before question generation",
                 )
-                _publish_question_terminal(ctx, index=i, payload=terminal)
         else:
             outcomes = await asyncio.gather(*futures, return_exceptions=True)
             for i, outcome in enumerate(outcomes):
@@ -1361,18 +1291,19 @@ async def generate_question_stream(
                         f"Question generation failed ({type(outcome).__name__})",
                     ),
                 )
-                terminal = _build_question_terminal_payload(
+                # Phase 3 – worker-unexpected-exit terminal (shared finalize path).
+                _finalize_worker_terminal(
+                    ctx,
+                    index=i,
                     question_id=question.question_id,
                     termination_reason="failed",
                     has_final=False,
                     final_revision=None,
                     question=None,
-                    params=ctx.params,
-                    output_dir=ctx.config.output_dir,
-                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(question.question_id),
+                    rng_params=None,
+                    verification_trail=None,
                     unknown_reason="question worker exited before final content",
                 )
-                _publish_question_terminal(ctx, index=i, payload=terminal)
         await _flush_generation_recorders()
         ctx.emit_pipeline("pipeline_end", total=ctx.count)
         ctx.publisher.publish(SSEEventName.DONE, payload={})

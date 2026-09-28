@@ -4,6 +4,7 @@
 // Source of truth:
 //   server/generate/models.py       -> GenerateParams
 //   server/generate/models.py       -> ResolveRequest, ResolveResponse, ResolveFieldError
+//   server/generate/event_protocol.py -> StartedPayload
 //   server/generate/marshalling.py  -> SSEEventName, EMITTED_EVENT_NAMES
 
 // ---------------------------------------------------------------------------
@@ -148,3 +149,18 @@ export const SSE_EMITTED_EVENT_NAMES = [
 ] as const;
 
 export type SSEEmittedEventName = (typeof SSE_EMITTED_EVENT_NAMES)[number];
+
+// ---------------------------------------------------------------------------
+// SSE started event payload
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload of the 'started' SSE event.
+ * Source of truth: server/generate/event_protocol.py:StartedPayload
+ */
+export interface StartedPayload {
+  protocol_version: 2;
+  total: number;
+  questions: Record<string, unknown>[];
+  generation_log_id?: string | null;
+}
