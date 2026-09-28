@@ -14,7 +14,7 @@ import asyncio
 import logging
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import CancelledError, Future
 from typing import Any
 
@@ -92,7 +92,7 @@ class _IncrementalTrailStager:
         with self._lock:
             self._entries.append(payload)
             snapshot = list(self._entries)
-        self._stage_snapshot(snapshot)
+            self._stage_snapshot(snapshot)
 
     def snapshot(self) -> list[dict[str, Any]]:
         """Return a copy of the current attempt's entries (without prior)."""
@@ -317,7 +317,8 @@ async def _insert_generation_record(
     This is the single source of truth for record construction.  Callers that
     want best-effort semantics should wrap calls in try/except (see
     ``persist_generation_record``).  Callers that want retry semantics should
-    call this inside a loop (see ``save_generation_record_with_retries``).
+    call this inside a loop (see
+    ``persist_generation_record(..., max_attempts=..., report_exhaustion=True)``).
     """
     record = GenerationRecord(
         user_id=user_id,
@@ -358,7 +359,7 @@ async def persist_generation_record(
     figure_policy_trail_json: list[dict[str, Any]] | None = None,
     reference_example_record_json: list[dict[str, Any]] | None = None,
     max_attempts: int = 1,
-    backoff_fn: Callable[[int], Any] | None = None,
+    backoff_fn: Callable[[int], Awaitable[Any]] | None = None,
     report_exhaustion: bool = False,
 ) -> uuid.UUID | None:
     """Insert one generation_records row and return its id on success.

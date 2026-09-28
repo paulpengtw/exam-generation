@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
 
@@ -249,7 +249,7 @@ class _RunContext:
     drain_telemetry: Any
     # issue #904: save-before-RESULT fields
     user_id: uuid.UUID | None  # None → no persistence (CLI / log-less runs)
-    save_backoff_fn: Any  # Callable[[int], Awaitable[None]] | None; None → default backoff
+    save_backoff_fn: Callable[[int], Awaitable[Any]] | None  # None → default exponential backoff
 
 
 def _build_run_context(
@@ -269,7 +269,7 @@ def _build_run_context(
     run_id: str | None = None,
     confirmed_cancel_event: threading.Event | None = None,
     user_id: uuid.UUID | None = None,
-    save_backoff_fn: Any | None = None,
+    save_backoff_fn: Callable[[int], Awaitable[Any]] | None = None,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -810,6 +810,11 @@ def _worker_one_body(
                 try:
                     _save_future.result(timeout=_SAVE_TIMEOUT_S)
                 except Exception as _save_exc:  # noqa: BLE001 — timeout or other bridge error
+                    # Intentional: on timeout the save coroutine may still
+                    # finish later (it is not cancelled). RESULT is published
+                    # regardless so the worker never blocks indefinitely; the
+                    # record will still land if the coroutine completes after
+                    # the timeout window. See FLOW.md step 9.
                     logger.warning(
                         "save-before-RESULT failed for %s: %s",
                         question_id,

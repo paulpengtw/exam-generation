@@ -81,7 +81,8 @@ def test_result_event_does_not_carry_reference_example_record_sidecar(
     """issue #904: sidecars are dropped from the queue envelope.
 
     The reference_example_record is saved directly in the worker before RESULT
-    is published (save_generation_record_with_retries); it no longer travels as
+    is published (persist_generation_record(..., max_attempts=...,
+    report_exhaustion=True)); it no longer travels as
     a top-level sidecar on the result event dict.
     """
     entries = [_EXAMPLE_ENTRY, _SUB_ENTRY]
@@ -153,7 +154,7 @@ def test_reference_example_record_json_content_passed_to_save_seam(
 ) -> None:
     """issue #904 + #903: saved record receives correct reference_example_record_json.
 
-    Monkeypatches save_generation_record_with_retries in the service module and
+    Monkeypatches persist_generation_record in the service module and
     asserts that the worker passes the expected reference_example_record_json with
     disabled=False and the full entries list.
     """

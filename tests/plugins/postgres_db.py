@@ -81,11 +81,10 @@ def pytest_collection_finish(session: pytest.Session) -> None:  # noqa: C901
         _PGSERVER_URL = "postgresql+asyncpg://postgres@/postgres"
         # Leave _POSTGRES_SKIP_REASON as None: tests will run via pgserver.
         return
+    except ImportError:
+        pgserver_detail = "; pgserver is not installed (pip install pgserver)"
     except Exception as exc:  # noqa: BLE001
-        # pgserver not available or failed to start.
         pgserver_detail = f"; pgserver startup failed: {exc}"
-    else:
-        pgserver_detail = ""
 
     _POSTGRES_SKIP_REASON = (
         f"Postgres not available: {_ENV_VAR} is not set"

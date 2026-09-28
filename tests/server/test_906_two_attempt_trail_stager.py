@@ -18,6 +18,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.generate.persistence import (
+    _IncrementalTrailStager,
     make_figure_policy_trail_recorder,
     make_reference_example_record_recorder,
 )
@@ -196,3 +197,45 @@ def test_reference_example_record_entries_from_two_attempts_are_retained_and_lab
             await engine.dispose()
 
     asyncio.run(exercise())
+
+
+def test_stage_snapshot_is_called_while_lock_is_held() -> None:
+    """Regression: _stage_snapshot must be called inside the threading lock.
+
+    When _stage_snapshot escapes the lock (the 23d053a regression), two
+    concurrent workers can schedule their snapshots out of order: a smaller
+    stale snapshot submitted later overwrites a newer, larger one.
+
+    Verified by subclassing _IncrementalTrailStager so that _stage_snapshot
+    records whether ``self._lock.locked()`` is True at the moment of the call.
+    threading.Lock.locked() returns True while any thread holds the lock; since
+    add_entry calls _stage_snapshot from the same thread that acquired the lock,
+    locked() is True if and only if the call is made inside the with-block.
+    """
+    lock_held_at_stage: list[bool] = []
+
+    class InspectableStager(_IncrementalTrailStager):
+        def _stage_snapshot(self, snapshot: list) -> None:  # type: ignore[override]
+            lock_held_at_stage.append(self._lock.locked())
+
+    loop = asyncio.new_event_loop()
+    # Loop is not started; InspectableStager._stage_snapshot overrides the
+    # real implementation so asyncio.run_coroutine_threadsafe is never called.
+    stager = InspectableStager(
+        generation_log_id=uuid.uuid4(),
+        loop=loop,
+        session_factory=None,
+        column_name="test_column",
+        render_column_value=lambda entries: entries,
+    )
+    try:
+        stager.add_entry({"foo": "bar"})
+        stager.add_entry({"baz": "qux"})
+    finally:
+        loop.close()
+
+    assert lock_held_at_stage == [True, True], (
+        "_stage_snapshot must be called while self._lock is held (regression "
+        "for 23d053a where the call was moved outside the with-block, enabling "
+        "concurrent threads to schedule snapshots out of order)"
+    )

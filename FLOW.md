@@ -84,10 +84,15 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 │     cancel_event is set by generate_question_stream's finally block
                 │     when the consumer disconnects (GeneratorExit / aclose())
                 │
-                ├── 9. [issue #904] save_generation_record_with_retries()
+                ├── 9. [issue #904] persist_generation_record(..., max_attempts=SAVE_MAX_ATTEMPTS,
+                │                                               report_exhaustion=True)
                 │       Saves GenerationRecord to DB before RESULT is published.
                 │       Runs inside the worker thread via asyncio.run_coroutine_threadsafe()
                 │       against the run's event loop (timeout: 30 s).
+                │       On timeout the save coroutine is NOT cancelled; it may still
+                │       complete after the worker has already published RESULT.  This is
+                │       intentional: the record still lands, and the worker must not block
+                │       forever waiting for a slow DB.
                 │       On failure: up to SAVE_MAX_ATTEMPTS=3 retries with exponential
                 │       backoff (2^attempt s, injectable for tests), then Sentry capture.
                 │       Sidecars (verification_trail, figure_policy_trail,

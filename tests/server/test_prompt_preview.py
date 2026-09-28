@@ -841,3 +841,105 @@ def test_preview_label_aligns_with_each_subquestion_config_row() -> None:
     assert "指示丙只在第三小題" in sub_previews[2]["user_prompt"]
     assert "指示甲只在第一小題" not in sub_previews[2]["user_prompt"]
     assert "指示乙只在第二小題" not in sub_previews[2]["user_prompt"]
+
+
+def test_math_sub_generator_previews_are_byte_identical_after_placeholder_substitution(
+) -> None:
+    """Math 題組 sub-generator previews must be byte-identical to live prompts.
+
+    Issue #893 follow-up: _math_build_subquestion_prompt_previews does not pass
+    curriculum_context to build_subquestion_prompt_previews.  This test confirms
+    there is no divergence: the math subquestion stage (子題產生器) does not use
+    curriculum_context — it is only used in flat-math generation for the system
+    prompt.  Byte-identity after placeholder substitution proves no input is
+    omitted.
+    """
+    import json as _json
+
+    seed = 200
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    params = _resolved_generate_params(
+        {
+            "subject": "math",
+            "seed": seed,
+            "sub_question_count": 3,
+            "disable_reference_fewshot": True,
+        }
+    )
+
+    # Resolve subject params to learn the sampled 題型 so the text payload matches.
+    sampled = _resolved_subject_params(params, app_state)
+    q_type_value = sampled.題型.value
+
+    text_payload = {
+        "情境": [c.value for c in sampled.情境],
+        "題型種類": "題組題",
+        "題型": q_type_value,
+        "數學思考": [t.value for t in sampled.數學思考],
+        "學習內容": [
+            {"編碼": item.編碼, "說明": item.說明}
+            for item in sampled.學習內容
+        ],
+        "題目": [],
+        "正確解題分析": [],
+        "核心問題": "真實數學核心問題",
+        "文本": "真實數學文本",
+        "取材來源": ["真實數學來源"],
+        "subquestions": [
+            {"序號": i, "題型": q_type_value, "出題概念": f"數學概念{i}"}
+            for i in range(1, 4)
+        ],
+    }
+
+    previews = build_prompt_previews(params, config, app_state)
+    captured: dict[int, tuple[str, str]] = {}
+    generate_math(
+        config=config,
+        client=_CapturingClient(text_payload),
+        curriculum=app_state.curriculum,
+        performance=app_state.performance,
+        intro_text=app_state.intro_text,
+        grade_content=app_state.grade_content,
+        params=sampled,
+        question_id="preview-math-sub-generator-equality",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _CapturingSubClient(captured, q_type_value),
+        curriculum_context=app_state.math_curriculum_context,
+    )
+
+    sub_previews = {
+        preview["subquestion_index"]: preview
+        for preview in previews
+        if "subquestion_index" in preview
+    }
+    assert set(sub_previews) == {0, 1, 2}, (
+        f"Expected sub-preview indices {{0, 1, 2}}, got {set(sub_previews)}"
+    )
+    for idx, real_prompts in captured.items():
+        preview = sub_previews[idx - 1]
+        substituted_user = (
+            preview["user_prompt"]
+            .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
+            .replace("{{文本：由前一階段產生}}", text_payload["文本"])
+            .replace(
+                _json.dumps(
+                    ["{{取材來源：由前一階段產生}}"],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                _json.dumps(
+                    text_payload["取材來源"],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+            .replace("{{子題 plan：由前一階段產生}}", f"數學概念{idx}")
+        )
+        assert (preview["system_prompt"], substituted_user) == real_prompts, (
+            f"Math 題組 sub-generator preview for 第{idx}小題 is not byte-identical "
+            f"to live generation after placeholder substitution.\n"
+            f"This indicates an input used in live generation that the preview omits "
+            f"(e.g. curriculum_context or another override)."
+        )
