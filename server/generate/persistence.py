@@ -296,58 +296,21 @@ async def persist_generation_record(
     verification_trail_json: list[dict[str, Any]] | None = None,
     figure_policy_trail_json: list[dict[str, Any]] | None = None,
     reference_example_record_json: list[dict[str, Any]] | None = None,
+    max_attempts: int = 1,
+    backoff_fn: Callable[[int], Any] | None = None,
+    report_exhaustion: bool = False,
 ) -> uuid.UUID | None:
     """Insert one generation_records row and return its id on success.
 
     Persistence is best effort so a database failure must never break the
     generation stream; callers can use the id to continue a persisted record
     chain when it is available.
-    """
-    try:
-        return await _insert_generation_record(
-            user_id=user_id,
-            generation_log_id=generation_log_id,
-            parent_record_id=parent_record_id,
-            subject=subject,
-            params=params,
-            payload=payload,
-            session_factory=session_factory,
-            annotations_json=annotations_json,
-            verification_trail_json=verification_trail_json,
-            figure_policy_trail_json=figure_policy_trail_json,
-            reference_example_record_json=reference_example_record_json,
-        )
-    except Exception as exc:  # noqa: BLE001 — best-effort persistence
-        logger.warning("failed to persist generation_record: %s", exc)
-        return None
 
-
-async def save_generation_record_with_retries(
-    *,
-    user_id: uuid.UUID,
-    generation_log_id: uuid.UUID | None,
-    subject: str,
-    params: Any,
-    payload: dict[str, Any],
-    session_factory: Any,
-    verification_trail_json: list[dict[str, Any]] | None = None,
-    figure_policy_trail_json: list[dict[str, Any]] | None = None,
-    reference_example_record_json: Any | None = None,
-    max_attempts: int = SAVE_MAX_ATTEMPTS,
-    backoff_fn: Callable[[int], Any] | None = None,
-) -> uuid.UUID | None:
-    """Insert the generation record with bounded retry + Sentry on exhaustion.
-
-    Mirrors the retry loop in ReferenceExampleRecordRecorder._persist_with_retries
-    but is used from the worker thread via asyncio.run_coroutine_threadsafe so
-    the record is committed BEFORE the RESULT event is published (issue #904).
-
-    The ``backoff_fn(attempt)`` coroutine is called between attempts; it defaults
-    to an exponential ``asyncio.sleep`` (2**attempt seconds).  Pass an instant
-    no-op in tests to keep them fast.
-
-    Returns the new record's UUID on success, or None after exhaustion (Sentry
-    has been notified).
+    With the defaults (``max_attempts=1``, ``report_exhaustion=False``) the
+    behaviour is identical to the original single-attempt, swallow-and-return-
+    None contract.  Pass ``max_attempts=SAVE_MAX_ATTEMPTS``,
+    ``backoff_fn=ctx.save_backoff_fn``, and ``report_exhaustion=True`` from the
+    worker thread for bounded retry with Sentry notification on exhaustion.
     """
     if backoff_fn is None:
 
@@ -362,15 +325,17 @@ async def save_generation_record_with_retries(
             return await _insert_generation_record(
                 user_id=user_id,
                 generation_log_id=generation_log_id,
+                parent_record_id=parent_record_id,
                 subject=subject,
                 params=params,
                 payload=payload,
                 session_factory=session_factory,
+                annotations_json=annotations_json,
                 verification_trail_json=verification_trail_json,
                 figure_policy_trail_json=figure_policy_trail_json,
                 reference_example_record_json=reference_example_record_json,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — best-effort persistence
             last_exc = exc
             logger.warning(
                 "persist_generation_record attempt %d/%d failed: %s",
@@ -381,12 +346,13 @@ async def save_generation_record_with_retries(
             if attempt < max_attempts - 1:
                 await backoff_fn(attempt)
 
-    # All retries exhausted: report to Sentry so the failure is visible.
-    sentry_sdk.capture_exception(last_exc)
-    logger.error(
-        "persist_generation_record exhausted %d attempts; reported to Sentry",
-        max_attempts,
-    )
+    # All attempts exhausted.
+    if report_exhaustion:
+        sentry_sdk.capture_exception(last_exc)
+        logger.error(
+            "persist_generation_record exhausted %d attempts; reported to Sentry",
+            max_attempts,
+        )
     return None
 
 

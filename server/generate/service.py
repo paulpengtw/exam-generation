@@ -39,10 +39,11 @@ from server.generate.models import (
     build_sse_error,
 )
 from server.generate.persistence import (
+    SAVE_MAX_ATTEMPTS,
     make_exchange_recorder,
     make_figure_policy_trail_recorder,
     make_reference_example_record_recorder,
-    save_generation_record_with_retries,
+    persist_generation_record,
 )
 from server.generate.publisher import GenerationPublisher
 from server.generate.question_terminal import (
@@ -786,7 +787,7 @@ def _worker_one_body(
                 "disabled": bool(ctx.params.disable_reference_fewshot),
                 "entries": setup.reference_example_entries,
             }
-            _save_coro = save_generation_record_with_retries(
+            _save_coro = persist_generation_record(
                 user_id=ctx.user_id,
                 generation_log_id=ctx.generation_log_id,
                 subject=ctx.params.subject,
@@ -800,7 +801,9 @@ def _worker_one_body(
                     setup.figure_policy_trail if setup.figure_policy_trail else None
                 ),
                 reference_example_record_json=_reference_example_record_json,
+                max_attempts=SAVE_MAX_ATTEMPTS,
                 backoff_fn=ctx.save_backoff_fn,
+                report_exhaustion=True,
             )
             try:
                 _save_future = asyncio.run_coroutine_threadsafe(_save_coro, ctx.loop)

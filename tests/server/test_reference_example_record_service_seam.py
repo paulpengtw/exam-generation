@@ -184,7 +184,7 @@ def test_reference_example_record_json_content_passed_to_save_seam(
         return evts
 
     with patch(
-        "server.generate.service.save_generation_record_with_retries",
+        "server.generate.service.persist_generation_record",
         side_effect=fake_save,
     ):
         asyncio.run(collect())
