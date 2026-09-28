@@ -769,3 +769,75 @@ def test_preview_route_uses_generate_auth_dependency() -> None:
     dependencies = {dependency.call for dependency in route.dependant.dependencies}
 
     assert get_current_user in dependencies
+
+
+def test_math_group_sub_generator_previews_are_zero_based() -> None:
+    """Math 題組題 with sub_question_count must produce N subquestion previews
+    with zero-based subquestion_index values (0..N-1), matching the SSE stream
+    convention used by social studies and natural sciences.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    params = _resolved_generate_params(
+        {
+            "subject": "math",
+            "seed": 23,
+            "grade": 8,
+            "sub_question_count": 3,
+            "disable_reference_fewshot": True,
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_previews = [p for p in previews if "subquestion_index" in p]
+    assert len(sub_previews) == 3, (
+        f"Expected 3 subquestion previews for math 題組題, got {len(sub_previews)}"
+    )
+    assert [p["subquestion_index"] for p in sub_previews] == [0, 1, 2], (
+        f"Expected zero-based [0, 1, 2], got {[p['subquestion_index'] for p in sub_previews]}"
+    )
+
+
+def test_preview_label_aligns_with_each_subquestion_config_row() -> None:
+    """The preview labelled 第k小題 (subquestion_index=k-1) must embed the
+    distinctive 出題指示 from the k-th row of 各小題配置, not from any other row.
+
+    This tests both the zero-based index contract (so the label matches the
+    right card) and that the config slot lookup is aligned with the index.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": 191,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {"question_type": "開放式建構反應題", "instruction": "指示甲只在第一小題"},
+                {"question_type": "開放式建構反應題", "instruction": "指示乙只在第二小題"},
+                {"question_type": "開放式建構反應題", "instruction": "指示丙只在第三小題"},
+            ],
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_previews = {
+        p["subquestion_index"]: p
+        for p in previews
+        if "subquestion_index" in p
+    }
+    assert set(sub_previews.keys()) == {0, 1, 2}, (
+        f"Expected subquestion_index keys {{0, 1, 2}}, got {set(sub_previews.keys())}"
+    )
+    # 第1小題 (index 0) must carry row 0's instruction exclusively
+    assert "指示甲只在第一小題" in sub_previews[0]["user_prompt"]
+    assert "指示乙只在第二小題" not in sub_previews[0]["user_prompt"]
+    assert "指示丙只在第三小題" not in sub_previews[0]["user_prompt"]
+    # 第2小題 (index 1) must carry row 1's instruction exclusively
+    assert "指示乙只在第二小題" in sub_previews[1]["user_prompt"]
+    assert "指示甲只在第一小題" not in sub_previews[1]["user_prompt"]
+    assert "指示丙只在第三小題" not in sub_previews[1]["user_prompt"]
+    # 第3小題 (index 2) must carry row 2's instruction exclusively
+    assert "指示丙只在第三小題" in sub_previews[2]["user_prompt"]
+    assert "指示甲只在第一小題" not in sub_previews[2]["user_prompt"]
+    assert "指示乙只在第二小題" not in sub_previews[2]["user_prompt"]

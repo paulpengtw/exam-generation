@@ -700,6 +700,39 @@ def generate_one(
     return question
 
 
+def build_subquestion_prompt_previews(
+    config: Config,
+    params: SampledParams,
+    **kwargs: Any,
+) -> list[tuple[int, str, str, list]]:
+    """Build 子題產生器 prompts for math 題組題 without invoking generation stages.
+
+    Returns an empty list when ``params.sub_question_count`` is None (flat
+    single-question math) because flat math has no subquestion stage.  When
+    it is set the function calls the shared ``build_subquestion_generation_prompts``
+    helper with the math spec, producing zero-based ``subquestion_index`` values
+    (0..N-1) matching the SSE stream convention.
+    """
+    if params.sub_question_count is None:
+        return []
+    from src.common.generation_core import (  # noqa: PLC0415
+        build_subquestion_generation_prompts,
+    )
+    return build_subquestion_generation_prompts(
+        config,
+        params,
+        _MATH_SPEC,
+        disable_reference_fewshot=kwargs.get("disable_reference_fewshot", False),
+        image_generation_mode=kwargs.get("image_generation_mode", "html"),
+        user_passage=kwargs.get("user_passage"),
+        user_options=kwargs.get("user_options"),
+        user_topic=kwargs.get("user_topic"),
+        user_core_question=kwargs.get("user_core_question"),
+        prior_scopes=kwargs.get("prior_scopes"),
+        core_question_callback=kwargs.get("core_question_callback", True),
+    )
+
+
 def build_generation_prompts(
     config: Config,
     params: SampledParams,
