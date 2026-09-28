@@ -74,9 +74,6 @@ logger = logging.getLogger(__name__)
 # How long to wait for a pooled renderer before emitting a WARNING.
 # Lowered in tests via monkeypatch.
 RENDERER_POOL_WAIT_WARN_THRESHOLD_S: float = 5.0
-_UNSET_SUBQUESTION_RESOLUTION = object()
-
-
 def _resolved_worker_params(
     i: int,
     params: GenerateParams,
@@ -358,14 +355,7 @@ def _build_question_terminal_payload(
     params: GenerateParams,
     output_dir: Any,  # Path | None
     unknown_reason: str | None = None,
-    # Legacy kwargs — kept so that existing callers and tests continue to work
-    # without modification.  New exits should supply ``resolution`` directly.
-    announced_slots: list[dict[str, Any]] | None = None,
-    verification_trail: list[dict[str, Any]] | None = None,
-    resolved_subquestion_configs: list[Any] | None | object = _UNSET_SUBQUESTION_RESOLUTION,
-    resolved_subquestion_count: int | None | object = _UNSET_SUBQUESTION_RESOLUTION,
-    # New typed bundle (preferred; all internal exits pass it)
-    resolution: _QuestionPositionResolution | None = None,
+    resolution: _QuestionPositionResolution,
 ) -> dict[str, Any]:
     """Build a QuestionTerminalPayload dict; validated before returning.
 
@@ -374,32 +364,7 @@ def _build_question_terminal_payload(
 
     On any validation failure, returns a minimal 'unknown' delivery payload
     so the worker never crashes.
-
-    Legacy callers that pass the individual keyword arguments are handled by
-    constructing a ``_QuestionPositionResolution`` from those arguments so the
-    shared units receive a uniform input type.
     """
-    # Build resolution from legacy kwargs when not supplied directly.
-    if resolution is None:
-        resolution = _QuestionPositionResolution(
-            announced_slots=announced_slots,
-            verification_trail=verification_trail,
-            resolved_subquestion_configs=(
-                None
-                if resolved_subquestion_configs is _UNSET_SUBQUESTION_RESOLUTION
-                else resolved_subquestion_configs
-            ),
-            resolved_subquestion_count=(
-                None
-                if resolved_subquestion_count is _UNSET_SUBQUESTION_RESOLUTION
-                else resolved_subquestion_count
-            ),
-            has_per_question_resolution=(
-                resolved_subquestion_configs is not _UNSET_SUBQUESTION_RESOLUTION
-                or resolved_subquestion_count is not _UNSET_SUBQUESTION_RESOLUTION
-            ),
-        )
-
     review = _compute_review(
         has_final=has_final,
         skip_verify=getattr(params, "skip_verify", False),
