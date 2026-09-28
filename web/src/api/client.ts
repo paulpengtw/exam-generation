@@ -190,6 +190,8 @@ export async function planCoreQuestions(
 
 export interface PromptPreview {
   index: number;
+  /** Zero-based subquestion index (0..N-1), matching the SSE stream convention.
+   * The frontend adds +1 to display as 第1小題..第N小題. */
   subquestion_index?: number;
   system_prompt: string;
   user_prompt: string;

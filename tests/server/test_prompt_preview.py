@@ -346,9 +346,9 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
         for preview in previews
         if "subquestion_index" in preview
     }
-    assert set(sub_previews) == {1, 2, 3}
+    assert set(sub_previews) == {0, 1, 2}
     for idx, real_prompts in captured.items():
-        preview = sub_previews[idx]
+        preview = sub_previews[idx - 1]
         substituted_user = (
             preview["user_prompt"]
             .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
@@ -357,12 +357,12 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
             .replace("{{子題 plan：由前一階段產生}}", f"概念{idx}")
         )
         assert (preview["system_prompt"], substituted_user) == real_prompts
-    assert "## 各小題配置" in sub_previews[1]["user_prompt"]
-    assert "逐字保留這項出題指示" in sub_previews[1]["user_prompt"]
-    assert "42" in sub_previews[1]["user_prompt"]
-    assert "17" in sub_previews[1]["user_prompt"]
-    assert "歷Ka-Ⅳ-1" in sub_previews[1]["user_prompt"]
-    assert "社1b-Ⅳ-1" in sub_previews[1]["user_prompt"]
+    assert "## 各小題配置" in sub_previews[0]["user_prompt"]
+    assert "逐字保留這項出題指示" in sub_previews[0]["user_prompt"]
+    assert "42" in sub_previews[0]["user_prompt"]
+    assert "17" in sub_previews[0]["user_prompt"]
+    assert "歷Ka-Ⅳ-1" in sub_previews[0]["user_prompt"]
+    assert "社1b-Ⅳ-1" in sub_previews[0]["user_prompt"]
 
 
 def test_social_studies_preview_keeps_text_word_limit_only_on_text_generator() -> None:
@@ -397,6 +397,30 @@ def test_social_studies_preview_keeps_text_word_limit_only_on_text_generator() -
     assert all("文本字數上限=" not in p["user_prompt"] for p in sub_previews)
     assert "題目字數上限=80" in sub_previews[0]["user_prompt"]
     assert "選項字數上限=30" in sub_previews[0]["user_prompt"]
+
+
+def test_sub_generator_preview_subquestion_index_is_zero_based() -> None:
+    """subquestion_index in preview responses must be zero-based (0..N-1), matching
+    the SSE stream convention. The field name 'subquestion_index' implies 0-based;
+    one-based numbering belongs on '序號'.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": 191,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_indices = [p["subquestion_index"] for p in previews if "subquestion_index" in p]
+    assert sub_indices == [0, 1, 2], (
+        f"Expected zero-based [0, 1, 2], got {sub_indices}. "
+        "The preview endpoint must use 0-based subquestion_index to match the SSE stream."
+    )
 
 
 def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -> None:
@@ -618,9 +642,9 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
         for preview in previews
         if "subquestion_index" in preview
     }
-    assert set(sub_previews) == {1, 2, 3}
+    assert set(sub_previews) == {0, 1, 2}
     for idx, real_prompts in captured.items():
-        preview = sub_previews[idx]
+        preview = sub_previews[idx - 1]
         substituted_user = (
             preview["user_prompt"]
             .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
@@ -629,12 +653,12 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
             .replace("{{子題 plan：由前一階段產生}}", f"自然概念{idx}")
         )
         assert (preview["system_prompt"], substituted_user) == real_prompts
-    assert "## 各小題配置" in sub_previews[1]["user_prompt"]
-    assert "逐字保留自然科學出題指示" in sub_previews[1]["user_prompt"]
-    assert "43" in sub_previews[1]["user_prompt"]
-    assert "18" in sub_previews[1]["user_prompt"]
-    assert "INa-Ⅳ-1" in sub_previews[1]["user_prompt"]
-    assert "pe-Ⅳ-1" in sub_previews[1]["user_prompt"]
+    assert "## 各小題配置" in sub_previews[0]["user_prompt"]
+    assert "逐字保留自然科學出題指示" in sub_previews[0]["user_prompt"]
+    assert "43" in sub_previews[0]["user_prompt"]
+    assert "18" in sub_previews[0]["user_prompt"]
+    assert "INa-Ⅳ-1" in sub_previews[0]["user_prompt"]
+    assert "pe-Ⅳ-1" in sub_previews[0]["user_prompt"]
 
 
 def test_same_confirmation_payload_builds_byte_identical_prompts_with_few_shots() -> None:

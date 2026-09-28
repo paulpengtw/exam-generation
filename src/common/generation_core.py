@@ -409,13 +409,21 @@ def build_subquestion_generation_prompts(
         "取材來源": ["{{取材來源：由前一階段產生}}"],
     }
     previews = []
-    for idx, plan in enumerate(plans, start=1):
+    for plan_position, plan in enumerate(plans):
+        # ``序號`` is one-based (display number); the tuple's first element
+        # (stored as ``subquestion_index`` in the API response) is zero-based
+        # to match the SSE stream convention.
+        序號 = plan_position + 1
         preview_plan = {
             **plan,
-            "序號": idx,
+            "序號": 序號,
             "出題概念": "{{子題 plan：由前一階段產生}}",
         }
-        slot_cfg = subquestion_configs[idx - 1] if 1 <= idx <= len(subquestion_configs) else None
+        slot_cfg = (
+            subquestion_configs[plan_position]
+            if plan_position < len(subquestion_configs)
+            else None
+        )
         sub_user, sub_images, _sub_draws = spec.build_subquestion_user_fn(
             text_raw,
             params,
@@ -425,9 +433,9 @@ def build_subquestion_generation_prompts(
             image_generation_mode,
             disable_reference_fewshot,
             core_question_callback,
-            idx == len(plans),
+            plan_position == len(plans) - 1,
         )
-        previews.append((idx, sub_system, sub_user, sub_images))
+        previews.append((plan_position, sub_system, sub_user, sub_images))
     return previews
 
 

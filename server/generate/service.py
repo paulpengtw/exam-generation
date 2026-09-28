@@ -168,6 +168,8 @@ def build_prompt_previews(
                 previews.append(
                     {
                         "index": i,
+                        # subquestion_index is zero-based (0..N-1), matching the SSE stream
+                        # convention. The frontend adds +1 to display as 第1小題..第N小題.
                         "subquestion_index": sub_idx,
                         "system_prompt": sub_system,
                         "user_prompt": sub_user,
