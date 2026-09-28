@@ -37,8 +37,24 @@ EXCHANGE_WRITE_TIMEOUT_SECONDS = 10.0
 SAVE_MAX_ATTEMPTS: int = 3
 
 
-class FigurePolicyTrailRecorder:
-    """Serialize each policy callback and update its live generation log."""
+class _IncrementalTrailStager:
+    """One incremental stager, parameterised by column and column-value renderer.
+
+    Both ``FigurePolicyTrailRecorder`` and ``ReferenceExampleRecordRecorder``
+    are thin configurations of this class (issue #906, task 2.5).
+
+    *attempt* identifies the run attempt that produced entries in this stager
+    (default ``1``).  Entries from attempt 1 are stored as-is (no extra field)
+    so existing tests and readers that assert exact dict shapes are not
+    disturbed.  Entries from attempt > 1 receive an ``"attempt": N`` field,
+    allowing recovery to keep abandoned-attempt entries honestly labelled
+    (ADR 0024).
+
+    *prior_entries* are already-staged entries from earlier attempts (loaded
+    from the column before a new attempt starts).  They are prepended to the
+    current snapshot on every write so all attempts' entries coexist in the
+    column.
+    """
 
     _MAX_STAGE_ATTEMPTS = 2
 
@@ -47,61 +63,115 @@ class FigurePolicyTrailRecorder:
         generation_log_id: uuid.UUID,
         loop: asyncio.AbstractEventLoop,
         session_factory: Any,
+        column_name: str,
+        render_column_value: Callable[[list[dict[str, Any]]], Any],
+        attempt: int = 1,
+        prior_entries: list[dict[str, Any]] | None = None,
     ) -> None:
         self._generation_log_id = generation_log_id
         self._loop = loop
         self._session_factory = session_factory
+        self._column_name = column_name
+        self._render_column_value = render_column_value
+        self._attempt = attempt
+        self._prior_entries: list[dict[str, Any]] = list(prior_entries or [])
         self._lock = threading.Lock()
         self._write_lock = asyncio.Lock()
-        self._trail: list[dict[str, Any]] = []
+        self._entries: list[dict[str, Any]] = []
 
-    def __call__(self, entry: Any) -> None:
-        payload = entry.model_dump(mode="json") if hasattr(entry, "model_dump") else entry
+    def add_entry(self, entry: Any) -> None:
+        """Append *entry* to the in-memory list and stage the updated snapshot."""
+        payload: dict[str, Any] = (
+            entry.model_dump(mode="json") if hasattr(entry, "model_dump") else dict(entry)
+        )
+        # Tag with the attempt number only for attempt > 1 so that entries
+        # produced by a single-attempt run are stored without the extra field,
+        # keeping existing test assertions unchanged.
+        if self._attempt != 1:
+            payload = {**payload, "attempt": self._attempt}
         with self._lock:
-            self._trail.append(payload)
-            snapshot = list(self._trail)
-            self._stage_snapshot(snapshot)
+            self._entries.append(payload)
+            snapshot = list(self._entries)
+        self._stage_snapshot(snapshot)
 
     def snapshot(self) -> list[dict[str, Any]]:
+        """Return a copy of the current attempt's entries (without prior)."""
         with self._lock:
-            return list(self._trail)
+            return list(self._entries)
 
-    def _stage_snapshot(self, trail: list[dict[str, Any]]) -> None:
+    def _stage_snapshot(self, entries: list[dict[str, Any]]) -> None:
         future = asyncio.run_coroutine_threadsafe(
-            self._persist_with_retries(trail),
+            self._persist_with_retries(entries),
             self._loop,
         )
         try:
             future.result(timeout=10)
-        except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
-            logger.warning("figure policy trail staging deferred: %s", exc)
+        except Exception as exc:  # noqa: BLE001 — persistence is best effort
+            logger.warning("trail staging deferred: %s", exc)
 
     async def flush(self) -> None:
-        """Retry the latest prefix after all workers have stopped emitting."""
+        """Retry the latest snapshot after all workers have stopped emitting."""
         snapshot = self.snapshot()
         if not snapshot:
             return
         await self._persist_with_retries(snapshot)
 
-    async def _persist_with_retries(self, trail: list[dict[str, Any]]) -> None:
-        """Replace the staging prefix in callback order, retrying transient failures."""
+    async def _persist_with_retries(self, entries: list[dict[str, Any]]) -> None:
+        """Replace the staging value, retrying transient failures."""
         async with self._write_lock:
             for attempt in range(self._MAX_STAGE_ATTEMPTS):
                 try:
-                    await self._persist(trail)
+                    await self._persist(entries)
                     return
-                except Exception as exc:  # noqa: BLE001 — policy persistence is best effort
+                except Exception as exc:  # noqa: BLE001 — persistence is best effort
                     if attempt == self._MAX_STAGE_ATTEMPTS - 1:
-                        logger.warning("figure policy trail staging failed: %s", exc)
+                        logger.warning("trail staging failed: %s", exc)
 
-    async def _persist(self, trail: list[dict[str, Any]]) -> None:
+    async def _persist(self, entries: list[dict[str, Any]]) -> None:
+        all_entries = self._prior_entries + entries
+        column_value = self._render_column_value(all_entries)
         async with self._session_factory() as session:
             await session.execute(
                 update(GenerationLog)
                 .where(GenerationLog.id == self._generation_log_id)
-                .values(figure_policy_trail_json=trail)
+                .values(**{self._column_name: column_value})
             )
             await session.commit()
+
+
+class FigurePolicyTrailRecorder:
+    """Thin configuration of _IncrementalTrailStager for the figure policy trail.
+
+    Column shape: a flat list of entry dicts (``figure_policy_trail_json``).
+    """
+
+    def __init__(
+        self,
+        generation_log_id: uuid.UUID,
+        loop: asyncio.AbstractEventLoop,
+        session_factory: Any,
+        attempt: int = 1,
+        prior_entries: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._stager = _IncrementalTrailStager(
+            generation_log_id=generation_log_id,
+            loop=loop,
+            session_factory=session_factory,
+            column_name="figure_policy_trail_json",
+            render_column_value=lambda entries: entries,
+            attempt=attempt,
+            prior_entries=prior_entries,
+        )
+
+    def __call__(self, entry: Any) -> None:
+        self._stager.add_entry(entry)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        return self._stager.snapshot()
+
+    async def flush(self) -> None:
+        """Retry the latest prefix after all workers have stopped emitting."""
+        await self._stager.flush()
 
 
 def make_figure_policy_trail_recorder(
@@ -109,11 +179,21 @@ def make_figure_policy_trail_recorder(
     generation_log_id: uuid.UUID | None,
     loop: asyncio.AbstractEventLoop,
     session_factory: Any,
+    attempt: int = 1,
+    prior_entries: list[dict[str, Any]] | None = None,
 ) -> FigurePolicyTrailRecorder | None:
-    """Create the incremental recorder, or disable it for log-less runs."""
+    """Create the incremental recorder, or disable it for log-less runs.
+
+    *attempt* defaults to ``1``; existing call sites need not change.
+    *prior_entries* carries entries staged by earlier attempts so that a
+    recovery run keeps them all in the column.
+    """
     if generation_log_id is None:
         return None
-    return FigurePolicyTrailRecorder(generation_log_id, loop, session_factory)
+    return FigurePolicyTrailRecorder(
+        generation_log_id, loop, session_factory,
+        attempt=attempt, prior_entries=prior_entries,
+    )
 
 
 async def _staged_figure_policy_trail(
@@ -136,9 +216,11 @@ async def _staged_figure_policy_trail(
 
 
 class ReferenceExampleRecordRecorder:
-    """Serialize each reference example callback and update its live generation log."""
+    """Thin configuration of _IncrementalTrailStager for reference example records.
 
-    _MAX_STAGE_ATTEMPTS = 2
+    Column shape: ``{"disabled": bool, "entries": [...]}``
+    (``reference_example_record_json``).
+    """
 
     def __init__(
         self,
@@ -146,62 +228,33 @@ class ReferenceExampleRecordRecorder:
         loop: asyncio.AbstractEventLoop,
         session_factory: Any,
         disabled: bool = False,
+        attempt: int = 1,
+        prior_entries: list[dict[str, Any]] | None = None,
     ) -> None:
-        self._generation_log_id = generation_log_id
-        self._loop = loop
-        self._session_factory = session_factory
-        self._disabled = disabled
-        self._lock = threading.Lock()
-        self._write_lock = asyncio.Lock()
-        self._entries: list[dict[str, Any]] = []
+        _disabled = disabled
+
+        def _render(entries: list[dict[str, Any]]) -> dict[str, Any]:
+            return {"disabled": _disabled, "entries": entries}
+
+        self._stager = _IncrementalTrailStager(
+            generation_log_id=generation_log_id,
+            loop=loop,
+            session_factory=session_factory,
+            column_name="reference_example_record_json",
+            render_column_value=_render,
+            attempt=attempt,
+            prior_entries=prior_entries,
+        )
 
     def __call__(self, entry: Any) -> None:
-        payload = entry.model_dump(mode="json") if hasattr(entry, "model_dump") else entry
-        with self._lock:
-            self._entries.append(payload)
-            snapshot = list(self._entries)
-            self._stage_snapshot(snapshot)
+        self._stager.add_entry(entry)
 
     def snapshot(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return list(self._entries)
-
-    def _stage_snapshot(self, entries: list[dict[str, Any]]) -> None:
-        future = asyncio.run_coroutine_threadsafe(
-            self._persist_with_retries(entries),
-            self._loop,
-        )
-        try:
-            future.result(timeout=10)
-        except Exception as exc:  # noqa: BLE001 — persistence is best effort
-            logger.warning("reference example record staging deferred: %s", exc)
+        return self._stager.snapshot()
 
     async def flush(self) -> None:
         """Retry the latest snapshot after all workers have stopped emitting."""
-        snapshot = self.snapshot()
-        if not snapshot:
-            return
-        await self._persist_with_retries(snapshot)
-
-    async def _persist_with_retries(self, entries: list[dict[str, Any]]) -> None:
-        async with self._write_lock:
-            for attempt in range(self._MAX_STAGE_ATTEMPTS):
-                try:
-                    await self._persist(entries)
-                    return
-                except Exception as exc:  # noqa: BLE001 — persistence is best effort
-                    if attempt == self._MAX_STAGE_ATTEMPTS - 1:
-                        logger.warning("reference example record staging failed: %s", exc)
-
-    async def _persist(self, entries: list[dict[str, Any]]) -> None:
-        record = {"disabled": self._disabled, "entries": entries}
-        async with self._session_factory() as session:
-            await session.execute(
-                update(GenerationLog)
-                .where(GenerationLog.id == self._generation_log_id)
-                .values(reference_example_record_json=record)
-            )
-            await session.commit()
+        await self._stager.flush()
 
 
 def make_reference_example_record_recorder(
@@ -210,12 +263,20 @@ def make_reference_example_record_recorder(
     loop: asyncio.AbstractEventLoop,
     session_factory: Any,
     disabled: bool = False,
+    attempt: int = 1,
+    prior_entries: list[dict[str, Any]] | None = None,
 ) -> ReferenceExampleRecordRecorder | None:
-    """Create the incremental recorder, or disable it for log-less runs."""
+    """Create the incremental recorder, or disable it for log-less runs.
+
+    *attempt* defaults to ``1``; existing call sites need not change.
+    *prior_entries* carries entries staged by earlier attempts so that a
+    recovery run keeps them all in the column.
+    """
     if generation_log_id is None:
         return None
     return ReferenceExampleRecordRecorder(
-        generation_log_id, loop, session_factory, disabled=disabled
+        generation_log_id, loop, session_factory,
+        disabled=disabled, attempt=attempt, prior_entries=prior_entries,
     )
 
 

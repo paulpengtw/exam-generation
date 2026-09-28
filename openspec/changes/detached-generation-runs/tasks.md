@@ -12,7 +12,7 @@
 - [ ] 2.2 Add migrations that give `generation_status` the values `queued`, `running` and `cancelled`, each with `ALTER TYPE … ADD VALUE` in its own transaction. Update `GenerationStatus` and `tests/server/test_db_models.py`. Verify: the enum test and a Postgres-marked migration test pass.
 - [ ] 2.3 Add a migration adding `generation_logs` columns `heartbeat_at`, `attempts`, `claimed_by`, `started_at`, `cancel_requested`, `submission_key`, with a unique constraint on `(user_id, submission_key)`. Verify: the migration round-trips on Postgres, and the 人工審題修正 route tests still pass.
 - [ ] 2.4 Add a migration and model for `generation_question_states`. Columns: identity, `index`, `processing`, `current_step`, `termination_reason`, `terminal_json`, `generation_record_id`, `error`, `updated_at`. Add a unique constraint on `(generation_log_id, question_id)`. Verify: model tests pass, and an exactly-once update (`WHERE termination_reason IS NULL`) test passes on Postgres.
-- [ ] 2.5 Unify `FigurePolicyTrailRecorder` and `ReferenceExampleRecordRecorder` behind one incremental stager parameterised by column. Add the `attempt` field to entries. Verify: the existing trail persistence tests pass, plus a new test showing entries tagged by attempt.
+- [x] 2.5 Unify `FigurePolicyTrailRecorder` and `ReferenceExampleRecordRecorder` behind one incremental stager parameterised by column. Add the `attempt` field to entries. Verify: the existing trail persistence tests pass, plus a new test showing entries tagged by attempt.
 
 ## 3. 生成執行 module (slice 3, backend)
 
