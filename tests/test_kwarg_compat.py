@@ -11,12 +11,8 @@ Acceptance criteria (issue #856):
 from __future__ import annotations
 
 import functools
-from unittest.mock import MagicMock
-
-import pytest
 
 from src.common.kwarg_compat import accepts_kwarg
-
 
 # ---------------------------------------------------------------------------
 # Four core cases
@@ -101,7 +97,7 @@ def test_nested_binding_does_not_pass_scope_twice() -> None:
     before forwarding.  Applying _scoped_callback twice must result in exactly
     one scope reaching the leaf callback.
     """
-    from src.common.generation_core import _callback_with_optional_scope, _scoped_callback
+    from src.common.generation_core import _scoped_callback
     from src.common.generation_events import QuestionContext, new_operation_scope
 
     received: list[object] = []
