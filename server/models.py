@@ -5,11 +5,33 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
-GenerationStatus = Enum("started", "completed", "failed", name="generation_status")
+# queued / running / cancelled belong to the detached 生成執行 lifecycle
+# (openspec detached-generation-runs D7). "started" remains for 人工審題修正 logs.
+GenerationStatus = Enum(
+    "started",
+    "completed",
+    "failed",
+    "queued",
+    "running",
+    "cancelled",
+    name="generation_status",
+)
 GenerationRecordStatus = Enum(
     "completed", "failed", "aborted", name="generation_record_status"
 )
@@ -47,6 +69,11 @@ class MagicLinkToken(Base):
 
 class GenerationLog(Base):
     __tablename__ = "generation_logs"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "submission_key", name="uq_generation_logs_user_submission_key"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -62,8 +89,50 @@ class GenerationLog(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     figure_policy_trail_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     reference_example_record_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # 生成執行 claim state (detached-generation-runs D5/D7).
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    claimed_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    submission_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="generation_logs")
+
+
+class GenerationQuestionState(Base):
+    """Persisted 處理狀態 of one manifest question of a 生成執行."""
+
+    __tablename__ = "generation_question_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "generation_log_id",
+            "question_id",
+            name="uq_generation_question_states_log_question",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    generation_log_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("generation_logs.id"), nullable=False, index=True
+    )
+    question_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    index: Mapped[int] = mapped_column(Integer, nullable=False)
+    processing: Mapped[str] = mapped_column(String(20), nullable=False, default="waiting")
+    current_step: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    terminal_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    generation_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("generation_records.id"), nullable=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class GenerationRecord(Base):

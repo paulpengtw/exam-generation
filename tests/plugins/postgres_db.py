@@ -156,15 +156,18 @@ def pg_engine():
     import asyncio
 
     from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
 
+    # NullPool: each test drives the engine from its own asyncio.run() loop, and
+    # an asyncpg connection pooled on one loop cannot be reused on another.
     url = os.environ.get(_ENV_VAR)
     if url:
-        engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+        engine = create_async_engine(url, echo=False, poolclass=NullPool)
     elif _PGSERVER_URL and _PGSERVER_CONNECT_ARGS:
         engine = create_async_engine(
             _PGSERVER_URL,
             echo=False,
-            pool_pre_ping=True,
+            poolclass=NullPool,
             connect_args=_PGSERVER_CONNECT_ARGS,
         )
     else:

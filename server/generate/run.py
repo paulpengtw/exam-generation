@@ -1,0 +1,579 @@
+"""The detached 生成執行 (generation run): 受理, host-loop execution and reads.
+
+A run exists from 受理 until every manifest question has a 終止原因, whether or
+not anyone is watching (openspec change ``detached-generation-runs``; ADR 0033,
+ADR 0034).  The module's entry points are:
+
+``accept_run``
+    Durably record the run (``queued``) and one waiting 處理狀態 row per
+    manifest question, and return the run identity and manifest.
+``read_run``
+    Owner-only read of the persisted run state, per question.
+``claim_next_run``
+    Claim the oldest eligible queued run with ``FOR UPDATE SKIP LOCKED``.
+``run_host_loop``
+    Claim and execute runs until stopped.  The backend's lifespan and
+    ``python -m server.worker`` both call this one function (ADR 0034).
+
+Execution reuses ``generate_question_stream`` as an in-process event bus: the
+host is its only consumer, so no observer can close it, and each event is
+translated into persisted per-question state.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import dataclasses
+import logging
+import os
+import socket
+import uuid
+from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
+
+from server.config import ServerConfig
+from server.db import AsyncSessionLocal
+from server.generate.event_protocol import QuestionTerminalPayload
+from server.generate.marshalling import SSEEventName, embed_image_base64
+from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams
+from server.generate.persistence import persist_failed_generation_record
+from server.generate.service import generate_question_stream
+from server.generate.subjects import SUBJECTS, SubjectSpec
+from server.models import GenerationLog, GenerationQuestionState, GenerationRecord
+from src.common.generation_events import allocate_manifest
+
+logger = logging.getLogger(__name__)
+
+RUN_PROTOCOL_VERSION = 3
+HEARTBEAT_INTERVAL_S = 30.0
+IDLE_INTERVAL_S = 2.0
+
+# Statuses a 生成執行 moves through; 人工審題修正 logs stay "started" and never
+# enter this set, so the claim cannot pick them up.
+UNFINISHED_RUN_STATUSES = ("queued", "running")
+
+Clock = Callable[[], datetime]
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def default_host_id() -> str:
+    """Identify this host process in ``generation_logs.claimed_by``."""
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
+# ---------------------------------------------------------------------------
+# 受理
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class AcceptedRun:
+    run_id: str
+    total: int
+    questions: list[dict[str, Any]]
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "protocol_version": RUN_PROTOCOL_VERSION,
+            "total": self.total,
+            "questions": self.questions,
+        }
+
+
+async def accept_run(
+    params: GenerateParams,
+    user_id: uuid.UUID,
+    *,
+    session: AsyncSession,
+) -> AcceptedRun:
+    """Record a queued run and its waiting questions in one transaction."""
+    log_id = uuid.uuid4()
+    manifest = allocate_manifest(
+        SUBJECTS[params.subject].question_id_prefix, str(log_id), max(1, params.count)
+    )
+    session.add(
+        GenerationLog(
+            id=log_id,
+            user_id=user_id,
+            params_json=params.model_dump(mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)),
+            status="queued",
+            # Queue order while queued; the first claim restamps it as the
+            # execution start that the time limit is measured from.
+            started_at=_utcnow(),
+        )
+    )
+    session.add_all(
+        GenerationQuestionState(
+            generation_log_id=log_id,
+            question_id=question.question_id,
+            index=question.index,
+            processing="waiting",
+        )
+        for question in manifest
+    )
+    await session.commit()
+    return AcceptedRun(
+        run_id=str(log_id),
+        total=len(manifest),
+        questions=[
+            {"index": question.index, "question_id": question.question_id}
+            for question in manifest
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Owner read
+# ---------------------------------------------------------------------------
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+async def read_run(
+    run_id: str | uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    session: AsyncSession,
+    config: ServerConfig,
+) -> dict[str, Any] | None:
+    """Return the owner's persisted run state, or None when absent or not theirs."""
+    try:
+        log_id = run_id if isinstance(run_id, uuid.UUID) else uuid.UUID(str(run_id))
+    except ValueError:
+        return None
+    log = (
+        await session.execute(
+            select(GenerationLog).where(
+                GenerationLog.id == log_id, GenerationLog.user_id == user_id
+            )
+        )
+    ).scalar_one_or_none()
+    if log is None:
+        return None
+    states = (
+        await session.execute(
+            select(GenerationQuestionState)
+            .where(GenerationQuestionState.generation_log_id == log_id)
+            .order_by(GenerationQuestionState.index)
+        )
+    ).scalars().all()
+    if not states:
+        # Not a 生成執行 (a pre-detached log or a 人工審題修正 log).
+        return None
+    record_ids = [s.generation_record_id for s in states if s.generation_record_id]
+    records = {
+        record.id: record
+        for record in (
+            await session.execute(
+                select(GenerationRecord).where(GenerationRecord.id.in_(record_ids))
+            )
+        ).scalars().all()
+    } if record_ids else {}
+
+    questions = []
+    for state in states:
+        record = records.get(state.generation_record_id)
+        result = None
+        if record is not None and record.question_json is not None:
+            result = {
+                "record_id": str(record.id),
+                "question": await asyncio.to_thread(
+                    embed_image_base64, record.question_json, config
+                ),
+                "verification_trail": record.verification_trail_json,
+                "figure_policy_trail": record.figure_policy_trail_json,
+                "reference_example_record": record.reference_example_record_json,
+            }
+        questions.append({
+            "index": state.index,
+            "question_id": state.question_id,
+            "processing": state.processing,
+            "current_step": state.current_step,
+            "termination_reason": state.termination_reason,
+            "terminal": state.terminal_json,
+            "error": state.error,
+            "result": result,
+        })
+    return {
+        "run_id": str(log.id),
+        "status": log.status,
+        "subject": log.params_json.get("subject"),
+        "total": len(states),
+        "started_at": _iso(log.started_at),
+        "completed_at": _iso(log.completed_at),
+        "error": log.error,
+        "questions": questions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Claim
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class ClaimedRun:
+    run_id: uuid.UUID
+    user_id: uuid.UUID
+    params_json: dict[str, Any]
+    attempt: int
+
+
+async def claim_next_run(
+    session_factory: Any,
+    *,
+    host_id: str,
+    now: datetime | None = None,
+) -> ClaimedRun | None:
+    """Claim the oldest queued run whose owner has no run executing.
+
+    ``FOR UPDATE SKIP LOCKED`` lets concurrent hosts claim different runs
+    without blocking each other; SQLite ignores the clause.
+    """
+    claimed_at = now if now is not None else _utcnow()
+    running = aliased(GenerationLog)
+    owner_is_running = (
+        select(running.id)
+        .where(running.user_id == GenerationLog.user_id, running.status == "running")
+        .exists()
+    )
+    async with session_factory() as session:
+        log = (
+            await session.execute(
+                select(GenerationLog)
+                .where(GenerationLog.status == "queued", ~owner_is_running)
+                .order_by(GenerationLog.started_at, GenerationLog.id)
+                .limit(1)
+                .with_for_update(skip_locked=True)
+            )
+        ).scalar_one_or_none()
+        if log is None:
+            await session.rollback()
+            return None
+        if log.attempts == 0:
+            log.started_at = claimed_at
+        log.attempts += 1
+        log.status = "running"
+        log.claimed_by = host_id
+        log.heartbeat_at = claimed_at
+        claimed = ClaimedRun(
+            run_id=log.id,
+            user_id=log.user_id,
+            params_json=dict(log.params_json),
+            attempt=log.attempts,
+        )
+        await session.commit()
+    return claimed
+
+
+# ---------------------------------------------------------------------------
+# Persisted per-question state
+# ---------------------------------------------------------------------------
+
+
+def _step_for_stage(payload: Mapping[str, Any]) -> str | None:
+    """Map an agent stage event to its 生成步驟 (text/subquestions/image/verify/correct)."""
+    stage = str(payload.get("stage") or "")
+    agent = str(payload.get("agent") or "")
+    if agent.startswith("sub_generator#") or stage == "subquestion":
+        return "subquestions"
+    if agent == "image_agent" or "image" in stage:
+        return "image"
+    if agent == "verifier" or stage == "verify":
+        return "verify"
+    if agent == "corrector" or stage == "correct":
+        return "correct"
+    if agent in ("generator", "execute") or stage in ("llm_generate", "generate"):
+        return "text"
+    return None
+
+
+def _unfinished_terminal(reason: str) -> dict[str, Any]:
+    """A failed terminal for a question that ended without its own terminal."""
+    payload = {
+        "termination_reason": "failed",
+        "has_final": False,
+        "final_revision": None,
+        "delivery_status": "unknown",
+        "expected": [],
+        "delivered": [],
+        "missing": [],
+        "review": {"status": "unknown", "reason": "no final content"},
+        "unknown_reason": reason,
+    }
+    QuestionTerminalPayload.model_validate(payload)
+    return payload
+
+
+class _QuestionStateRecorder:
+    """Translate bus events into persisted 處理狀態, 生成步驟 and 終止原因."""
+
+    def __init__(self, run_id: uuid.UUID, session_factory: Any) -> None:
+        self._run_id = run_id
+        self._sessions = session_factory
+        self._steps: dict[str, str] = {}
+
+    async def observe(self, event: Mapping[str, Any]) -> None:
+        name = event.get("event")
+        context = event.get("context") or {}
+        payload = event.get("payload") or {}
+        question_id = context.get("question_id")
+        if not isinstance(question_id, str):
+            return
+        if name == SSEEventName.QUESTION_TERMINAL:
+            await self._record_terminal(question_id, payload)
+        elif name == SSEEventName.ERROR:
+            message = payload.get("message") if isinstance(payload, dict) else None
+            await self._update_unfinished(question_id, error=str(message or payload))
+        elif name == SSEEventName.PIPELINE and payload.get("event_name") == "question_start":
+            await self._update_unfinished(question_id, processing="running")
+        elif name == SSEEventName.STAGE and payload.get("status") == "start":
+            step = _step_for_stage(payload)
+            if step is not None and self._steps.get(question_id) != step:
+                self._steps[question_id] = step
+                await self._update_unfinished(
+                    question_id, processing="running", current_step=step
+                )
+
+    async def _update_unfinished(self, question_id: str, **values: Any) -> None:
+        async with self._sessions() as session:
+            await session.execute(
+                update(GenerationQuestionState)
+                .where(
+                    GenerationQuestionState.generation_log_id == self._run_id,
+                    GenerationQuestionState.question_id == question_id,
+                    GenerationQuestionState.termination_reason.is_(None),
+                )
+                .values(**values, updated_at=_utcnow())
+            )
+            await session.commit()
+
+    async def _record_terminal(self, question_id: str, terminal: Mapping[str, Any]) -> None:
+        """Write the 終止原因 once: the first recorded outcome stands."""
+        async with self._sessions() as session:
+            record_id = None
+            if terminal.get("has_final"):
+                record_id = (
+                    await session.execute(
+                        select(GenerationRecord.id)
+                        .where(
+                            GenerationRecord.generation_log_id == self._run_id,
+                            GenerationRecord.question_id == question_id,
+                            GenerationRecord.status == "completed",
+                        )
+                        .order_by(GenerationRecord.created_at.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+            await session.execute(
+                update(GenerationQuestionState)
+                .where(
+                    GenerationQuestionState.generation_log_id == self._run_id,
+                    GenerationQuestionState.question_id == question_id,
+                    GenerationQuestionState.termination_reason.is_(None),
+                )
+                .values(
+                    processing="ended",
+                    current_step=None,
+                    termination_reason=terminal.get("termination_reason"),
+                    terminal_json=dict(terminal),
+                    generation_record_id=record_id,
+                    updated_at=_utcnow(),
+                )
+            )
+            await session.commit()
+
+    async def fail_unfinished(self, reason: str) -> None:
+        """End every question still without a 終止原因 as failed with *reason*."""
+        async with self._sessions() as session:
+            await session.execute(
+                update(GenerationQuestionState)
+                .where(
+                    GenerationQuestionState.generation_log_id == self._run_id,
+                    GenerationQuestionState.termination_reason.is_(None),
+                )
+                .values(
+                    processing="ended",
+                    current_step=None,
+                    termination_reason="failed",
+                    terminal_json=_unfinished_terminal(reason),
+                    updated_at=_utcnow(),
+                )
+            )
+            await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Execution
+# ---------------------------------------------------------------------------
+
+
+async def _heartbeat(
+    run_id: uuid.UUID,
+    host_id: str,
+    session_factory: Any,
+    *,
+    interval: float,
+    clock: Clock,
+) -> None:
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with session_factory() as session:
+                await session.execute(
+                    update(GenerationLog)
+                    .where(GenerationLog.id == run_id, GenerationLog.claimed_by == host_id)
+                    .values(heartbeat_at=clock())
+                )
+                await session.commit()
+        except Exception as exc:  # noqa: BLE001 — a missed beat must not stop the run
+            logger.warning("run heartbeat failed for %s: %s", run_id, type(exc).__name__)
+
+
+async def execute_run(
+    claimed: ClaimedRun,
+    *,
+    app_state: Any,
+    config: ServerConfig,
+    session_factory: Any,
+    host_id: str,
+    client_factory: Callable[..., Any] | None = None,
+    subjects: Mapping[str, SubjectSpec] | None = None,
+    heartbeat_interval: float = HEARTBEAT_INTERVAL_S,
+    clock: Clock = _utcnow,
+) -> None:
+    """Execute one claimed run to the end and persist its outcome."""
+    recorder = _QuestionStateRecorder(claimed.run_id, session_factory)
+    heartbeat = asyncio.create_task(
+        _heartbeat(
+            claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock
+        )
+    )
+    status = "completed"
+    error: str | None = None
+    params: GenerateParams | None = None
+    try:
+        params = GenerateParams.model_validate(claimed.params_json)
+        async for event in generate_question_stream(
+            params,
+            config,
+            app_state,
+            user_id=claimed.user_id,
+            generation_log_id=claimed.run_id,
+            subjects=subjects,
+            session_factory=session_factory,
+            client_factory=client_factory,
+        ):
+            if event.get("event") == SSEEventName.ERROR:
+                status = "failed"
+                payload = event.get("payload")
+                error = (
+                    payload.get("message", str(payload))
+                    if isinstance(payload, dict)
+                    else str(payload)
+                )
+            await recorder.observe(event)
+    except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
+        status = "failed"
+        error = f"Run execution failed ({type(exc).__name__})"
+        logger.exception("generation run %s failed", claimed.run_id)
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
+
+    await recorder.fail_unfinished(error or "question ended without a terminal")
+    if status == "failed" and params is not None:
+        await persist_failed_generation_record(
+            user_id=claimed.user_id,
+            generation_log_id=claimed.run_id,
+            subject=params.subject,
+            params=params,
+            error=error or "Generation failed",
+            session_factory=session_factory,
+        )
+    async with session_factory() as session:
+        await session.execute(
+            update(GenerationLog)
+            .where(GenerationLog.id == claimed.run_id)
+            .values(status=status, error=error, completed_at=clock())
+        )
+        await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Host loop
+# ---------------------------------------------------------------------------
+
+
+async def run_host_loop(
+    stop_event: asyncio.Event,
+    *,
+    app_state: Any,
+    config: ServerConfig,
+    session_factory: Any = None,
+    client_factory: Callable[..., Any] | None = None,
+    subjects: Mapping[str, SubjectSpec] | None = None,
+    host_id: str | None = None,
+    max_concurrent_runs: int | None = None,
+    idle_interval: float = IDLE_INTERVAL_S,
+    heartbeat_interval: float = HEARTBEAT_INTERVAL_S,
+    clock: Clock = _utcnow,
+) -> None:
+    """Claim and execute runs until *stop_event* is set.
+
+    Claims only while fewer than ``max_concurrent_runs`` runs execute here.  On
+    stop, runs already executing are awaited so an orderly shutdown lets them
+    finish within the platform's drain window.
+    """
+    sessions = session_factory if session_factory is not None else AsyncSessionLocal
+    host = host_id or default_host_id()
+    limit = max(
+        1,
+        max_concurrent_runs
+        if max_concurrent_runs is not None
+        else config.generation_host_concurrency,
+    )
+    active: set[asyncio.Task[None]] = set()
+    try:
+        while not stop_event.is_set():
+            claimed = None
+            if len(active) < limit:
+                try:
+                    claimed = await claim_next_run(sessions, host_id=host, now=clock())
+                except Exception as exc:  # noqa: BLE001 — keep the host alive
+                    logger.warning("run claim failed: %s", type(exc).__name__)
+            if claimed is not None:
+                task = asyncio.create_task(
+                    execute_run(
+                        claimed,
+                        app_state=app_state,
+                        config=config,
+                        session_factory=sessions,
+                        host_id=host,
+                        client_factory=client_factory,
+                        subjects=subjects,
+                        heartbeat_interval=heartbeat_interval,
+                        clock=clock,
+                    )
+                )
+                active.add(task)
+                task.add_done_callback(active.discard)
+                continue
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), timeout=idle_interval)
+    finally:
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)

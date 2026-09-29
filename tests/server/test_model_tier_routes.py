@@ -31,6 +31,7 @@ from server.rate_limit import limiter
 from src.social_studies.schemas import ExamQuestion
 from tests.server.generate_test_utils import (
     complete_math_query_params,
+    fake_acceptance,
     resolved_generate_params,
 )
 
@@ -115,10 +116,10 @@ def test_generate_route_rejects_off_roster_model_verify_with_422() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -127,7 +128,7 @@ def test_generate_route_rejects_off_roster_model_verify_with_422() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -155,10 +156,10 @@ def test_generate_route_rejects_off_roster_model_correct_with_422() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -167,7 +168,7 @@ def test_generate_route_rejects_off_roster_model_correct_with_422() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -206,10 +207,10 @@ def test_generate_route_rejects_verify_model_with_missing_provider_key() -> None
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -220,7 +221,7 @@ def test_generate_route_rejects_verify_model_with_missing_provider_key() -> None
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -245,10 +246,10 @@ def test_generate_route_absent_tier_params_do_not_change_existing_behavior() -> 
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -257,11 +258,11 @@ def test_generate_route_absent_tier_params_do_not_change_existing_behavior() -> 
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].model_verify is None
     assert captured["params"].model_correct is None
 

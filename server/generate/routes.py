@@ -1,4 +1,4 @@
-"""Generate routes — JSON body and legacy GET transports for previews and SSE."""
+"""Generate routes — previews, resolve, detached-run submission and run reads."""
 
 from __future__ import annotations
 
@@ -8,22 +8,17 @@ import functools
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
-import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sse_starlette.sse import EventSourceResponse
 
 from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
-from server.db import AsyncSessionLocal, get_async_session
-from server.generate.drain import get_drain
+from server.db import get_async_session
 from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
 from server.generate.models import (
     ALLOWED_SUBJECTS,
@@ -35,14 +30,10 @@ from server.generate.models import (
     PlanCoreQuestionsResponse,
     ResolveRequest,
     ResolveResponse,
-    build_sse_error,
-)
-from server.generate.persistence import (
-    persist_aborted_generation_record,
-    persist_failed_generation_record,
 )
 from server.generate.release_authority import check_build_admission
-from server.generate.service import build_prompt_previews, generate_question_stream
+from server.generate.run import accept_run, read_run
+from server.generate.service import build_prompt_previews
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
@@ -180,26 +171,6 @@ async def resolve_generate_endpoint(
     return ResolveResponse(payload=result.payload, drawn=result.drawn, cleared=result.cleared)
 
 
-def _serialize_event(event: dict[str, Any]) -> dict[str, Any]:
-    """Convert internal event dict to sse_starlette ServerSentEvent fields.
-
-    Supports both v1 events ({event, data}) and v2 envelopes (dual-key: top-level
-    "event" plus {context, payload}).  V2 envelopes serialize the full envelope as
-    JSON in the data field so the client receives the context+payload structure.
-    """
-    if "context" in event:
-        # v2 envelope: includes both top-level "event" and context/payload structure.
-        event_name = event.get("event") or event["context"].get("event", "unknown")
-        # Serialize full envelope (context + payload) so client gets v2 metadata.
-        envelope_for_wire = {"context": event["context"], "payload": event.get("payload", {})}
-        data = json.dumps(envelope_for_wire, ensure_ascii=False)
-        return {"event": event_name, "data": data}
-    data = event.get("data", "")
-    if not isinstance(data, str):
-        data = json.dumps(data, ensure_ascii=False)
-    return {"event": event["event"], "data": data}
-
-
 def _check_model_allowed(model: str | None, config: ServerConfig, field: str) -> None:
     """Raise HTTPException(422) when a submitted model is outside the allowlist."""
     if not model:
@@ -287,7 +258,7 @@ def _check_provider_key_for_model(model: str, config: ServerConfig, field: str) 
         )
 
 
-@router.get("/generate")
+@router.get("/generate", status_code=202)
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_endpoint(
     request: Request,
@@ -338,16 +309,12 @@ async def generate_endpoint(
     effort_verify: str | None = Query(default=None),   # #377: per-request tier effort override
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
-    stream_version: int | None = Query(default=None),  # #742: stream protocol version gate
+    stream_version: int | None = Query(default=None),  # submission protocol version gate
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
-) -> EventSourceResponse:
-    """Stream question generation events as Server-Sent Events.
-
-    Logs the request to `generation_log` at start and updates the row to
-    `completed` or `failed` when the stream ends.
-    """
+) -> JSONResponse:
+    """Query-string spelling of ``POST /api/generate``: the same 受理, no stream."""
     try:
         # FastAPI has already type-checked the query fields. Keep configuration
         # admission ahead of subject-specific validation, as on the legacy route.
@@ -421,10 +388,10 @@ async def generate_endpoint(
             [str(e["loc"]) for e in exc.errors()],
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await _generate(request, params, user, session, config)
+    return await _accept(params, user, session)
 
 
-@router.post("/generate")
+@router.post("/generate", status_code=202)
 @limiter.limit("10/hour", key_func=jwt_user_key)
 async def generate_body_endpoint(
     request: Request,
@@ -432,7 +399,12 @@ async def generate_body_endpoint(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
-) -> EventSourceResponse:
+) -> JSONResponse:
+    """Record 受理 for a detached 生成執行 and return its identity and manifest.
+
+    The run executes on a host loop (``server.generate.run``); progress and
+    results are read from ``GET /api/runs/{run_id}``.
+    """
     if params.stream_version is None or params.stream_version not in SUPPORTED_STREAM_VERSIONS:
         return JSONResponse(status_code=426, content=client_update_required_body())
     if resp := await check_build_admission(
@@ -442,7 +414,30 @@ async def generate_body_endpoint(
     ):
         return resp
     _check_generation_admission(params, config)
-    return await _generate(request, params, user, session, config)
+    return await _accept(params, user, session)
+
+
+async def _accept(params: GenerateParams, user: User, session: AsyncSession) -> JSONResponse:
+    params = _require_complete_generate_params(params)
+    logger.info("generate request params=%s", params.model_dump(mode="json"))
+    accepted = await accept_run(params, user.id, session=session)
+    return JSONResponse(status_code=202, content=accepted.to_response())
+
+
+@router.get("/runs/{run_id}")
+@limiter.limit("120/minute", key_func=jwt_user_key)
+async def read_run_endpoint(
+    request: Request,
+    run_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+    config: ServerConfig = Depends(get_config),
+) -> dict[str, Any]:
+    """Return the owner's persisted run state; 404 for anyone else (existence-hiding)."""
+    snapshot = await read_run(run_id, user.id, session=session, config=config)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return snapshot
 
 
 def _check_generation_admission(params: GenerateParams, config: ServerConfig) -> None:
@@ -480,125 +475,6 @@ def _check_generation_admission(params: GenerateParams, config: ServerConfig) ->
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
     _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
-
-
-async def _generate(
-    request: Request,
-    params: GenerateParams,
-    user: User,
-    session: AsyncSession,
-    config: ServerConfig,
-) -> EventSourceResponse:
-    params = _require_complete_generate_params(params)
-    logger.info("generate request params=%s", params.model_dump(mode="json"))
-
-    log = GenerationLog(
-        user_id=user.id,
-        params_json=params.model_dump(mode="json"),
-        status="started",
-    )
-    session.add(log)
-    await session.commit()
-    await session.refresh(log)
-    log_id = log.id
-
-    app_state = request.app.state
-
-    async def event_generator() -> AsyncIterator[dict[str, Any]]:
-        status = "completed"
-        error_msg: str | None = None
-        failed_record_written = False
-        aborted_record_written = False
-
-        async def persist_failure_once(message: str) -> None:
-            nonlocal failed_record_written
-            if failed_record_written:
-                return
-            failed_record_written = True
-            await persist_failed_generation_record(
-                user_id=user.id,
-                generation_log_id=log_id,
-                subject=params.subject,
-                params=params,
-                error=message,
-                session_factory=AsyncSessionLocal,
-            )
-
-        async def persist_aborted_once() -> None:
-            nonlocal aborted_record_written
-            if aborted_record_written or status == "failed":
-                return
-            aborted_record_written = True
-            await persist_aborted_generation_record(
-                user_id=user.id,
-                generation_log_id=log_id,
-                subject=params.subject,
-                params=params,
-                session_factory=AsyncSessionLocal,
-            )
-
-        _drain = get_drain(app_state)
-        _drain._inc("_open_streams")
-        stream = generate_question_stream(
-            params,
-            config,
-            app_state,
-            user_id=user.id,
-            generation_log_id=log_id,
-            session_factory=AsyncSessionLocal,
-        )
-        try:
-            async for event in stream:
-                if event.get("event") == "error":
-                    status = "failed"
-                    # v2 envelopes use "payload"; fall back to v1 "data" for compat.
-                    data = event.get("payload", event.get("data", ""))
-                    error_msg = (
-                        data.get("message", str(data)) if isinstance(data, dict) else str(data)
-                    )
-                yield _serialize_event(event)
-            if status == "failed":
-                await persist_failure_once(error_msg or "Generation failed")
-        except asyncio.CancelledError:
-            with anyio.CancelScope(shield=True):
-                try:
-                    await stream.aclose()
-                finally:
-                    if status == "failed":
-                        await persist_failure_once(error_msg or "Generation failed")
-                    else:
-                        await persist_aborted_once()
-            raise
-        except Exception as exc:
-            status = "failed"
-            error_payload = build_sse_error(
-                "stream_failed",
-                f"Stream error ({type(exc).__name__})",
-            )
-            error_msg = error_payload["message"]
-            logger.exception("generate_endpoint stream error")
-            await persist_failure_once(error_msg)
-            yield _serialize_event({"event": "error", "data": error_payload})
-            yield {"event": "done", "data": ""}
-        finally:
-            with anyio.CancelScope(shield=True):
-                async with AsyncSessionLocal() as s:
-                    await s.execute(
-                        update(GenerationLog)
-                        .where(GenerationLog.id == log_id)
-                        .values(
-                            status=status,
-                            error=error_msg,
-                            completed_at=datetime.now(timezone.utc),
-                        )
-                    )
-                    await s.commit()
-            _drain._dec("_open_streams")
-
-    return EventSourceResponse(
-        event_generator(),
-        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
-    )
 
 
 @router.post("/plan-core-questions", response_model=PlanCoreQuestionsResponse)

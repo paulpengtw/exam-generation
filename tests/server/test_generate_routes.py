@@ -30,13 +30,14 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, GenerationLog, GenerationRecord, User
 from server.rate_limit import limiter
+from tests.server.generate_test_utils import fake_acceptance
 from src.common.resolver import resolve
 
 
 def _complete_query_params(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode a resolver-complete payload for the GET route's wire shape."""
     completed = dict(resolve(payload).payload)
-    completed["stream_version"] = 2
+    completed["stream_version"] = 3
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:
@@ -83,7 +84,7 @@ def test_generate_route_rejects_unresolved_top_level_field() -> None:
                     "learning_content": "A-7-7",
                     "learning_performance": "s-IV-12",
                     "core_competency": "數-J-A2",
-                    "stream_version": 2,
+                    "stream_version": 3,
                 },
             )
     finally:
@@ -137,7 +138,7 @@ def test_generate_route_rejects_unresolved_per_question_field() -> None:
                     "subject": "math",
                     "seed": 41,
                     "count": 2,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "per_question_params": json.dumps(rows, ensure_ascii=False),
                 },
             )
@@ -186,7 +187,7 @@ def test_generate_route_rejects_unresolved_subquestion_field() -> None:
                     "subject": "natural_sciences",
                     "seed": 41,
                     "grade": 8,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "context": "Personal",
                     "sub_context": "Maintenance of health",
                     "set_type": "題組題",
@@ -326,7 +327,7 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
                     "subject": "natural_sciences",
                     "seed": 1,
                     "grade": 8,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "context": "Global",
                     "sub_context": "Maintenance of health",
                     "set_type": "單一題",
@@ -377,7 +378,7 @@ def test_generate_and_preview_reject_the_empty_narrowed_civic_domain(route: str)
                     "set_type": "題組題",
                     "subject_filter": "公民與社會",
                     "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
-                    "stream_version": 2,
+                    "stream_version": 3,
                 },
             )
     finally:
@@ -426,7 +427,7 @@ def _accept_narrowed_payload_via_route(
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     def fake_previews(params, *_args, **_kwargs):
         return []
@@ -435,9 +436,9 @@ def _accept_narrowed_payload_via_route(
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
-    original_stream = gen_routes.generate_question_stream
+    original_stream = gen_routes.accept_run
     original_previews = gen_routes.build_prompt_previews
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
     limiter.reset()
 
@@ -447,7 +448,7 @@ def _accept_narrowed_payload_via_route(
             response = client.get(route, params=query)
             re_resolved = client.post("/api/generate/resolve", json=query)
     finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.accept_run = original_stream  # type: ignore[assignment]
         gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
@@ -501,7 +502,7 @@ def test_generate_and_preview_accept_the_834_narrowed_reproductions(
     """
     status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
 
-    assert status_code == 200
+    assert status_code == 202
     assert re_resolved["drawn"] == []
     assert re_resolved["cleared"] == []
 
@@ -528,7 +529,7 @@ def test_generate_and_preview_accept_the_row_pinned_civic_content(route: str) ->
 
     status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
 
-    assert status_code == 200
+    assert status_code == 202
     assert re_resolved["payload"]["subject_filter"][0] in {"公民與社會", "跨科"}
     assert re_resolved["payload"]["content_domain"] == "Civic Roles and Identities"
     assert re_resolved["drawn"] == []
@@ -569,7 +570,7 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["generate"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     def fake_previews(params, *_args, **_kwargs):
         captured["preview"] = params
@@ -579,9 +580,9 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
-    original_stream = gen_routes.generate_question_stream
+    original_stream = gen_routes.accept_run
     original_previews = gen_routes.build_prompt_previews
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
     limiter.reset()
     try:
@@ -611,16 +612,16 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
                 if value is not None
             }
 
-            wire_payload["stream_version"] = 2
+            wire_payload["stream_version"] = 3
             generate_response = client.get("/api/generate", params=wire_payload)
             preview_response = client.get("/api/generate/preview", params=wire_payload)
     finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.accept_run = original_stream  # type: ignore[assignment]
         gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert generate_response.status_code == 200, generate_response.text
+    assert generate_response.status_code == 202, generate_response.text
     assert preview_response.status_code == 200, preview_response.text
     expected = submitted.model_dump(mode="json")
     # stream_version is a server-only transport field; exclude from the round-trip check
@@ -664,7 +665,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get(
                 "/api/generate",
-                params={"per_question_params": "{not-json", "stream_version": 2},
+                params={"per_question_params": "{not-json", "stream_version": 3},
             )
     finally:
         limiter.reset()
@@ -686,7 +687,7 @@ def test_generate_route_rejects_count_above_ten(count: int) -> None:
 
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            response = client.get("/api/generate", params={"count": count, "stream_version": 2})
+            response = client.get("/api/generate", params={"count": count, "stream_version": 3})
     finally:
         limiter.reset()
 
@@ -726,15 +727,15 @@ def test_generate_route_accepts_count_of_ten() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -744,11 +745,11 @@ def test_generate_route_accepts_count_of_ten() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].count == 10
 
 
@@ -787,15 +788,15 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         query = _complete_query_params(
@@ -836,11 +837,11 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
             finally:
                 gen_routes.logger.removeHandler(caplog.handler)
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].subject == "social_studies"
     assert captured["params"].image_generation_mode == "gpt_image"
     assert captured["params"].topic == "氣候變遷"
@@ -909,15 +910,15 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -939,11 +940,11 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].subject == "natural_sciences"
     assert captured["params"].context == ["Global"]
     assert captured["params"].sub_context == "Food security"
@@ -1044,15 +1045,15 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -1068,11 +1069,11 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert ok.status_code == 200
+    assert ok.status_code == 202
     assert captured["params"].difficulty == "hard"
     assert bad.status_code == 422
 
@@ -1113,15 +1114,15 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -1133,7 +1134,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
                 ),
                 headers={"Authorization": f"Bearer {token}"},
             )
-            assert r_default.status_code == 200
+            assert r_default.status_code == 202
             assert captured["params"].coverage_mode == "balanced"
 
             # Explicit random passes through.
@@ -1159,7 +1160,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
             )
             assert r_bad.status_code == 422
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -1802,9 +1803,9 @@ def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_
 
     from server.generate import routes as gen_routes
 
-    original_stream = gen_routes.generate_question_stream
+    original_stream = gen_routes.accept_run
     original_session_factory = gen_routes.AsyncSessionLocal
-    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
+    gen_routes.accept_run = injected_stream  # type: ignore[assignment]
     gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "figure-failure@example.com", config=config)
@@ -1822,7 +1823,7 @@ def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.accept_run = original_stream  # type: ignore[assignment]
         gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
         limiter.reset()
 
@@ -1981,7 +1982,7 @@ def test_generate_route_rejects_unknown_subject_422() -> None:
         with TestClient(app) as client:
             response = client.get(
                 "/api/generate",
-                params={"subject": "typo", "stream_version": 2},
+                params={"subject": "typo", "stream_version": 3},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -2032,15 +2033,15 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -2050,9 +2051,9 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
                     params=_complete_query_params({"subject": subject, "seed": 41}),
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                assert r.status_code == 200, f"expected 200 for subject={subject!r}"
+                assert r.status_code == 202, f"expected 202 for subject={subject!r}"
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -2151,8 +2152,8 @@ def test_route_outer_error_event_is_structured() -> None:
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = exploding_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = exploding_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -2162,7 +2163,7 @@ def test_route_outer_error_event_is_structured() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -2258,9 +2259,9 @@ def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path)
 
     from server.generate import routes as gen_routes
 
-    original = gen_routes.generate_question_stream
+    original = gen_routes.accept_run
     original_session_factory = gen_routes.AsyncSessionLocal
-    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
+    gen_routes.accept_run = injected_stream  # type: ignore[assignment]
     gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
@@ -2278,7 +2279,7 @@ def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path)
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
         limiter.reset()
 
@@ -2337,15 +2338,15 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -2357,11 +2358,11 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].reporting_scale == "4"
 
 
@@ -2398,7 +2399,7 @@ def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
                     # Malformed JSON with embedded sentinel so any echo would be detectable.
                     response = client.get(
                         "/api/generate",
-                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 2},
+                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 3},
                     )
         finally:
             gen_routes.logger.removeHandler(caplog.handler)
@@ -2454,15 +2455,15 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         gen_routes.logger.addHandler(caplog.handler)
@@ -2477,11 +2478,11 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
         finally:
             gen_routes.logger.removeHandler(caplog.handler)
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
 
     # No validation WARNING must be emitted for a valid request.
     route_validation_warnings = [

@@ -123,7 +123,7 @@ def test_resolved_math_http_generation_preserves_group_count(tmp_path: Path) -> 
                         ),
                         headers={"Authorization": f"Bearer {token}"},
                     )
-                    assert response.status_code == 200
+                    assert response.status_code == 202
                     result_payloads.append(_result_payload(response.text))
     finally:
         limiter.reset()
