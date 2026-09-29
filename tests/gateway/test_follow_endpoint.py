@@ -167,6 +167,38 @@ def test_follow_new_build_id_paused_admission(tmp_path):
     assert state.reason == "operator paused"
 
 
+def test_follow_preserves_paused_reason_none(tmp_path):
+    """Paused with reason=None: after follow the reason is still None."""
+    import gateway.state as gstate
+
+    controller = ReleaseController(tmp_path, environment="test")
+    controller.initialize(_policy("build-a", admission="open"))
+    # Pause without a reason
+    gstate.pause(tmp_path)
+
+    app = create_app(
+        backend_url="http://127.0.0.1:1",
+        state_dir=tmp_path,
+        control_token=_TOKEN,
+        release_controller=controller,
+        follow_frontend=True,
+    )
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        r = client.post(
+            "/gateway/release/follow",
+            json={"build_id": "build-b"},
+            headers=_HEADERS,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["admission"] == "paused"
+        assert data["released_build_id"] == "build-b"
+
+    state = gstate.read_state(tmp_path)
+    assert state.reason is None
+
+
 def test_follow_preparing_returns_409(tmp_path):
     controller = ReleaseController(tmp_path, environment="test")
     controller.initialize(_policy("build-a", admission="open"))

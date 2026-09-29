@@ -360,15 +360,11 @@ class ReleaseController:
         policy: dict[str, Any],
         *,
         changed_by: str,
-        reason: str,
-        paused_reason: str | None = None,
+        reason: str | None,
     ) -> dict[str, Any]:
         parsed = parse_policy(policy, expected_environment=self.environment)
         is_open = parsed["admission"] == "open"
-        if paused_reason is not None and not is_open:
-            effective_reason: str | None = paused_reason
-        else:
-            effective_reason = None if is_open else reason
+        effective_reason: str | None = None if is_open else reason
         state = AdmissionState(
             state="open" if is_open else "paused",
             reason=effective_reason,
@@ -394,8 +390,7 @@ class ReleaseController:
         every container start so the gateway policy tracks the deployed bundle.
         Admission state (open/paused) is not changed.
         """
-        if not isinstance(build_id, str) or not build_id.strip():
-            raise ReleasePolicyError("release policy field 'build_id' is invalid")
+        _require_string({"build_id": build_id}, "build_id")
         current = self._require_policy()
         if current["admission"] == "preparing":
             raise ReleasePolicyError("release preparation is in progress")
@@ -418,12 +413,15 @@ class ReleaseController:
             "prepared_rollback": old_artifact,
             "transition": deepcopy(existing_artifacts.get("transition", [])),
         }
-        existing_reason = read_state(self.state_dir).reason
+        reason = (
+            read_state(self.state_dir).reason
+            if current["admission"] != "open"
+            else "staging follow"
+        )
         return self._write(
             updated,
             changed_by="controller",
-            reason="staging follow",
-            paused_reason=existing_reason if current["admission"] != "open" else None,
+            reason=reason,
         )
 
     def _validate_switch_evidence(self, evidence: dict[str, Any], target: dict[str, Any]) -> None:

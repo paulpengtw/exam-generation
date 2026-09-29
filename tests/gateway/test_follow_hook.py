@@ -148,8 +148,12 @@ def test_hook_inert_when_no_env_vars():
 @skip_no_curl
 def test_hook_inert_when_only_url_set():
     """Exit 0, zero requests when only GATEWAY_FOLLOW_URL is set."""
-    result = _run_script({"GATEWAY_FOLLOW_URL": "http://127.0.0.1:1/path"})
+    server, port, requests = _start_stub_server(200)
+    url = f"http://127.0.0.1:{port}/gateway/release/follow"
+    result = _run_script({"GATEWAY_FOLLOW_URL": url})
+    server.shutdown()
     assert result.returncode == 0
+    assert len(requests) == 0
 
 
 @skip_no_curl
@@ -162,25 +166,33 @@ def test_hook_inert_when_only_token_set():
 @skip_no_curl
 def test_hook_inert_when_meta_missing():
     """Exit 0, zero requests when the meta file does not exist."""
+    server, port, requests = _start_stub_server(200)
+    url = f"http://127.0.0.1:{port}/gateway/release/follow"
     result = _run_script({
-        "GATEWAY_FOLLOW_URL": "http://127.0.0.1:1/path",
+        "GATEWAY_FOLLOW_URL": url,
         "GATEWAY_CONTROL_TOKEN": "secret",
         "FOLLOW_RELEASE_BUILD_META": "/tmp/nonexistent-build-meta-99999.json",
     })
+    server.shutdown()
     assert result.returncode == 0
+    assert len(requests) == 0
 
 
 @skip_no_curl
 def test_hook_inert_when_meta_has_no_build_id():
     """Exit 0, zero requests when the meta file has no build_id."""
+    server, port, requests = _start_stub_server(200)
+    url = f"http://127.0.0.1:{port}/gateway/release/follow"
     result = _run_script(
         {
-            "GATEWAY_FOLLOW_URL": "http://127.0.0.1:1/path",
+            "GATEWAY_FOLLOW_URL": url,
             "GATEWAY_CONTROL_TOKEN": "secret",
         },
         meta_content='{"schema": "exam-generation.build-meta/1"}',
     )
+    server.shutdown()
     assert result.returncode == 0
+    assert len(requests) == 0
 
 
 @skip_no_curl

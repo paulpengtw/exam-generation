@@ -52,7 +52,7 @@ while [ $ATTEMPTS -lt 3 ]; do
         -H "X-Gateway-Control-Token: ${GATEWAY_CONTROL_TOKEN}" \
         -H "Content-Type: application/json" \
         --data "{\"build_id\":\"${BUILD_ID}\"}" \
-        "${GATEWAY_FOLLOW_URL}" 2>/dev/null) || HTTP_CODE="000"
+        "${GATEWAY_FOLLOW_URL}") || HTTP_CODE="000"
 
     # 2xx → success
     case "${HTTP_CODE}" in
