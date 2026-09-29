@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from server.generate.question_terminal import _QuestionPositionResolution
 from src.common.generation_core import GenerationCancelled
 
 # ---------------------------------------------------------------------------
@@ -599,11 +600,13 @@ def test_terminal_social_group_keeps_fixed_missing_subquestion_slot() -> None:
         question=question,
         params=params,
         output_dir=None,
-        announced_slots=[
-            {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
-            {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
-            {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
-        ],
+        resolution=_QuestionPositionResolution(
+            announced_slots=[
+                {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+                {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
+                {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+            ],
+        ),
     )
 
     assert payload["delivery_status"] == "partial"
@@ -669,8 +672,11 @@ def test_terminal_social_group_uses_announced_manifest_over_resolved_count() -> 
         question=question,
         params=params,
         output_dir=None,
-        announced_slots=announced_slots,
-        resolved_subquestion_count=3,
+        resolution=_QuestionPositionResolution(
+            announced_slots=announced_slots,
+            resolved_subquestion_count=3,
+            has_per_question_resolution=True,
+        ),
     )
 
     assert [slot["subquestion_id"] for slot in payload["expected"]] == [
@@ -703,8 +709,10 @@ def test_terminal_failed_before_plan_falls_back_to_resolved_count() -> None:
         question=None,
         params=params,
         output_dir=None,
-        announced_slots=None,
-        resolved_subquestion_count=2,
+        resolution=_QuestionPositionResolution(
+            resolved_subquestion_count=2,
+            has_per_question_resolution=True,
+        ),
     )
 
     assert payload["delivery_status"] == "none"
@@ -737,9 +745,9 @@ def test_terminal_failed_flat_math_does_not_inherit_batch_group_slots() -> None:
             subquestion_configs=None,
         ),
         output_dir=None,
-        announced_slots=None,
-        resolved_subquestion_configs=None,
-        resolved_subquestion_count=None,
+        resolution=_QuestionPositionResolution(
+            has_per_question_resolution=True,
+        ),
     )
 
     assert payload["expected"] == []
@@ -765,9 +773,10 @@ def test_terminal_failed_grouped_math_uses_its_resolved_count() -> None:
             subquestion_configs=None,
         ),
         output_dir=None,
-        announced_slots=None,
-        resolved_subquestion_configs=None,
-        resolved_subquestion_count=3,
+        resolution=_QuestionPositionResolution(
+            resolved_subquestion_count=3,
+            has_per_question_resolution=True,
+        ),
     )
 
     assert [slot["subquestion_id"] for slot in payload["missing"]] == [
@@ -831,11 +840,13 @@ def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
         question=question,
         params=params,
         output_dir=None,
-        announced_slots=[
-            {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
-            {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
-            {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
-        ],
+        resolution=_QuestionPositionResolution(
+            announced_slots=[
+                {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+                {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
+                {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+            ],
+        ),
     )
 
     assert payload["delivery_status"] == "partial"
@@ -891,7 +902,9 @@ def test_terminal_fixed_group_preserves_missing_middle_slot_for_each_adapter(
         question=question,
         params=params,
         output_dir=None,
-        announced_slots=announced_slots,
+        resolution=_QuestionPositionResolution(
+            announced_slots=announced_slots,
+        ),
     )
 
     assert payload["delivery_status"] == "partial"
@@ -941,7 +954,9 @@ def test_terminal_fixed_group_all_subquestions_failed_keeps_text_final(subject: 
         ),
         params=params,
         output_dir=None,
-        announced_slots=announced_slots,
+        resolution=_QuestionPositionResolution(
+            announced_slots=announced_slots,
+        ),
     )
 
     assert payload["has_final"] is True
@@ -1007,14 +1022,16 @@ def test_terminal_natural_sciences_tracks_fixed_subquestion_image_slot(tmp_path:
         question=question,
         params=params,
         output_dir=tmp_path,
-        announced_slots=[
-            {
-                "subquestion_index": index,
-                "id": f"{question_id}-sq{index + 1:03d}",
-                "序號": index + 1,
-            }
-            for index in range(3)
-        ],
+        resolution=_QuestionPositionResolution(
+            announced_slots=[
+                {
+                    "subquestion_index": index,
+                    "id": f"{question_id}-sq{index + 1:03d}",
+                    "序號": index + 1,
+                }
+                for index in range(3)
+            ],
+        ),
     )
 
     assert payload["delivery_status"] == "partial"
@@ -1164,7 +1181,9 @@ def test_terminal_review_uses_latest_verification_trail_revision(
         question=question,
         params=params,
         output_dir=None,
-        verification_trail=verification_trail,
+        resolution=_QuestionPositionResolution(
+            verification_trail=verification_trail,
+        ),
     )
 
     assert payload["review"]["status"] == expected_status
@@ -1201,7 +1220,9 @@ def test_terminal_does_not_reuse_verdict_from_an_older_content_revision() -> Non
         question=question,
         params=params,
         output_dir=None,
-        verification_trail=[{"kind": "verification", "content_revision": 1}],
+        resolution=_QuestionPositionResolution(
+            verification_trail=[{"kind": "verification", "content_revision": 1}],
+        ),
     )
 
     assert payload["review"] == {

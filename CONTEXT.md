@@ -158,8 +158,24 @@ A surface's declaration of its readiness, editable state, received results and w
 _Avoid_: surface participation, workspace registration, page activity
 
 **受理**:
-The moment the server accepts a submitted generation or 人工審題修正 request — the `started` event for generation, or a returned `run_id` for 人工審題修正. Sending the request alone does not establish 受理.
+The submit response carrying the run identity. For generation, 受理 is established when `POST /api/generate` returns a `run_id` and the question manifest; the 生成執行 exists and runs from this moment, independently of whether the browser received the response. For 人工審題修正, 受理 remains when submission returns a `run_id`. **Redefines the pre-detached meaning** (previously the SSE `started` event for generation; ADR 0030 Consequences notes the supersession). Sending the request alone does not establish 受理.
 _Avoid_: admission, submitted, accepted (without the server acknowledgement)
+
+**生成執行**:
+An accepted generation request that runs from 受理 until every question has a 終止原因, independently of any observer connection. Leaving the page, losing the connection, closing the browser or logging out never cancels a 生成執行; only the owning teacher's explicit Cancel stops it (ADR 0033). Per teacher, at most one runs at a time and at most five may wait 排隊中 simultaneously.
+_Avoid_: generation job, background job, task, 背景作業
+
+**排隊中**:
+The 生成執行 state between 受理 and execution: the run is accepted but waiting because the same teacher already has a run executing. The history page's 「尚未結束」 section shows 「排隊中 · 前面還有 k 個」, where k is the number of runs ahead in the owner's queue.
+_Avoid_: queued, pending (ambiguous with 處理中), 等待中
+
+**取消中**:
+The transient 生成執行 state from when the owning teacher presses Cancel until the running host confirms the cancellation and ends unfinished questions. The interface shows 「取消中」 immediately after the request; actual cancellation takes effect within approximately 30 seconds.
+_Avoid_: cancelling, 已取消 (the terminal state, not the transitional one)
+
+**尚未結束**:
+The history-page section heading for 生成執行 items that have not yet reached a terminal state — runs that are 排隊中 or currently executing. Once every question has a 終止原因 the run moves into the ordinary history list.
+_Avoid_: active runs, in-progress runs, 進行中 (already in the _Avoid_ list of 處理中)
 
 **可觀察作業**:
 An in-flight generation, 人工審題修正, 核心問題 planning, 預抽, 提示詞預覽 or export operation that an updater can observe but cannot abort.
@@ -244,7 +260,7 @@ The app's single palette of motion — four durations (quick, standard, loop-shi
 _Avoid_: animation settings, transition config, timing constants, 動畫參數, a literal `duration-300`
 
 **處理狀態**:
-What is known about the generation work on one 題目 or 題組, including whether that work is waiting, ongoing or ended. It does not establish 交付完整性 or 審題結果.
+What is known about the generation work on one 題目 or 題組, including whether that work is waiting, ongoing or ended. It does not establish 交付完整性 or 審題結果. Persisted per question in `generation_question_states` in the detached-run model.
 _Avoid_: 完成狀態 (when it conflates work ending with a complete or verified question)
 
 **草稿**:

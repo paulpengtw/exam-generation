@@ -22,6 +22,7 @@ For 社會領域, 內容領域 is resolved before its dependent 學習內容 poo
 Supplied values remain pins; only blank drawable fields use the seeded sampler streams, and batches resolve each row with `seed + index` unless a row pins its own seed.
 Drawn and 重抽 paths use canonical sampler names: top-level fields, `per_question_params[i].<field>`, and `subquestion_configs[j].<field>`.
 Incompatible parent/child pins are rejected on an initial resolve; an explicit confirmation parent redraw clears and re-resolves the incompatible child instead. Both `/generate` and `/generate/preview` rerun `resolve(payload)` at the HTTP seam and return field-addressed HTTP 422 errors whenever `drawn` is non-empty, so generation receives only a complete payload.
+`/generate/preview` returns `{ prompts: PromptPreview[] }`. Each entry has `index` (0-based batch position), `system_prompt`, `user_prompt`, and — for 子題產生器 stages (社會領域, 自然科學, and 數學題組) — a zero-based `subquestion_index` (0..N-1). The SSE stream uses the same zero-based convention; the frontend adds +1 to render display labels 第1小題..第N小題. Flat (單一題) math produces no `subquestion_index` entries.
 The optional math `math_thinking` request field is resolved from the same keyed sampler stream, while `core_competency` is resolved for math and social-studies requests when blank.
 Resolved values are forwarded unchanged through the web confirmation payload and `/generate`; neither field has a form control or a browser-side draw.
 Math and social-studies prompt builders therefore receive the resolver's pinned competency list, and math receives its pinned `math_thinking` list, as the only values offered to the model.
@@ -98,6 +99,8 @@ The store never receives an AbortController, promise or callback that can cancel
 The store never calls `location.reload`, never touches workspace operations, and never submits anything. Generation enforcement (#771), save-and-update (#772+), and scheduling (#777) remain separate tickets; the live controller integration is described below.
 
 Production builds require a commit SHA (`RAILWAY_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, or `GIT_COMMIT_SHA`) or an explicit `BUILD_ID`; a placeholder commit throws at build time. See `docs/research/2026-09-15-770-release-detection.md`.
+
+The `environment` field in both emitted files comes from `VITE_ENVIRONMENT` (build arg forwarded by `web/Dockerfile`) or falls back to the Vite mode when that variable is absent or empty (issue #892). Staging deployments must set `VITE_ENVIRONMENT=staging` as a Railway build variable on the frontend service so the bundle declares `environment: "staging"`. Three settings must flip together for staging generation to pass preflight: (1) `VITE_ENVIRONMENT=staging` on the frontend build, (2) `RELEASE_ENVIRONMENT=staging` on the backend, (3) `environment: "staging"` in the gateway policy record. See DEPLOYMENT.md § "Staging environment name — coordinated switch-over" for the full operator runbook.
 
 ### Build admission (issue #771)
 
@@ -878,6 +881,37 @@ If `choom` is unavailable, preserve the lane cap and avoid broad parallel pytest
 ### Browser marker (`requires_browser`)
 
 Tests that launch a real Playwright Chromium browser are marked `@pytest.mark.requires_browser`.  Before the session runs any such test a single probe is made; if the browser is absent or broken, all marked tests are skipped with a message naming the fix command (`uv run playwright install chromium`), and the cause is written once to the terminal summary.  If no marked tests are collected the probe is skipped entirely, adding no startup cost.
+
+### Postgres marker (`postgres`)
+
+Tests that require a real Postgres 16 instance are marked `@pytest.mark.postgres`.  Before any such test runs the plugin checks for the `TEST_POSTGRES_URL` environment variable; if absent, all marked tests are skipped with a message naming the variable, and the cause is written once to the terminal summary.  If no postgres-marked tests are collected the check is skipped entirely, adding zero startup cost.
+
+Unmarked tests are never affected: they continue to use the default SQLite engine from `server/db.py` (`DATABASE_URL` is intentionally not set by this mechanism).  The dedicated variable `TEST_POSTGRES_URL` (not `DATABASE_URL`) is used because `server/db.py` reads `DATABASE_URL` at import time to build the module-level engine; overriding it would silently route every test that imports `server.db` through Postgres.
+
+To run postgres-marked tests locally you need a Postgres 16 instance.  The easiest way is to start one with `docker run` or to use the bundled `pgserver` package:
+
+```bash
+# Option A – Docker
+docker run --rm -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:16
+
+TEST_POSTGRES_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/postgres \
+    uv run pytest -m postgres -v
+
+# Option B – pgserver (bundled in dev dependencies, no Docker needed)
+# pgserver listens on a Unix socket; pass the socket directory as the host.
+# Example (one-liner):
+PGDATA=$(mktemp -d) uv run python -c "
+import pgserver, os
+s = pgserver.get_server(os.environ['PGDATA'], cleanup_mode=None)
+uri = s.get_uri()          # postgresql://postgres:@/postgres?host=<path>
+socket_dir = uri.split('?host=')[1]
+print(socket_dir)
+"
+# Then set TEST_POSTGRES_URL to point at the socket (asyncpg host= kwarg form):
+# TEST_POSTGRES_URL is not directly the socket URI; use the test fixture below.
+```
+
+In CI a Postgres 16 service container is started automatically and `TEST_POSTGRES_URL` is injected by the workflow; no manual setup is required there.  See `docs/adr/0035-run-claim-tests-target-postgres-in-ci.md` and the `services.postgres` block in `.github/workflows/ci.yml`.
 
 ### Environment Variables
 

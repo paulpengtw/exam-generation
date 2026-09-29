@@ -194,4 +194,67 @@ describe("buildIdentityPlugin", () => {
     expect(buildMetaJson.commit).toBe(REAL_COMMIT);
     expect(buildMetaJson.built_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+
+  it("VITE_ENVIRONMENT overrides mode in __BUILD_ENVIRONMENT__ (issue #892)", () => {
+    process.env.GIT_COMMIT_SHA = REAL_COMMIT;
+    process.env.VITE_ENVIRONMENT = "staging";
+
+    const plugin = buildIdentityPlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const configResult = (plugin.config as any)({}, { mode: "production" });
+
+    const environment: string = JSON.parse(configResult.define.__BUILD_ENVIRONMENT__ as string);
+    expect(environment).toBe("staging");
+  });
+
+  it("VITE_ENVIRONMENT unset falls back to Vite mode in __BUILD_ENVIRONMENT__ (issue #892)", () => {
+    process.env.GIT_COMMIT_SHA = REAL_COMMIT;
+    // VITE_ENVIRONMENT is explicitly unset in beforeEach
+
+    const plugin = buildIdentityPlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const configResult = (plugin.config as any)({}, { mode: "production" });
+
+    const environment: string = JSON.parse(configResult.define.__BUILD_ENVIRONMENT__ as string);
+    expect(environment).toBe("production");
+  });
+
+  it("VITE_ENVIRONMENT empty string (Docker unset ARG) falls back to Vite mode (issue #892)", () => {
+    // When Docker ARG VITE_ENVIRONMENT is declared but not passed during build,
+    // Docker sets ENV VITE_ENVIRONMENT= (empty string). We must treat "" the same
+    // as undefined and fall back to the Vite mode so production stays "production".
+    process.env.GIT_COMMIT_SHA = REAL_COMMIT;
+    process.env.VITE_ENVIRONMENT = "";
+
+    const plugin = buildIdentityPlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const configResult = (plugin.config as any)({}, { mode: "production" });
+
+    const environment: string = JSON.parse(configResult.define.__BUILD_ENVIRONMENT__ as string);
+    expect(environment).toBe("production");
+  });
+
+  it("VITE_ENVIRONMENT is forwarded into build-meta.json and release/policy.json (issue #892)", () => {
+    process.env.GIT_COMMIT_SHA = REAL_COMMIT;
+    process.env.VITE_ENVIRONMENT = "staging";
+
+    const plugin = buildIdentityPlugin();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin.config as any)({}, { mode: "production" });
+
+    const emitted: Array<{ fileName: string; source: string }> = [];
+    const fakeThis = {
+      emitFile(file: { type: string; fileName: string; source: string }) {
+        emitted.push({ fileName: file.fileName, source: file.source });
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (plugin.generateBundle as any).call(fakeThis, {}, {}, false);
+
+    const buildMeta = emitted.find((f) => f.fileName === "build-meta.json");
+    const policyFile = emitted.find((f) => f.fileName === "release/policy.json");
+
+    expect(JSON.parse(buildMeta!.source).environment).toBe("staging");
+    expect(JSON.parse(policyFile!.source).environment).toBe("staging");
+  });
 });

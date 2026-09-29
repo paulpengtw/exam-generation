@@ -163,6 +163,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `EMAIL_WHITELIST` | *(leave blank for now)* | Comma-separated list of email addresses (or `*@domain` wildcards) that are allowed to request a magic link. Leave empty to allow anyone who knows the URL to sign up. Set to `*@yourschool.tw` (for example) to restrict sign-ups to your school domain. |
 | `SENTRY_DSN` | *(leave blank, or paste the backend project's DSN)* | Sends backend errors and traces to Sentry. Leave it unset or blank to disable backend Sentry completely. |
 | `SENTRY_ENVIRONMENT` | `production` (or `staging`) | Tags backend Sentry data with the deployment environment. |
+| `SENTRY_RELEASE` | *(leave blank on Railway; set on other platforms)* | Tags every backend Sentry event with a release identifier so errors map to a specific build. On Railway the value is auto-detected from `RAILWAY_GIT_COMMIT_SHA`, so this variable is only needed when you want to override that value or when deploying on a platform that does not set `RAILWAY_GIT_COMMIT_SHA`. Leave unset to let the backend fall back to the platform commit SHA, or leave both unset to omit the release tag entirely. |
 
 The model and effort values above are the code defaults when their variables are
 unset. Opus 4.6 calls enable adaptive thinking with a 16,384-token output ceiling
@@ -566,7 +567,10 @@ One-time setup:
    `SENTRY_ENVIRONMENT` to `staging` or `production`; also set
    `DB_POOL_CHECKOUT_ATTRIBUTION=1` on the **staging** backend so that any
    abandoned asyncpg pool connection is attributed to its owning code path and
-   forwarded to Sentry automatically by the `LoggingIntegration`.
+   forwarded to Sentry automatically by the `LoggingIntegration`. On Railway,
+   backend events are automatically tagged with the deploy commit SHA via
+   `RAILWAY_GIT_COMMIT_SHA`; set `SENTRY_RELEASE` only to override that value
+   or when deploying on a platform that does not inject `RAILWAY_GIT_COMMIT_SHA`.
 4. In Sentry: **Settings → Integrations → GitHub**, install the GitHub
    integration and connect the `paulpengtw/exam-generation` repository.
 
@@ -791,3 +795,67 @@ cause the build to fail with a descriptive error naming the fix.
 
 Optionally set `RELEASE_REVISION` (integer) to increase the release revision number in
 `dist/release/policy.json`. Defaults to `1` if not set.
+
+## Staging environment name — coordinated switch-over (issue #892)
+
+The web Dockerfile now accepts a `VITE_ENVIRONMENT` build argument. When set, the
+build-identity plugin (`web/buildIdentity.ts`) uses it as the `environment` field in
+`dist/build-meta.json` and `dist/release/policy.json` instead of falling back to the
+Vite mode (`production`). When the argument is absent or empty the behaviour is
+unchanged: the environment defaults to the Vite mode, so production deployments that do
+not set `VITE_ENVIRONMENT` continue to produce `environment: "production"`.
+
+### Why three settings must flip together
+
+The backend (`RELEASE_ENVIRONMENT`) and the gateway policy record (`environment`) both
+validate that the bundle's declared environment matches. A mismatch fails closed.
+All three must agree before a staging generation can pass preflight and reach
+`/api/generate`:
+
+| Setting | Service | Staging value | Notes |
+|---|---|---|---|
+| `VITE_ENVIRONMENT` | Railway frontend build variable | `staging` | Forwarded as a Docker build arg; sets `environment` in the emitted `policy.json` and `build-meta.json`. |
+| `RELEASE_ENVIRONMENT` | Railway backend environment variable | `staging` | Backend validates it matches the gateway policy's `environment` field on every generation request. |
+| `environment` in gateway policy record | Gateway `admission.json` volume | `staging` | The gateway serves this as `GET /release/policy.json`; both the browser and the backend read it. |
+
+Production keeps all three at `production` and is unaffected by this change.
+
+### Operator switch-over procedure (staging only)
+
+These steps cannot be done in code and require direct Railway + gateway operator access:
+
+1. **Set the Railway frontend build variable**: in the Railway **staging** frontend
+   service → Variables, add (or update) `VITE_ENVIRONMENT = staging`. Redeploy the
+   frontend service so the new bundle is built and served.
+
+2. **Set the Railway backend environment variable**: in the Railway **staging** backend
+   service → Variables, set `RELEASE_ENVIRONMENT = staging`. Redeploy the backend.
+
+3. **Update the gateway policy record**: on the staging gateway, update `admission.json`
+   so that the `exam-generation.release-policy/1` record contains `"environment": "staging"`.
+   Use `scripts/release_control.py` or the gateway control endpoint; the `RELEASE_ENVIRONMENT`
+   env var on the gateway service itself should also be `staging` (set in Step 1 of the
+   gateway Railway deployment steps in the section above).
+
+The order matters: change the frontend build first so the new bundle's `released_build_id`
+can be recorded before the gateway policy is updated to `staging`.
+
+### Verification
+
+After all three settings are applied:
+
+```bash
+# 1. Confirm the bundle declares environment: staging
+curl -s https://examgen-staging.cpeng.me/build-meta.json | python3 -m json.tool | grep environment
+
+# 2. Confirm the gateway policy declares environment: staging
+curl -s https://examgen-staging.cpeng.me/release/policy.json | python3 -m json.tool | grep environment
+
+# 3. Run the staging smoke test (no committed secrets; needs BASE_URL)
+BASE_URL=https://examgen-staging.cpeng.me bash scripts/smoke_test.sh
+```
+
+Expected: both JSON responses show `"environment": "staging"`, and the smoke test
+reports a generation that reaches `/api/generate` (not a preflight rejection).
+Production must still show `"environment": "production"` and must be verified
+independently after any change to production variables.

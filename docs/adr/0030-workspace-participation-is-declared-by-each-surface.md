@@ -14,4 +14,6 @@ Zero registered surfaces is unsafe. `isRefreshSafe` reports every blocker: no su
 
 受理 lives beside `status` and never replaces it. Generation is admitted at the SSE `started` event; 人工審題修正 is admitted when submission returns a `run_id`. Submitting alone is not admission, and failures after admission leave that fact intact. Existing status transitions and guards remain authoritative, including synchronously closing 發送前確認 on send.
 
+**Superseded in part:** the statement that generation is admitted at the SSE `started` event is superseded by the detached-run model. CONTEXT.md now defines 受理 as the submit response carrying the `run_id` and question manifest. The workspace-participation contract — that 受理 lives beside `status` and that submitting alone is not admission — remains unchanged.
+
 Issues #770–#779 consume these participation, operation, export/import and admission seams. They can add update policy and recovery without moving state ownership into the registry; wiring imports into mounted form, confirmation and modification surfaces remains downstream work.

@@ -346,9 +346,9 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
         for preview in previews
         if "subquestion_index" in preview
     }
-    assert set(sub_previews) == {1, 2, 3}
+    assert set(sub_previews) == {0, 1, 2}
     for idx, real_prompts in captured.items():
-        preview = sub_previews[idx]
+        preview = sub_previews[idx - 1]
         substituted_user = (
             preview["user_prompt"]
             .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
@@ -357,12 +357,12 @@ def test_social_studies_sub_generator_previews_are_byte_identical_after_placehol
             .replace("{{子題 plan：由前一階段產生}}", f"概念{idx}")
         )
         assert (preview["system_prompt"], substituted_user) == real_prompts
-    assert "## 各小題配置" in sub_previews[1]["user_prompt"]
-    assert "逐字保留這項出題指示" in sub_previews[1]["user_prompt"]
-    assert "42" in sub_previews[1]["user_prompt"]
-    assert "17" in sub_previews[1]["user_prompt"]
-    assert "歷Ka-Ⅳ-1" in sub_previews[1]["user_prompt"]
-    assert "社1b-Ⅳ-1" in sub_previews[1]["user_prompt"]
+    assert "## 各小題配置" in sub_previews[0]["user_prompt"]
+    assert "逐字保留這項出題指示" in sub_previews[0]["user_prompt"]
+    assert "42" in sub_previews[0]["user_prompt"]
+    assert "17" in sub_previews[0]["user_prompt"]
+    assert "歷Ka-Ⅳ-1" in sub_previews[0]["user_prompt"]
+    assert "社1b-Ⅳ-1" in sub_previews[0]["user_prompt"]
 
 
 def test_social_studies_preview_keeps_text_word_limit_only_on_text_generator() -> None:
@@ -397,6 +397,30 @@ def test_social_studies_preview_keeps_text_word_limit_only_on_text_generator() -
     assert all("文本字數上限=" not in p["user_prompt"] for p in sub_previews)
     assert "題目字數上限=80" in sub_previews[0]["user_prompt"]
     assert "選項字數上限=30" in sub_previews[0]["user_prompt"]
+
+
+def test_sub_generator_preview_subquestion_index_is_zero_based() -> None:
+    """subquestion_index in preview responses must be zero-based (0..N-1), matching
+    the SSE stream convention. The field name 'subquestion_index' implies 0-based;
+    one-based numbering belongs on '序號'.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": 191,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_indices = [p["subquestion_index"] for p in previews if "subquestion_index" in p]
+    assert sub_indices == [0, 1, 2], (
+        f"Expected zero-based [0, 1, 2], got {sub_indices}. "
+        "The preview endpoint must use 0-based subquestion_index to match the SSE stream."
+    )
 
 
 def test_natural_sciences_preview_is_byte_identical_to_text_generator_prompt() -> None:
@@ -618,9 +642,9 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
         for preview in previews
         if "subquestion_index" in preview
     }
-    assert set(sub_previews) == {1, 2, 3}
+    assert set(sub_previews) == {0, 1, 2}
     for idx, real_prompts in captured.items():
-        preview = sub_previews[idx]
+        preview = sub_previews[idx - 1]
         substituted_user = (
             preview["user_prompt"]
             .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
@@ -629,12 +653,12 @@ def test_natural_sciences_sub_generator_previews_are_byte_identical_after_placeh
             .replace("{{子題 plan：由前一階段產生}}", f"自然概念{idx}")
         )
         assert (preview["system_prompt"], substituted_user) == real_prompts
-    assert "## 各小題配置" in sub_previews[1]["user_prompt"]
-    assert "逐字保留自然科學出題指示" in sub_previews[1]["user_prompt"]
-    assert "43" in sub_previews[1]["user_prompt"]
-    assert "18" in sub_previews[1]["user_prompt"]
-    assert "INa-Ⅳ-1" in sub_previews[1]["user_prompt"]
-    assert "pe-Ⅳ-1" in sub_previews[1]["user_prompt"]
+    assert "## 各小題配置" in sub_previews[0]["user_prompt"]
+    assert "逐字保留自然科學出題指示" in sub_previews[0]["user_prompt"]
+    assert "43" in sub_previews[0]["user_prompt"]
+    assert "18" in sub_previews[0]["user_prompt"]
+    assert "INa-Ⅳ-1" in sub_previews[0]["user_prompt"]
+    assert "pe-Ⅳ-1" in sub_previews[0]["user_prompt"]
 
 
 def test_same_confirmation_payload_builds_byte_identical_prompts_with_few_shots() -> None:
@@ -745,3 +769,177 @@ def test_preview_route_uses_generate_auth_dependency() -> None:
     dependencies = {dependency.call for dependency in route.dependant.dependencies}
 
     assert get_current_user in dependencies
+
+
+def test_math_group_sub_generator_previews_are_zero_based() -> None:
+    """Math 題組題 with sub_question_count must produce N subquestion previews
+    with zero-based subquestion_index values (0..N-1), matching the SSE stream
+    convention used by social studies and natural sciences.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    params = _resolved_generate_params(
+        {
+            "subject": "math",
+            "seed": 23,
+            "grade": 8,
+            "sub_question_count": 3,
+            "disable_reference_fewshot": True,
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_previews = [p for p in previews if "subquestion_index" in p]
+    assert len(sub_previews) == 3, (
+        f"Expected 3 subquestion previews for math 題組題, got {len(sub_previews)}"
+    )
+    assert [p["subquestion_index"] for p in sub_previews] == [0, 1, 2], (
+        f"Expected zero-based [0, 1, 2], got {[p['subquestion_index'] for p in sub_previews]}"
+    )
+
+
+def test_preview_label_aligns_with_each_subquestion_config_row() -> None:
+    """The preview labelled 第k小題 (subquestion_index=k-1) must embed the
+    distinctive 出題指示 from the k-th row of 各小題配置, not from any other row.
+
+    This tests both the zero-based index contract (so the label matches the
+    right card) and that the config slot lookup is aligned with the index.
+    """
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = SimpleNamespace(ss_curriculum_context=None)
+    params = _resolved_generate_params(
+        {
+            "subject": "social_studies",
+            "seed": 191,
+            "disable_reference_fewshot": True,
+            "content_type": "純文字",
+            "sub_question_count": 3,
+            "subquestion_configs": [
+                {"question_type": "開放式建構反應題", "instruction": "指示甲只在第一小題"},
+                {"question_type": "開放式建構反應題", "instruction": "指示乙只在第二小題"},
+                {"question_type": "開放式建構反應題", "instruction": "指示丙只在第三小題"},
+            ],
+        }
+    )
+    previews = build_prompt_previews(params, config, app_state)
+    sub_previews = {
+        p["subquestion_index"]: p
+        for p in previews
+        if "subquestion_index" in p
+    }
+    assert set(sub_previews.keys()) == {0, 1, 2}, (
+        f"Expected subquestion_index keys {{0, 1, 2}}, got {set(sub_previews.keys())}"
+    )
+    # 第1小題 (index 0) must carry row 0's instruction exclusively
+    assert "指示甲只在第一小題" in sub_previews[0]["user_prompt"]
+    assert "指示乙只在第二小題" not in sub_previews[0]["user_prompt"]
+    assert "指示丙只在第三小題" not in sub_previews[0]["user_prompt"]
+    # 第2小題 (index 1) must carry row 1's instruction exclusively
+    assert "指示乙只在第二小題" in sub_previews[1]["user_prompt"]
+    assert "指示甲只在第一小題" not in sub_previews[1]["user_prompt"]
+    assert "指示丙只在第三小題" not in sub_previews[1]["user_prompt"]
+    # 第3小題 (index 2) must carry row 2's instruction exclusively
+    assert "指示丙只在第三小題" in sub_previews[2]["user_prompt"]
+    assert "指示甲只在第一小題" not in sub_previews[2]["user_prompt"]
+    assert "指示乙只在第二小題" not in sub_previews[2]["user_prompt"]
+
+
+def test_math_sub_generator_previews_are_byte_identical_after_placeholder_substitution(
+) -> None:
+    """Math 題組 sub-generator previews must be byte-identical to live prompts.
+
+    Issue #893 follow-up: _math_build_subquestion_prompt_previews does not pass
+    curriculum_context to build_subquestion_prompt_previews.  This test confirms
+    there is no divergence: the math subquestion stage (子題產生器) does not use
+    curriculum_context — it is only used in flat-math generation for the system
+    prompt.  Byte-identity after placeholder substitution proves no input is
+    omitted.
+    """
+    import json as _json
+
+    seed = 200
+    config = ServerConfig(api_key="x", data_dir=Path("data"), creative_planning=False)
+    app_state = _math_state(config)
+    params = _resolved_generate_params(
+        {
+            "subject": "math",
+            "seed": seed,
+            "sub_question_count": 3,
+            "disable_reference_fewshot": True,
+        }
+    )
+
+    # Resolve subject params to learn the sampled 題型 so the text payload matches.
+    sampled = _resolved_subject_params(params, app_state)
+    q_type_value = sampled.題型.value
+
+    text_payload = {
+        "情境": [c.value for c in sampled.情境],
+        "題型種類": "題組題",
+        "題型": q_type_value,
+        "數學思考": [t.value for t in sampled.數學思考],
+        "學習內容": [
+            {"編碼": item.編碼, "說明": item.說明}
+            for item in sampled.學習內容
+        ],
+        "題目": [],
+        "正確解題分析": [],
+        "核心問題": "真實數學核心問題",
+        "文本": "真實數學文本",
+        "取材來源": ["真實數學來源"],
+        "subquestions": [
+            {"序號": i, "題型": q_type_value, "出題概念": f"數學概念{i}"}
+            for i in range(1, 4)
+        ],
+    }
+
+    previews = build_prompt_previews(params, config, app_state)
+    captured: dict[int, tuple[str, str]] = {}
+    generate_math(
+        config=config,
+        client=_CapturingClient(text_payload),
+        curriculum=app_state.curriculum,
+        performance=app_state.performance,
+        intro_text=app_state.intro_text,
+        grade_content=app_state.grade_content,
+        params=sampled,
+        question_id="preview-math-sub-generator-equality",
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _CapturingSubClient(captured, q_type_value),
+        curriculum_context=app_state.math_curriculum_context,
+    )
+
+    sub_previews = {
+        preview["subquestion_index"]: preview
+        for preview in previews
+        if "subquestion_index" in preview
+    }
+    assert set(sub_previews) == {0, 1, 2}, (
+        f"Expected sub-preview indices {{0, 1, 2}}, got {set(sub_previews)}"
+    )
+    for idx, real_prompts in captured.items():
+        preview = sub_previews[idx - 1]
+        substituted_user = (
+            preview["user_prompt"]
+            .replace("{{核心問題：由前一階段產生}}", text_payload["核心問題"])
+            .replace("{{文本：由前一階段產生}}", text_payload["文本"])
+            .replace(
+                _json.dumps(
+                    ["{{取材來源：由前一階段產生}}"],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                _json.dumps(
+                    text_payload["取材來源"],
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+            .replace("{{子題 plan：由前一階段產生}}", f"數學概念{idx}")
+        )
+        assert (preview["system_prompt"], substituted_user) == real_prompts, (
+            f"Math 題組 sub-generator preview for 第{idx}小題 is not byte-identical "
+            f"to live generation after placeholder substitution.\n"
+            f"This indicates an input used in live generation that the preview omits "
+            f"(e.g. curriculum_context or another override)."
+        )

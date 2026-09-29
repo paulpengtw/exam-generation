@@ -1,18 +1,18 @@
 ## 1. Save at question end (slice 1: no behaviour change)
 
-- [ ] 1.1 Write failing tests through `_worker_one_body` (stub-context style of `tests/server/test_858_worker_split_units.py`, fake session factory) asserting the record is saved before `RESULT` is published and that a `RESULT` never dequeued is still saved. Verify: new tests fail on current code.
-- [ ] 1.2 Move `persist_generation_record` from the consumer loop in `generate_question_stream` into `_worker_one_body`. Move it to the normal exit, before `RESULT` is published, using `asyncio.run_coroutine_threadsafe(...).result(timeout)`. Drop the sidecars from the queue envelope. Verify: 1.1 passes, and the existing persistence suites (`test_persistence.py`, `test_verification_trail_persistence.py`, `test_figure_policy_trail_persistence.py`, `test_reference_example_record_persistence.py`, `test_generation_publisher.py`) pass unchanged.
-- [ ] 1.3 Add bounded retry with backoff (reusing the recorder retry loop) and a Sentry report when retries are exhausted. Verify: a test with a failing session factory shows N retries, then a Sentry capture, and the question is not reported as saved.
+- [x] 1.1 Write failing tests through `_worker_one_body` (stub-context style of `tests/server/test_858_worker_split_units.py`, fake session factory) asserting the record is saved before `RESULT` is published and that a `RESULT` never dequeued is still saved. Verify: new tests fail on current code.
+- [x] 1.2 Move `persist_generation_record` from the consumer loop in `generate_question_stream` into `_worker_one_body`. Move it to the normal exit, before `RESULT` is published, using `asyncio.run_coroutine_threadsafe(...).result(timeout)`. Drop the sidecars from the queue envelope. Verify: 1.1 passes, and the existing persistence suites (`test_persistence.py`, `test_verification_trail_persistence.py`, `test_figure_policy_trail_persistence.py`, `test_reference_example_record_persistence.py`, `test_generation_publisher.py`) pass unchanged.
+- [x] 1.3 Add bounded retry with backoff (reusing the recorder retry loop) and a Sentry report when retries are exhausted. Verify: a test with a failing session factory shows N retries, then a Sentry capture, and the question is not reported as saved.
 - [ ] 1.4 Write the production duplicate pre-check query for `generation_records(generation_log_id, question_id)` into DEPLOYMENT.md, and hand it to someone with production access. Verify: the query is committed and its result is recorded in the change notes before 1.5 ships.
 - [ ] 1.5 Add an Alembic migration with a unique constraint on `(generation_log_id, question_id)`, and make the insert insert-or-ignore. Verify: a test saving the same question twice leaves one row, and `alembic upgrade head` succeeds on SQLite and Postgres.
 
 ## 2. Groundwork (slice 2)
 
-- [ ] 2.1 Add a Postgres 16 service container to `.github/workflows/ci.yml`, plus a `postgres` pytest marker and a fixture using `DATABASE_URL`. Verify: CI runs a marked smoke test against Postgres, and unmarked tests still use SQLite.
+- [x] 2.1 Add a Postgres 16 service container to `.github/workflows/ci.yml`, plus a `postgres` pytest marker and a fixture using `DATABASE_URL`. Verify: CI runs a marked smoke test against Postgres, and unmarked tests still use SQLite.
 - [ ] 2.2 Add migrations that give `generation_status` the values `queued`, `running` and `cancelled`, each with `ALTER TYPE … ADD VALUE` in its own transaction. Update `GenerationStatus` and `tests/server/test_db_models.py`. Verify: the enum test and a Postgres-marked migration test pass.
 - [ ] 2.3 Add a migration adding `generation_logs` columns `heartbeat_at`, `attempts`, `claimed_by`, `started_at`, `cancel_requested`, `submission_key`, with a unique constraint on `(user_id, submission_key)`. Verify: the migration round-trips on Postgres, and the 人工審題修正 route tests still pass.
 - [ ] 2.4 Add a migration and model for `generation_question_states`. Columns: identity, `index`, `processing`, `current_step`, `termination_reason`, `terminal_json`, `generation_record_id`, `error`, `updated_at`. Add a unique constraint on `(generation_log_id, question_id)`. Verify: model tests pass, and an exactly-once update (`WHERE termination_reason IS NULL`) test passes on Postgres.
-- [ ] 2.5 Unify `FigurePolicyTrailRecorder` and `ReferenceExampleRecordRecorder` behind one incremental stager parameterised by column. Add the `attempt` field to entries. Verify: the existing trail persistence tests pass, plus a new test showing entries tagged by attempt.
+- [x] 2.5 Unify `FigurePolicyTrailRecorder` and `ReferenceExampleRecordRecorder` behind one incremental stager parameterised by column. Add the `attempt` field to entries. Verify: the existing trail persistence tests pass, plus a new test showing entries tagged by attempt.
 
 ## 3. 生成執行 module (slice 3, backend)
 
@@ -50,7 +50,7 @@
   - Cancel works, and the per-teacher limits apply.
 
   Verify: record the results in the change notes.
-- [ ] 5.4 Update CONTEXT.md:
+- [x] 5.4 Update CONTEXT.md:
   - add 生成執行, 排隊中, 取消中, 尚未結束;
   - redefine 受理;
   - note that 處理狀態 is persisted per question.

@@ -445,6 +445,34 @@ describe("ParamForm 發送前確認 display semantics", () => {
     }
   });
 
+  it("renders zero-based 子題產生器 preview indices as one-based labels", async () => {
+    getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
+    previewGenerateMock.mockResolvedValue({
+      prompts: [
+        { index: 0, system_prompt: "文本系統", user_prompt: "文本使用者" },
+        { index: 0, subquestion_index: 0, system_prompt: "小題一系統", user_prompt: "小題一使用者" },
+        { index: 0, subquestion_index: 1, system_prompt: "小題二系統", user_prompt: "小題二使用者" },
+        { index: 0, subquestion_index: 2, system_prompt: "小題三系統", user_prompt: "小題三使用者" },
+      ],
+    });
+    await openConfirmation("social_studies", {
+      sub_question_count: 3,
+      core_question: "已提供的核心問題",
+    });
+
+    const question = screen.getByRole("region", { name: "第1題" });
+    const summaries = await within(question).findAllByText(/子題產生器.*第\d+小題/, {
+      selector: "summary",
+    });
+    expect(summaries.map((summary) => summary.textContent)).toEqual([
+      "子題產生器（第1小題）將送出的提示詞",
+      "子題產生器（第2小題）將送出的提示詞",
+      "子題產生器（第3小題）將送出的提示詞",
+    ]);
+    expect(summaries.some((summary) => summary.textContent?.includes("第1小題"))).toBe(true);
+    expect(summaries.some((summary) => summary.textContent?.includes("第4小題"))).toBe(false);
+  });
+
   it("renders 子題產生器 placeholder tokens verbatim", async () => {
     getSchemasMock.mockResolvedValue(SOCIAL_SCHEMA);
     const placeholders = [

@@ -321,9 +321,9 @@ def test_social_studies_prompt_preview_reflects_requested_callback_state() -> No
             if "subquestion_index" in item
         }
         assert ("## 回扣核心問題" in text_preview["user_prompt"]) is enabled
+        assert "## 回扣核心問題" not in sub_previews[0]["user_prompt"]
         assert "## 回扣核心問題" not in sub_previews[1]["user_prompt"]
-        assert "## 回扣核心問題" not in sub_previews[2]["user_prompt"]
-        assert ("## 回扣核心問題" in sub_previews[3]["user_prompt"]) is enabled
+        assert ("## 回扣核心問題" in sub_previews[2]["user_prompt"]) is enabled
 
 
 def test_callback_toggle_does_not_change_seeded_social_studies_sampling() -> None:

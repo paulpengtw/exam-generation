@@ -18,6 +18,7 @@ from typing import Any, Callable
 
 from src.cli import _math_params_from_resolved as _math_params_from_resolved_impl
 from src.cli import build_generation_prompts as _math_build_prompts_impl
+from src.cli import build_subquestion_prompt_previews as _math_build_sub_prompts_impl
 from src.cli import generate_with_corrections as _math_generate_with_corrections
 from src.common.admission import admitted_parents_by_code
 from src.common.batch_dedup import (
@@ -1132,6 +1133,27 @@ def _math_build_generation_prompts(
     )
 
 
+def _math_build_subquestion_prompt_previews(
+    rng_params: Any, overrides: dict, **kwargs: Any
+) -> list[tuple[int, str, str, list]]:
+    """Build math 子題產生器 previews for 題組題 with zero-based subquestion_index.
+
+    Returns an empty list for flat (單一題) math where sub_question_count is None.
+    """
+    return _math_build_sub_prompts_impl(
+        kwargs["config"],
+        rng_params,
+        disable_reference_fewshot=kwargs["disable_reference_fewshot"],
+        image_generation_mode=kwargs["image_generation_mode"],
+        user_passage=kwargs["user_passage"],
+        user_options=kwargs["user_options"],
+        user_topic=kwargs["user_topic"],
+        user_core_question=kwargs["user_core_question"],
+        prior_scopes=kwargs["prior_scopes"],
+        core_question_callback=kwargs.get("core_question_callback", True),
+    )
+
+
 def _math_plan_core_questions(client: Any, topic: str, **kwargs: Any) -> list[str]:
     # Lazy import so test monkeypatches on src.planner.plan_core_questions are seen.
     import src.planner as _m  # noqa: PLC0415
@@ -1244,6 +1266,7 @@ SUBJECTS: dict[str, SubjectSpec] = {
         params_from_resolved_payload=_math_params_from_resolved_payload,
         do_generate=_math_do_generate,
         build_generation_prompts=_math_build_generation_prompts,
+        build_subquestion_prompt_previews=_math_build_subquestion_prompt_previews,
         extract_prior_scope=extract_math_prior_scope,
         patch_metadata=None,
         plan_core_questions=_math_plan_core_questions,
