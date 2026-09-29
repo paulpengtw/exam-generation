@@ -139,8 +139,36 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     restoreResults: restoreSavedResults,
     reset,
     evidence: runEvidence,
-    legacyAdapter: legacyAdapterState,
+    runId,
+    resume,
   } = useGenerate();
+  // A detached run is addressed by `?run=<id>` (issue #908): closing the page
+  // and reopening that URL resumes watching the same run.
+  const runParam = new URLSearchParams(location.search ?? "").get("run");
+  const [runNotFound, setRunNotFound] = useState(false);
+  const setRunParam = useCallback((id: string | null) => {
+    const next = new URLSearchParams(location.search ?? "");
+    if (id === null) next.delete("run");
+    else next.set("run", id);
+    const search = next.toString();
+    navigate({ search: search === "" ? "" : `?${search}` }, { replace: true });
+  }, [navigate, location.search]);
+  useEffect(() => {
+    // Only ever adds the param; clearing is explicit (reset / unknown run).
+    if (typeof runId === "string" && runId !== runParam) setRunParam(runId);
+  }, [runId, runParam, setRunParam]);
+  useEffect(() => {
+    if (runParam === null) return;
+    let cancelled = false;
+    void resume(runParam).then((outcome) => {
+      if (cancelled || outcome.outcome !== "not_found") return;
+      setRunNotFound(true);
+      setRunParam(null);
+    });
+    return () => { cancelled = true; };
+    // Resume is keyed on the URL param alone; resume() is idempotent per run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runParam]);
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
   // model, draft, and default effects can observe an empty form and replace a
   // confirmation that is still being restored. The layout gate also means a
@@ -243,7 +271,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   useEffect(() => () => {
     if (handoffTimerRef.current !== null) clearTimeout(handoffTimerRef.current);
   }, []);
-  const [requestedTotal, setRequestedTotal] = useState(0);
+  const [requestedTotalInput, setRequestedTotal] = useState(0);
+  // A reopened run has no form submission in this tab: its size is the manifest's.
+  const requestedTotal = requestedTotalInput > 0 ? requestedTotalInput : (runEvidence?.total ?? 0);
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
   const evidence = useMemo(
@@ -251,9 +281,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       llmCalls,
       submittedSubQuestionCount ?? subQuestionTotal,
       runEvidence,
-      legacyAdapterState,
     ),
-    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal, legacyAdapterState],
+    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal],
   );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -374,11 +403,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }
     setRequestedTotal(params.count);
     setSubmittedSubQuestionCount(generateParams.sub_question_count ?? null);
+    setRunNotFound(false);
     return generate(generateParams);
   };
 
   const handleReset = () => {
     reset();
+    setRunParam(null);
+    setRunNotFound(false);
     setRequestedTotal(0);
     setSubmittedSubQuestionCount(null);
   };
@@ -647,6 +679,11 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 pt-4 pb-20 sm:px-4 sm:pt-6">
+        {runNotFound ? (
+          <div role="alert" data-testid="run-not-found" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            {t("generate.run_not_found")}
+          </div>
+        ) : null}
         {resultsRestoreError ? (
           <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
             <span>{t("recovery.results_restore_failed")}</span>{" "}

@@ -33,7 +33,7 @@ from server.generate.run import (
     run_host_loop,
 )
 from server.generate.subjects import SUBJECTS
-from server.models import Base, GenerationLog, GenerationQuestionState, User
+from server.models import Base, GenerationLog, GenerationQuestionState, GenerationRecord, User
 from tests.server.generate_test_utils import resolved_generate_params
 
 _MATH: dict[str, Any] = {
@@ -383,5 +383,185 @@ def test_host_loop_stops_cleanly_when_idle(tmp_path: Path) -> None:
         await asyncio.sleep(0.2)
         stop.set()
         await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Ported from test_generate_routes.py (social-studies seam, #908 execute_run)
+# ---------------------------------------------------------------------------
+
+async def _run_ss_until_idle(env: _Env, subjects: dict, *, timeout: float = 20.0) -> None:
+    """Run the host loop with custom subjects until no run is queued or running."""
+    stop = asyncio.Event()
+    loop_task = asyncio.create_task(
+        run_host_loop(
+            stop,
+            app_state=env.app_state,
+            config=env.config,
+            session_factory=env.sessions,
+            client_factory=_FakeClient,
+            subjects=subjects,
+            idle_interval=0.05,
+        )
+    )
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+        async with env.sessions() as session:
+            pending = (
+                await session.execute(
+                    select(GenerationLog.id).where(
+                        GenerationLog.status.in_(("queued", "running"))
+                    )
+                )
+            ).first()
+        if pending is None:
+            break
+    else:
+        stop.set()
+        await asyncio.wait_for(loop_task, timeout=5.0)
+        raise AssertionError("runs did not finish in time")
+    stop.set()
+    await asyncio.wait_for(loop_task, timeout=5.0)
+
+
+def test_ss_persists_one_failed_record_after_prior_success(tmp_path: Path) -> None:
+    """Port of test_generate_route_persists_one_failed_record_after_prior_success.
+
+    One failed tombstone beside the successful record (social_studies seam,
+    execute_run path instead of SSE route).
+    """
+    from src.social_studies.schemas import ExamQuestion
+
+    env = _Env(tmp_path)
+    calls = 0
+
+    def _fake_do(rng_params: Any, overrides: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("scripted LLM failure")
+        return ExamQuestion(
+            id=kwargs["question_id"],
+            核心問題="先完成的核心問題",
+            文本="先完成的文本",
+            subquestions=[],
+            情境=[c.value for c in rng_params.情境],
+            題型種類=rng_params.題型種類.value,
+            題型=rng_params.題型[0].value,
+            題目=["先完成的題目"],
+            正確解題分析=["解析"],
+        )
+
+    fake_spec = {
+        "social_studies": dataclasses.replace(SUBJECTS["social_studies"], do_generate=_fake_do),
+    }
+
+    async def _run() -> None:
+        owner, _ = await env.setup()
+        accepted = await env.accept(
+            resolved_generate_params(
+                {"subject": "social_studies", "count": 2, "seed": 41, "skip_verify": True}
+            ),
+            owner,
+        )
+        await _run_ss_until_idle(env, fake_spec)
+
+        async with env.sessions() as session:
+            rows = list(
+                (
+                    await session.execute(
+                        select(GenerationRecord).order_by(GenerationRecord.created_at.asc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        assert len(rows) == 2
+        assert [r.status for r in rows].count("completed") == 1
+        assert [r.status for r in rows].count("failed") == 1
+        failed = next(r for r in rows if r.status == "failed")
+        assert failed.error == "Question generation failed (RuntimeError)"
+        assert failed.params_json["count"] == 2
+        assert failed.question_json is None
+        _ = accepted  # used to ensure the accept completed
+
+    asyncio.run(_run())
+
+
+def test_ss_defers_failed_policy_tombstone_until_workers_finish(tmp_path: Path) -> None:
+    """Port of test_generate_route_defers_failed_policy_tombstone_until_workers_finish.
+
+    A failed tombstone includes policy events emitted by slower sibling workers.
+    Uses execute_run path instead of SSE route.
+    """
+    import datetime
+
+    from src.common.figure_policy_trail import FigurePolicySpecEntry
+    from src.social_studies.schemas import ExamQuestion
+
+    env = _Env(tmp_path)
+    failure_started = threading.Event()
+
+    def _fake_do(rng_params: Any, overrides: Any, **kwargs: Any) -> Any:
+        question_id = kwargs["question_id"]
+        kwargs["on_figure_policy_entry"](
+            FigurePolicySpecEntry(
+                question_id=question_id,
+                label="題幹",
+                effective_figure_kind="地圖",
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
+        if question_id.endswith("_001"):
+            failure_started.set()
+            raise RuntimeError("scripted policy failure")
+
+        assert failure_started.wait(timeout=5)
+        time.sleep(0.25)
+        kwargs["on_figure_policy_entry"](
+            FigurePolicySpecEntry(
+                question_id=question_id,
+                label="小題 1",
+                effective_figure_kind="統計圖",
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+        )
+        return ExamQuestion(
+            id=question_id,
+            核心問題="核心問題",
+            文本="文本",
+            subquestions=[],
+            情境=[c.value for c in rng_params.情境],
+            題型種類=rng_params.題型種類.value,
+            題型=rng_params.題型[0].value,
+            題目=["題目"],
+            正確解題分析=["解析"],
+        )
+
+    fake_spec = {
+        "social_studies": dataclasses.replace(SUBJECTS["social_studies"], do_generate=_fake_do),
+    }
+
+    async def _run() -> None:
+        owner, _ = await env.setup()
+        await env.accept(
+            resolved_generate_params(
+                {"subject": "social_studies", "count": 2, "seed": 41, "skip_verify": True}
+            ),
+            owner,
+        )
+        await _run_ss_until_idle(env, fake_spec)
+
+        async with env.sessions() as session:
+            rows = list((await session.execute(select(GenerationRecord))).scalars().all())
+
+        failed = next(r for r in rows if r.status == "failed")
+        assert failed.figure_policy_trail_json is not None
+        assert len(failed.figure_policy_trail_json) == 3
+        assert len({entry["question_id"] for entry in failed.figure_policy_trail_json}) == 2
+        assert {entry["label"] for entry in failed.figure_policy_trail_json} == {"題幹", "小題 1"}
 
     asyncio.run(_run())

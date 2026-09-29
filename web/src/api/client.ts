@@ -342,6 +342,16 @@ export async function getHistoryDetail(id: string): Promise<HistoryDetail> {
   return (await res.json()) as HistoryDetail;
 }
 
+/**
+ * Read the persisted state of a detached 生成執行 (`GET /api/runs/{id}`).
+ * Owner-only: any other caller (or an unknown id) gets `ApiError` status 404.
+ * The body is returned unparsed; `parseRunSnapshot` validates its shape.
+ */
+export async function getRun(runId: string): Promise<unknown> {
+  const res = await apiFetch(`/api/runs/${encodeURIComponent(runId)}`);
+  return (await res.json()) as unknown;
+}
+
 export async function downloadHistoryJson(id: string, signal?: AbortSignal): Promise<Blob> {
   const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`, { signal });
   return await res.blob();

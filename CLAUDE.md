@@ -127,9 +127,29 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point for OpenSpec `per-question-live-progress` (issue #742). The frontend decoder (`createGenerationStreamDecoder` in `generationStream.ts`) routes v2 SSE events through the `RunEvidenceState` reducer (`generationEvidence.ts`), which tracks per-question processing, content receipt, terminal status, and review. `GenerationStatusBar` renders a live 已結束/收到最終結果 counts line; `QuestionCard` renders a compact placeholder when `content.receipt === 'none'` and an evidence status line when content is available. `GeneratePage` renders cards in manifest order with live placeholders. HistoryDetail retains its stored-record card props.
 
+### Generation stream protocol v3 — detached runs (issue #908)
+
+**Protocol v3 supersedes v2 on this branch (`wip/908-detached-runs`).** Clients **must** send `stream_version=3` on POST `/api/generate`; any other value (including `2` or absent) returns HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [3]}`. `stream_version` is a transport-only field excluded from `params_json`.
+
+**Submit response.** `POST /api/generate` returns **HTTP 202** (not 200/SSE) with JSON body `{run_id, protocol_version: 3, total, questions: [{id}]}`. `run_id` equals `GenerationLog.id`. The run is queued immediately; execution happens out of band.
+
+**Execution module (`server/generate/run.py`).** Four public functions:
+- `accept_run(params, user, submission_key, *, session_factory)` → `AcceptedRun`: writes one `GenerationLog` (status `"queued"`) plus N `GenerationQuestionState` rows in one transaction; returns existing run on duplicate `submission_key`.
+- `claim_next_run(session_factory, *, host_id)` → `ClaimedRun | None`: atomically claims the oldest `"queued"` run and sets it to `"running"`.
+- `execute_run(claimed, *, app_state, config, session_factory, host_id)`: runs `generate_question_stream` as an in-process event bus; persists per-question state via `GenerationQuestionState`; calls `persist_failed_generation_record` post-stream on failure.
+- `run_host_loop(stop_event, *, app_state, config, session_factory, host_id)`: loop that calls `claim_next_run` + `execute_run` until `stop_event` is set.
+
+**DB models added for v3.** `GenerationLog` gains columns `heartbeat_at`, `attempts`, `claimed_by`, `started_at`, `cancel_requested`, `submission_key` (unique per user). `GenerationStatus` enum gains `queued`, `running`, `cancelled`. New table `generation_question_states` with columns `index`, `processing`, `current_step`, `termination_reason`, `terminal_json`, `generation_record_id`, `error`, `updated_at` and unique constraint `(generation_log_id, question_id)`.
+
+**Test seam.** Tests call `_execute_run(client)` (defined in each test file) which calls `claim_next_run` + `execute_run` directly using the `transport_client` fixture's patched `AsyncSessionLocal` and the real `client.app.state`. Results are read via `GET /api/history/{id}` and `GET /api/history/{id}/detail` (DB-backed); SSE framing is no longer emitted on the wire for v3 runs.
+
+**Removed behaviors (intentional).** Observer-disconnect-cancels-run is gone: a client disconnect never affects an in-progress run. SSE wire framing is removed from the v3 generate path; live event access is in-process only.
+
 ### Generation stream protocol v2 (issue #742)
 
-The backend implements stream protocol v2. Clients **must** send `stream_version=2` on GET/POST `/api/generate`; missing or unsupported values return HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [2]}`. `stream_version` is a transport field: it is excluded from `params_json` and from the TypeScript contract (`SERVER_ONLY_GENERATE_FIELDS`). The frontend sends `stream_version: 2` on every POST `/api/generate` request (appended by `useGenerate` in `buildQueryString` and the POST body); unsupported protocol versions abort the stream with a localized error.
+**Removed on this branch** — `SUPPORTED_STREAM_VERSIONS` now contains only `3`. The description below is retained for historical reference; the v2 SSE path no longer exists on `wip/908-detached-runs`.
+
+The backend implemented stream protocol v2. Clients **must** send `stream_version=2` on GET/POST `/api/generate`; missing or unsupported values return HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [2]}`. `stream_version` is a transport field: it is excluded from `params_json` and from the TypeScript contract (`SERVER_ONLY_GENERATE_FIELDS`). The frontend sends `stream_version: 2` on every POST `/api/generate` request (appended by `useGenerate` in `buildQueryString` and the POST body); unsupported protocol versions abort the stream with a localized error.
 
 **Run identity.** `run_id` = `GenerationLog.id` when available, otherwise a fresh UUID4 hex string (32 chars, from `new_run_id()`). All question IDs are allocated before workers start: `allocate_manifest(prefix, run_id, count)` returns `{prefix}{run_id}_{i+1:03d}` for each question.
 

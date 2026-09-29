@@ -1,30 +1,19 @@
 /**
- * Tests for build-admission gate wired into useGenerate (issue #771).
+ * Tests for build-admission gate wired into useGenerate (issue #771), on the
+ * detached-run transport (issue #908): submit with POST /api/generate, then
+ * poll GET /api/runs/{id}.
  *
  * Covers:
- * 1. Preflight rejects on "update-required" — no HTTP fetch sent
- * 2. Preflight rejects on "paused"
- * 3. Preflight rejects on "unavailable"
- * 4. X-Frontend-Build-ID header is sent when preflight passes
- * 5. 426 response preserves existing results
- * 6. 503 response preserves existing results
+ * 1. Preflight rejects on "update-required" / "paused" / "unavailable" — no HTTP request sent
+ * 2. X-Frontend-Build-ID header is sent when preflight passes
+ * 3. 426 / 503 / 414 / 422 responses preserve existing results
+ * 4. resultsCompletion / terminalEvidence survive a later rejection
  */
-import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal("__BUILD_ID__", "test-build-abc");
 vi.stubGlobal("__BUILD_ENVIRONMENT__", "test");
-
-const fetchEventSourceMock = vi.hoisted(() =>
-  vi
-    .fn<(input: RequestInfo, init: FetchEventSourceInit) => Promise<void>>()
-    .mockResolvedValue(undefined),
-);
-
-vi.mock("@microsoft/fetch-event-source", () => ({
-  fetchEventSource: fetchEventSourceMock,
-}));
 
 vi.mock("@sentry/react", () => ({
   captureException: vi.fn(),
@@ -37,19 +26,26 @@ vi.mock("../sentry", () => ({
 import { useGenerate, type AdmissionOutcome } from "./useGenerate";
 import { useReleaseStore, resetReleaseDetector } from "../lib/release/releaseStore";
 import { useAuthStore } from "../store/authStore";
+import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
+import { endedQuestion, examQuestion, runSnapshot } from "../test/runFixtures";
 
 function setReleaseStatus(status: "current" | "update-required" | "paused" | "unavailable" | "checking") {
   useReleaseStore.setState({ status, lastCheckedAt: Date.now(), lastFailure: null });
 }
 
-function latestStreamOptions(): FetchEventSourceInit {
-  const call = fetchEventSourceMock.mock.lastCall;
-  if (!call) throw new Error("Expected an event-stream request");
-  return call[1];
+let server: FakeRunServer;
+
+/** Let a resolved fetch / Response.json() chain and any due timers run. */
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  });
 }
 
 beforeEach(() => {
-  fetchEventSourceMock.mockClear();
+  vi.useFakeTimers();
+  server = installFakeRunServer();
   resetReleaseDetector();
   // Use "checking" so generate() always calls checkNow() — the individual tests
   // spy on or directly set the final status.
@@ -63,24 +59,32 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  server.restore();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   resetReleaseDetector();
 });
 
+/** Run one generation to its end so results and completion evidence exist. */
+async function completeFirstRun(result: { current: ReturnType<typeof useGenerate> }) {
+  const previousQuestion = examQuestion("q-1", "previous");
+  server.setSnapshot("run-1", runSnapshot([endedQuestion("q-1", { question: previousQuestion })]));
+  act(() => {
+    void result.current.generate({ subject: "math", count: 1 });
+  });
+  await flush();
+  await flush(3_000);
+  return previousQuestion;
+}
+
 describe("useGenerate — build admission preflight", () => {
-  const previousQuestion = {
-    id: "previous-question",
-    情境: ["個人"],
-    題型種類: "單一題",
-    題型: "選擇題",
-    題目: ["previous"],
-    正確解題分析: ["answer"],
-  };
-
-  it("rejects on update-required without sending HTTP fetch", async () => {
-    // Mock checkNow to immediately set update-required
+  it.each([
+    ["update-required", "介面版本已更新"],
+    ["paused", "暫停維護中"],
+    ["unavailable", "無法確認介面版本"],
+  ] as const)("rejects on %s without sending any request", async (releaseStatus, expectedText) => {
     vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("update-required");
+      setReleaseStatus(releaseStatus);
     });
 
     const { result } = renderHook(() => useGenerate());
@@ -90,56 +94,12 @@ describe("useGenerate — build admission preflight", () => {
     });
 
     const outcome = await promise;
-    expect(outcome).toEqual(
-      expect.objectContaining({ outcome: "rejected" })
-    );
+    expect(outcome).toEqual(expect.objectContaining({ outcome: "rejected" }));
     expect(result.current.admission).toBe("rejected");
-    expect(result.current.admissionError).toContain("介面版本已更新");
+    expect(result.current.admissionError).toContain(expectedText);
     expect(result.current.status).toBe("error");
-    expect(result.current.errorMessage).toContain("介面版本已更新");
-    expect(fetchEventSourceMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects on paused without sending HTTP fetch", async () => {
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("paused");
-    });
-
-    const { result } = renderHook(() => useGenerate());
-    let promise!: Promise<AdmissionOutcome>;
-    await act(async () => {
-      promise = result.current.generate({ subject: "math" });
-    });
-
-    const outcome = await promise;
-    expect(outcome).toEqual(
-      expect.objectContaining({ outcome: "rejected" })
-    );
-    expect(result.current.admissionError).toContain("暫停維護中");
-    expect(result.current.status).toBe("error");
-    expect(result.current.errorMessage).toContain("暫停維護中");
-    expect(fetchEventSourceMock).not.toHaveBeenCalled();
-  });
-
-  it("rejects on unavailable without sending HTTP fetch", async () => {
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("unavailable");
-    });
-
-    const { result } = renderHook(() => useGenerate());
-    let promise!: Promise<AdmissionOutcome>;
-    await act(async () => {
-      promise = result.current.generate({ subject: "math" });
-    });
-
-    const outcome = await promise;
-    expect(outcome).toEqual(
-      expect.objectContaining({ outcome: "rejected" })
-    );
-    expect(result.current.admissionError).toContain("無法確認介面版本");
-    expect(result.current.status).toBe("error");
-    expect(result.current.errorMessage).toContain("無法確認介面版本");
-    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+    expect(result.current.errorMessage).toContain(expectedText);
+    expect(server.requests).toHaveLength(0);
   });
 
   it("rechecks an unavailable release and submits when the policy becomes current", async () => {
@@ -150,17 +110,12 @@ describe("useGenerate — build admission preflight", () => {
 
     const { result } = renderHook(() => useGenerate());
     act(() => {
-      result.current.generate({ subject: "math" });
+      void result.current.generate({ subject: "math" });
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flush();
 
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
-    expect(latestStreamOptions().headers).toEqual(expect.objectContaining({
-      "X-Frontend-Build-ID": "test-build-abc",
-    }));
+    expect(server.submits()).toHaveLength(1);
+    expect(server.submits()[0].headers["x-frontend-build-id"]).toBe("test-build-abc");
   });
 
   it("rejects an unavailable release again when rechecking still fails", async () => {
@@ -178,7 +133,7 @@ describe("useGenerate — build admission preflight", () => {
     await expect(promise).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
     expect(result.current.status).toBe("error");
     expect(result.current.errorMessage).toContain("無法確認介面版本");
-    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+    expect(server.requests).toHaveLength(0);
   });
 
   it("accepts a retry after an admission rejection", async () => {
@@ -196,59 +151,46 @@ describe("useGenerate — build admission preflight", () => {
 
     setReleaseStatus("current");
     act(() => {
-      result.current.generate({ subject: "math" });
+      void result.current.generate({ subject: "math" });
     });
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    expect(server.submits()).toHaveLength(1);
   });
 
-  it("sends X-Frontend-Build-ID header when preflight passes (current)", async () => {
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("current");
-    });
-
-    const { result } = renderHook(() => useGenerate());
-    // Start generate but don't await — the stream never settles without real events.
-    act(() => {
-      result.current.generate({ subject: "math" });
-    });
-    // Flush the async preflight (checkNow) microtasks so fetchEventSource is called.
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
-    const [, init] = fetchEventSourceMock.mock.lastCall!;
-    const headers = (init.headers as Record<string, string>);
-    expect(headers["X-Frontend-Build-ID"]).toBe("test-build-abc");
-  });
-
-  it("attaches the build header to the POST body transport for long payloads", async () => {
+  it("sends X-Frontend-Build-ID and stream_version 3 when preflight passes (current)", async () => {
     vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
       setReleaseStatus("current");
     });
 
     const { result } = renderHook(() => useGenerate());
     act(() => {
-      result.current.generate({
+      void result.current.generate({ subject: "math" });
+    });
+    await flush();
+
+    expect(server.submits()).toHaveLength(1);
+    const [submit] = server.submits();
+    expect(submit.headers["x-frontend-build-id"]).toBe("test-build-abc");
+    expect((submit.body as { stream_version: number }).stream_version).toBe(3);
+  });
+
+  it("sends a long payload in the POST body with the build header", async () => {
+    setReleaseStatus("current");
+    const { result } = renderHook(() => useGenerate());
+    act(() => {
+      void result.current.generate({
         subject: "math",
         text_instruction: "x".repeat(12_000),
       });
     });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await flush();
 
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
-    const [, init] = fetchEventSourceMock.mock.lastCall!;
-    expect(init.method).toBe("POST");
-    expect(String(init.body).length).toBeGreaterThan(12_000);
-    expect((init.headers as Record<string, string>)["X-Frontend-Build-ID"])
-      .toBe("test-build-abc");
+    const [submit] = server.submits();
+    expect(submit.method).toBe("POST");
+    expect(JSON.stringify(submit.body).length).toBeGreaterThan(12_000);
+    expect(submit.headers["x-frontend-build-id"]).toBe("test-build-abc");
   });
 
-  it("ignores a duplicate click while the first stream is still pending", async () => {
+  it("ignores a duplicate click while the first submission is still pending", async () => {
     setReleaseStatus("current");
     const { result } = renderHook(() => useGenerate());
 
@@ -259,69 +201,25 @@ describe("useGenerate — build admission preflight", () => {
       duplicate = result.current.generate({ subject: "math" });
     });
 
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
+    expect(server.submits()).toHaveLength(1);
     await expect(duplicate).resolves.toEqual(
       expect.objectContaining({ outcome: "rejected" }),
     );
-    act(() => {
-      latestStreamOptions().onmessage?.({ id: "", event: "started", data: "{}" });
-    });
-    await expect(first).resolves.toEqual({ outcome: "admitted" });
+    await flush();
+    await expect(first).resolves.toEqual({ outcome: "admitted", runId: "run-1" });
   });
 
-  it("preserves prior results and does not retry when admission changes after preflight", async () => {
-    setReleaseStatus("current");
-    const { result } = renderHook(() => useGenerate());
-    act(() => {
-      result.current.generate({ subject: "math" });
-    });
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "result",
-        data: JSON.stringify(previousQuestion),
-      });
-      latestStreamOptions().onmessage?.({ id: "", event: "done", data: "" });
-    });
-    expect(result.current.results).toEqual([previousQuestion]);
-
-    fetchEventSourceMock.mockClear();
-    useReleaseStore.setState({ status: "checking" });
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("current");
-    });
-    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-      await init.onopen?.(new Response(
-        JSON.stringify({ code: "CLIENT_UPDATE_REQUIRED", required_build_id: "new-build" }),
-        { status: 426 },
-      ));
-    });
-
-    let rejected!: Promise<AdmissionOutcome>;
-    await act(async () => {
-      rejected = result.current.generate({ subject: "math" });
-      await Promise.resolve();
-    });
-
-    expect(fetchEventSourceMock).toHaveBeenCalledOnce();
-    await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
-    expect(result.current.status).toBe("error");
-    expect(result.current.results).toEqual([previousQuestion]);
-    expect(result.current.displayResults).toHaveLength(1);
-  });
-
-  it("keeps the existing signout behavior for a pre-stream 401", async () => {
+  it("keeps the existing signout behavior for a pre-acceptance 401", async () => {
     setReleaseStatus("current");
     const logout = vi.spyOn(useAuthStore.getState(), "logout");
-    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-      await init.onopen?.(new Response(null, { status: 401 }));
-    });
+    server.failSubmit(401, { detail: "Unauthorized" });
 
     const { result } = renderHook(() => useGenerate());
     let rejected!: Promise<AdmissionOutcome>;
     act(() => {
       rejected = result.current.generate({ subject: "math" });
     });
+    await flush();
 
     await expect(rejected).resolves.toEqual(
       expect.objectContaining({ outcome: "rejected" }),
@@ -330,169 +228,70 @@ describe("useGenerate — build admission preflight", () => {
     logout.mockRestore();
   });
 
-  it.each([414, 422])(
-    "preserves prior results on a pre-stream HTTP %s error",
-    async (status) => {
+  it.each([
+    [414, {}],
+    [422, { detail: "bad request" }],
+    [426, { code: "CLIENT_UPDATE_REQUIRED", required_build_id: "new-build" }],
+    [503, { code: "AUTHORITY_UNAVAILABLE" }],
+  ])(
+    "preserves prior results and completion on a pre-acceptance HTTP %s error",
+    async (status, body) => {
       setReleaseStatus("current");
       const { result } = renderHook(() => useGenerate());
-      act(() => {
-        result.current.generate({ subject: "math" });
-      });
-      act(() => {
-        latestStreamOptions().onmessage?.({
-          id: "",
-          event: "result",
-          data: JSON.stringify(previousQuestion),
-        });
-        latestStreamOptions().onmessage?.({ id: "", event: "done", data: "" });
-      });
-      fetchEventSourceMock.mockClear();
-      fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-        await init.onopen?.(new Response("", { status }));
-      });
+      const previousQuestion = await completeFirstRun(result);
+      expect(result.current.results).toEqual([previousQuestion]);
+      expect(result.current.resultsCompletion).toBe("settled");
+      expect(result.current.terminalEvidence).toBe(true);
 
+      server.failSubmit(status, body);
       let rejected!: Promise<AdmissionOutcome>;
       await act(async () => {
         rejected = result.current.generate({ subject: "math" });
         await Promise.resolve();
       });
+      await flush();
 
-      expect(fetchEventSourceMock).toHaveBeenCalledOnce();
       await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
       expect(result.current.status).toBe("error");
+      expect(result.current.admission).toBe("rejected");
       expect(result.current.results).toEqual([previousQuestion]);
       expect(result.current.displayResults).toHaveLength(1);
+      // Completion state travels with the preserved results (not clobbered).
+      expect(result.current.resultsCompletion).toBe("settled");
+      expect(result.current.terminalEvidence).toBe(true);
     },
   );
 
-  it("preserves existing results on 426 response", async () => {
-    // Set up a pre-existing result to confirm it is preserved
+  it("keeps admission out of the admitted state when the update-required 426 arrives after preflight", async () => {
     vi.spyOn(useReleaseStore.getState(), "checkNow").mockResolvedValue(undefined);
     setReleaseStatus("current");
+    server.failSubmit(426, { code: "CLIENT_UPDATE_REQUIRED", required_build_id: "build-xyz" });
 
     const { result } = renderHook(() => useGenerate());
-
-    // Simulate a 426 response from fetchEventSource via onopen
-    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-      await init.onopen?.(new Response(
-        JSON.stringify({ code: "CLIENT_UPDATE_REQUIRED", required_build_id: "build-xyz" }),
-        { status: 426 }
-      ));
-    });
-
     act(() => {
-      result.current.generate({ subject: "math" });
+      void result.current.generate({ subject: "math" });
     });
-
-    // Admission should end up rejected
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    // Status should not be "generating" still; it ends in error or rejected
-    expect(result.current.admission).not.toBe("admitted");
-  });
-
-  it("preserves existing results on 503 response", async () => {
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockResolvedValue(undefined);
-    setReleaseStatus("current");
-
-    const { result } = renderHook(() => useGenerate());
-
-    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-      await init.onopen?.(new Response(
-        JSON.stringify({ code: "AUTHORITY_UNAVAILABLE" }),
-        { status: 503 }
-      ));
-    });
-
-    act(() => {
-      result.current.generate({ subject: "math" });
-    });
-
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await flush();
 
     expect(result.current.admission).not.toBe("admitted");
+    expect(server.submits()).toHaveLength(1);
   });
 
-  // -------------------------------------------------------------------------
-  // resultsCompletion / terminalEvidence interaction with 426 (#771 + #774)
-  // -------------------------------------------------------------------------
-
-  it("(a) settled run followed by 426 keeps resultsCompletion='settled' and terminalEvidence=true", async () => {
+  it("(b) a run the server reports failed sets resultsCompletion='error'", async () => {
     setReleaseStatus("current");
     const { result } = renderHook(() => useGenerate());
-
-    // --- First generate: completes with terminal evidence ---
-    act(() => {
-      result.current.generate({ subject: "math" });
-    });
-    act(() => {
-      const opts = latestStreamOptions();
-      opts.onmessage?.({ id: "", event: "started", data: "{}" });
-      // question_terminal populates terminalQuestionKeysRef so done sets terminalEvidence=true
-      opts.onmessage?.({
-        id: "",
-        event: "question_terminal",
-        data: JSON.stringify({ question_id: "q1" }),
-      });
-      opts.onmessage?.({
-        id: "",
-        event: "result",
-        data: JSON.stringify(previousQuestion),
-      });
-      opts.onmessage?.({ id: "", event: "done", data: "" });
-    });
-
-    expect(result.current.resultsCompletion).toBe("settled");
-    expect(result.current.terminalEvidence).toBe(true);
-    const preservedResults = result.current.results;
-
-    // --- Second generate: rejected by 426 stale-build ---
-    fetchEventSourceMock.mockClear();
-    useReleaseStore.setState({ status: "checking" });
-    vi.spyOn(useReleaseStore.getState(), "checkNow").mockImplementationOnce(async () => {
-      setReleaseStatus("current");
-    });
-    fetchEventSourceMock.mockImplementationOnce(async (_url, init) => {
-      await init.onopen?.(new Response(
-        JSON.stringify({ code: "CLIENT_UPDATE_REQUIRED", required_build_id: "new-build" }),
-        { status: 426 },
-      ));
-    });
-
-    let rejected!: Promise<AdmissionOutcome>;
-    await act(async () => {
-      rejected = result.current.generate({ subject: "math" });
-      await Promise.resolve();
-    });
-    await expect(rejected).resolves.toEqual(expect.objectContaining({ outcome: "rejected" }));
-
-    // Results are preserved and completion state travels with them (not clobbered by 426)
-    expect(result.current.results).toEqual(preservedResults);
-    expect(result.current.resultsCompletion).toBe("settled");
-    expect(result.current.terminalEvidence).toBe(true);
-  });
-
-  it("(b) started event received then stream error sets resultsCompletion='error'", async () => {
-    setReleaseStatus("current");
-    const { result } = renderHook(() => useGenerate());
+    server.setSnapshot("run-1", runSnapshot(
+      [endedQuestion("q-1", { reason: "failed" })],
+      { status: "failed", error: "Something went wrong" },
+    ));
 
     act(() => {
-      result.current.generate({ subject: "math" });
+      void result.current.generate({ subject: "math" });
     });
-    act(() => {
-      const opts = latestStreamOptions();
-      opts.onmessage?.({ id: "", event: "started", data: "{}" });
-      opts.onmessage?.({
-        id: "",
-        event: "error",
-        data: JSON.stringify({ message: "Something went wrong" }),
-      });
-    });
+    await flush();
+    await flush(3_000);
 
     expect(result.current.resultsCompletion).toBe("error");
+    expect(result.current.errorMessage).toBe("Something went wrong");
   });
 });

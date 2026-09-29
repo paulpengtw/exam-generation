@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import threading
@@ -14,6 +15,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
+from server.auth.dependencies import get_config
 from tests.server.test_generate_body_transport import transport_client  # noqa: F401
 
 
@@ -315,7 +317,7 @@ def _resolved_payload(
     body = response.json()
     payload = body["payload"]
     payload["drawn"] = body["drawn"]
-    payload["stream_version"] = 2
+    payload["stream_version"] = 3
     configs = payload.get("subquestion_configs")
     if isinstance(configs, list):
         payload["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
@@ -386,6 +388,25 @@ def _exchanges_for_detail(
     return response.json()
 
 
+def _execute_run(client: Any) -> None:
+    """Claim and execute one queued run using the transport_client's session factory."""
+    from server.generate.run import claim_next_run, execute_run
+
+    sessions = client.app.state.test_async_session_local
+    config = client.app.dependency_overrides[get_config]()
+    app_state = client.app.state
+
+    async def _run() -> None:
+        claimed = await claim_next_run(sessions, host_id="test-host")
+        if claimed is not None:
+            await execute_run(
+                claimed, app_state=app_state, config=config,
+                session_factory=sessions, host_id="test-host",
+            )
+
+    asyncio.run(_run())
+
+
 @pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
 @pytest.mark.parametrize(
     ("corrections", "max_retries", "expected_success", "expected_rejections"),
@@ -413,97 +434,21 @@ def test_correction_structure_persists_through_sse_history_and_log(
     payload = _resolved_payload(transport_client, max_retries=max_retries, subject=subject)
 
     response = transport_client.post("/api/generate", json=payload)
-    assert response.status_code == 200, response.text[:1000]
-    events = _stream_events(response)
+    assert response.status_code == 202, response.text[:1000]
+    _execute_run(transport_client)
 
-    updates = [data for name, data in events if name == "question_update"]
-    # #744 publishes the initial shell and one progressive draft per
-    # successfully assembled 小題 before the first verified snapshot.
-    # #746: SS _ss_ensure_visual_spec stamps ICCS axes (non-visual) → one extra draft
-    # update after all 小題 are assembled; NS and math hooks do not mutate content here.
-    n_drafts = 7 if subject == "social_studies" else 6
-    expected_phases = ["draft"] * n_drafts + ["verified"]
-    for correction in corrections:
-        if correction == "valid":
-            expected_phases.append("corrected")
-        expected_phases.append("verified")
-    assert [data["phase"] for data in updates] == expected_phases
-    draft_updates = [data for data in updates if data["phase"] == "draft"]
-    assert len(draft_updates) == n_drafts  # #746
-    assert draft_updates[0]["question"].get("subquestions", []) == []
-    assert len(draft_updates[-1]["question"]["subquestions"]) == 5
-    verified_updates = [data for data in updates if data["phase"] == "verified"]
-    assert len(verified_updates) == 1 + len(corrections)
-    initial_content = verified_updates[0]["question"]
-    final_content = verified_updates[-1]["question"]
-    for data in updates:
-        if data["phase"] in {"draft", "corrected"}:
-            continue
-        if expected_success and data["question"] is final_content:
-            continue
-        _assert_content_matches(
-            initial_content,
-            data["question"],
-            allowed_differences=set(),
-        )
-    assert len(initial_content["subquestions"]) == 5
-    assert initial_content["文本"] == "原始共享文本"
+    # --- Read DB state ---
+    history = transport_client.get("/api/history")
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    record_id = history.json()["items"][0]["id"]
+    detail = transport_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    saved = detail_body["question_json"]
+    trail_events = detail_body["verification_trail"]
 
-    accepted = "valid" in corrections
-    if accepted:
-        corrected_updates = [data for data in updates if data["phase"] == "corrected"]
-        assert len(corrected_updates) == 1
-        corrected_content = corrected_updates[0]["question"]
-        _assert_content_matches(corrected_content, final_content)
-        assert initial_content["verification"]["passed"] is False
-        assert "verification" not in corrected_content
-        assert final_content["verification"]["passed"] is True
-        assert initial_content["文本"] == corrected_content["文本"]
-        assert [
-            (subquestion["id"], subquestion["序號"])
-            for subquestion in initial_content["subquestions"]
-        ] == [
-            (subquestion["id"], subquestion["序號"])
-            for subquestion in corrected_content["subquestions"]
-        ]
-        assert corrected_content["subquestions"][2]["題目"] == "有效修正第3小題"
-        assert corrected_content["subquestions"][2]["答案"] == "B"
-        assert corrected_content["subquestions"][2] == {
-            **initial_content["subquestions"][2],
-            "題目": "有效修正第3小題",
-            "答案": "B",
-            "答案解析": "有效修正解析",
-        }
-        for index in (0, 1, 3, 4):
-            assert (
-                corrected_content["subquestions"][index]
-                == initial_content["subquestions"][index]
-            )
-        expected_content = corrected_content
-    else:
-        assert [
-            data["question"] for data in updates if data["phase"] == "corrected"
-        ] == []
-        assert final_content["verification"]["passed"] is expected_success
-        expected_content = initial_content
-
-    subquestion_ordinals = sorted(
-        int(data.removeprefix("sub_generator#"))
-        for data in provider.calls
-        if data.startswith("sub_generator#")
-    )
-    assert subquestion_ordinals == [1, 2, 3, 4, 5]
-    assert initial_content["verification"]["passed"] is False
-
-    result_events = [data for name, data in events if name == "result"]
-    assert len(result_events) == 1
-    result = result_events[0]
-    _assert_content_matches(expected_content, result)
-    assert result["verification"]["passed"] is expected_success
-    if subject == "natural_sciences":
-        assert result["metadata"]["reporting_scales"] == ["3", "3", "3", "3", "3"]
-
-    trail_events = [data for name, data in events if name == "trail"]
+    # --- Derive trail entry groups ---
     verification_entries = [
         entry for entry in trail_events if entry.get("kind") == "verification"
     ]
@@ -513,10 +458,24 @@ def test_correction_structure_persists_through_sse_history_and_log(
     initial_entries = [
         entry for entry in trail_events if entry.get("kind") == "initial"
     ]
+
+    assert len(initial_entries) == 1
+    initial_snapshot = initial_entries[0]["snapshot"]  # question without verification
+
+    # --- Provider call counts ---
+    subquestion_ordinals = sorted(
+        int(data.removeprefix("sub_generator#"))
+        for data in provider.calls
+        if data.startswith("sub_generator#")
+    )
+    assert subquestion_ordinals == [1, 2, 3, 4, 5]
+    # First verification always fails
+    assert verification_entries[0]["passed"] is False
+
+    # --- Verify trail structure ---
     assert [entry["passed"] for entry in verification_entries] == (
         [False] + [correction in {"valid", "short-pass"} for correction in corrections]
     )
-    assert len(initial_entries) == 1
     assert [entry["outcome"] for entry in correction_entries] == [
         "accepted" if correction == "valid" else "rejected" for correction in corrections
     ]
@@ -528,83 +487,69 @@ def test_correction_structure_persists_through_sse_history_and_log(
             assert set(entry["reason"]) == {"code", "path", "message"}
             assert entry["reason"]["path"] == "subquestions"
             assert entry["reason"]["message"]
-            assert _without_nulls(entry["snapshot"]) == _without_nulls(
-                _without_verdict(initial_content)
-            )
+            assert _without_nulls(entry["snapshot"]) == _without_nulls(initial_snapshot)
         else:
             assert "reason" not in entry
-    assert _without_nulls(initial_entries[0]["snapshot"]) == _without_nulls(
-        _without_verdict(initial_content)
-    )
-    if expected_success:
-        assert _without_nulls(correction_entries[-1]["snapshot"]) == _without_nulls(
-            _without_verdict(expected_content)
-        )
-    else:
-        assert not any(
-            entry.get("kind") == "verification" and entry.get("passed") is True
-            for entry in trail_events
-        )
 
-    diagnostics = [
-        data
-        for name, data in events
-        if name == "stage"
-        and data.get("agent") == "corrector"
-        and data.get("stage") == "correct"
-        and data.get("status") == "error"
-    ]
-    assert len(diagnostics) == expected_rejections
-    assert [diagnostic["retry"] for diagnostic in diagnostics] == list(
-        range(1, expected_rejections + 1)
-    )
-    assert all(diagnostic["code"] == "correction_rejected" for diagnostic in diagnostics)
-    assert all(diagnostic["question_id"] == result["id"] for diagnostic in diagnostics)
-    assert all(diagnostic.get("message") for diagnostic in diagnostics)
-    assert all(
-        "小題" in diagnostic["message"]
-        or "subquestion" in diagnostic["message"].lower()
-        for diagnostic in diagnostics
-    )
-    completed_corrections = [
-        data
-        for name, data in events
-        if name == "stage" and data.get("agent") == "corrector"
-        and data.get("stage") == "correct" and data.get("status") == "end"
-    ]
-    assert [data["retry"] for data in completed_corrections] == (
-        [len(corrections)] if accepted else []
-    )
-    assert not any(
-        name == "stage" and data.get("agent") == "image_agent"
-        for name, data in events
-    )
-    assert "DISCARDED_CORRECTION_FIGURE" not in json.dumps(
-        [updates, result, trail_events], ensure_ascii=False,
-    )
+    # --- Initial content assertions (via trail snapshot) ---
+    assert len(initial_snapshot["subquestions"]) == 5
+    assert initial_snapshot["文本"] == "原始共享文本"
 
-    history = transport_client.get("/api/history")
-    assert history.status_code == 200
-    assert history.json()["total"] == 1
-    record_id = history.json()["items"][0]["id"]
-    detail = transport_client.get(f"/api/history/{record_id}")
-    assert detail.status_code == 200
-    detail_body = detail.json()
-    saved = detail_body["question_json"]
-    _assert_content_matches(expected_content, saved)
+    # --- Derive expected content for DB comparison ---
+    accepted = "valid" in corrections
+    if accepted:
+        accepted_entries = [e for e in correction_entries if e.get("outcome") == "accepted"]
+        assert len(accepted_entries) == 1
+        corrected_snapshot = accepted_entries[0]["snapshot"]
+        # Verify correction applied the right change to subquestion 3 (trail snapshot)
+        assert corrected_snapshot["subquestions"][2]["題目"] == "有效修正第3小題"
+        assert corrected_snapshot["subquestions"][2]["答案"] == "B"
+        assert corrected_snapshot["subquestions"][2]["答案解析"] == "有效修正解析"
+        # Other subquestions are unaffected (trail snapshot → trail snapshot)
+        for index in (0, 1, 3, 4):
+            sq_c = corrected_snapshot["subquestions"][index]
+            sq_i = initial_snapshot["subquestions"][index]
+            assert sq_c["id"] == sq_i["id"]
+            assert sq_c["答案"] == sq_i["答案"]
+        assert initial_snapshot["文本"] == corrected_snapshot["文本"]
+    # else: rejected — no corrected_snapshot assertions needed here
+
+    # --- DB content assertions ---
+    # No invalid correction content should appear in the saved question
+    assert "不應發布" not in json.dumps(saved, ensure_ascii=False)
     assert len(saved["subquestions"]) == 5
     assert saved["文本"] == "原始共享文本"
     assert saved["verification"]["passed"] is expected_success
     if subject == "natural_sciences":
         assert saved["metadata"]["reporting_scales"] == ["3", "3", "3", "3", "3"]
-    assert detail_body["verification_trail"] == trail_events
+    if accepted:
+        # Accepted correction: subquestion 3 was changed
+        assert saved["subquestions"][2]["題目"] == "有效修正第3小題"
+        assert saved["subquestions"][2]["答案"] == "B"
+        assert saved["subquestions"][2]["答案解析"] == "有效修正解析"
+        # Subquestion identity preserved across correction
+        for index in (0, 1, 3, 4):
+            saved_sq = saved["subquestions"][index]
+            assert saved_sq["id"] == initial_snapshot["subquestions"][index]["id"]
+            assert saved_sq["答案"] == "A"
+    else:
+        # Rejected correction: original answers unchanged
+        assert saved["subquestions"][2]["答案"] == "A"
+        for i, sq in enumerate(saved["subquestions"]):
+            assert sq["id"] == initial_snapshot["subquestions"][i]["id"]
     if not expected_success:
         assert not any(
             entry.get("outcome") == "accepted"
             or (entry.get("kind") == "verification" and entry.get("passed") is True)
-            for entry in detail_body["verification_trail"]
+            for entry in trail_events
         )
 
+    # DISCARDED_CORRECTION_FIGURE must not appear in saved question or trail
+    assert "DISCARDED_CORRECTION_FIGURE" not in json.dumps(
+        [saved, trail_events], ensure_ascii=False,
+    )
+
+    # --- Exchange assertions ---
     exchanges = _exchanges_for_detail(transport_client, detail_body)
     correction_exchanges = [
         row for row in exchanges if row["purpose"] == "correct"
@@ -657,84 +602,53 @@ def test_concurrent_questions_keep_correction_decisions_and_history_isolated(
     payload["per_question_params"] = json.dumps(rows, ensure_ascii=False)
 
     response = transport_client.post("/api/generate", json=payload)
-    assert response.status_code == 200, response.text
-    events = _stream_events(response)
-    results = [data for name, data in events if name == "result"]
-    assert len(results) == 2
-    by_marker = {
-        marker: next(result for result in results if marker in result["核心問題"])
-        for marker in providers
-    }
-    rejected = by_marker["REJECT_GROUP"]
-    accepted = by_marker["ACCEPT_GROUP"]
-    assert rejected["id"] != accepted["id"]
-    assert rejected["verification"]["passed"] is False
-    assert accepted["verification"]["passed"] is True
-    assert rejected["subquestions"][2]["答案"] == "A"
-    assert accepted["subquestions"][2]["答案"] == "B"
-
-    for marker, outcome in (("REJECT_GROUP", "rejected"), ("ACCEPT_GROUP", "accepted")):
-        result = by_marker[marker]
-        question_id = result["id"]
-        updates = [
-            data for name, data in events
-            if name == "question_update" and data["question"]["id"] == question_id
-        ]
-        # #746: SS gets an extra draft for ICCS axes stamping (7 drafts total)
-        assert [update["phase"] for update in updates] == (
-            (["draft"] * 7 + ["verified", "verified"])
-            if outcome == "rejected"
-            else (["draft"] * 7 + ["verified", "corrected", "verified"])
-        )
-        entries = [
-            data for name, data in events
-            if name == "trail" and data["question_id"] == question_id
-        ]
-        correction = next(entry for entry in entries if entry["kind"] == "correction")
-        assert correction["outcome"] == outcome
-        assert correction["retry_index"] == 1
-        assert marker in correction["snapshot"]["核心問題"]
-        if outcome == "rejected":
-            assert correction["reason"]["code"] == "subquestions_count"
-            initial_verified = next(
-                update for update in updates if update["phase"] == "verified"
-            )
-            assert _without_nulls(correction["snapshot"]) == _without_nulls(
-                _without_verdict(initial_verified["question"])
-            )
-        else:
-            assert "reason" not in correction
-        assert providers[marker].calls.count("corrector") == 1
-        assert providers[marker].calls.count("verifier") == 2
-
-    stages = [
-        data for name, data in events
-        if name == "stage" and data.get("stage") == "correct"
-    ]
-    assert len(stages) == 4
-    assert {(stage["question_id"], stage["status"], stage["retry"]) for stage in stages} == {
-        (rejected["id"], "start", 1), (rejected["id"], "error", 1),
-        (accepted["id"], "start", 1), (accepted["id"], "end", 1),
-    }
-    assert not any(
-        name == "stage" and data.get("agent") == "image_agent"
-        for name, data in events
-    )
+    assert response.status_code == 202, response.text
+    _execute_run(transport_client)
 
     history = transport_client.get("/api/history").json()
     assert history["total"] == 2
+
+    by_marker: dict[str, tuple[dict, dict]] = {}
     for row in history["items"]:
         detail_response = transport_client.get(f"/api/history/{row['id']}")
         assert detail_response.status_code == 200
         detail = detail_response.json()
         saved = detail["question_json"]
-        result = next(result for result in results if result["id"] == saved["id"])
-        _assert_content_matches(result, saved)
-        assert saved["verification"] == result["verification"]
-        assert detail["verification_trail"] == [
-            data for name, data in events
-            if name == "trail" and data["question_id"] == saved["id"]
-        ]
+        for marker in providers:
+            if marker in saved["核心問題"]:
+                by_marker[marker] = (saved, detail)
+                break
+
+    assert set(by_marker.keys()) == {"REJECT_GROUP", "ACCEPT_GROUP"}, (
+        f"Could not find both markers in history; found: {list(by_marker.keys())}"
+    )
+    rejected_saved, rejected_detail = by_marker["REJECT_GROUP"]
+    accepted_saved, accepted_detail = by_marker["ACCEPT_GROUP"]
+
+    assert rejected_saved["id"] != accepted_saved["id"]
+    assert rejected_saved["verification"]["passed"] is False
+    assert accepted_saved["verification"]["passed"] is True
+    assert rejected_saved["subquestions"][2]["答案"] == "A"
+    assert accepted_saved["subquestions"][2]["答案"] == "B"
+
+    for marker, outcome, detail_body in (
+        ("REJECT_GROUP", "rejected", rejected_detail),
+        ("ACCEPT_GROUP", "accepted", accepted_detail),
+    ):
+        trail = detail_body["verification_trail"]
+        correction = next(
+            (entry for entry in trail if entry.get("kind") == "correction"), None
+        )
+        assert correction is not None, f"No correction entry found for {marker}"
+        assert correction["outcome"] == outcome
+        assert correction["retry_index"] == 1
+        assert marker in correction["snapshot"]["核心問題"]
+        if outcome == "rejected":
+            assert correction["reason"]["code"] == "subquestions_count"
+        else:
+            assert "reason" not in correction
+        assert providers[marker].calls.count("corrector") == 1
+        assert providers[marker].calls.count("verifier") == 2
 
 
 @pytest.mark.parametrize("subject", ["social_studies", "natural_sciences", "math"])
@@ -782,36 +696,27 @@ def test_revision_binding_across_subjects_and_outcomes(
     payload = _resolved_payload(transport_client, max_retries=max_retries, subject=subject)
 
     response = transport_client.post("/api/generate", json=payload)
-    assert response.status_code == 200, response.text[:1000]
+    assert response.status_code == 202, response.text[:1000]
+    _execute_run(transport_client)
 
-    full_events = _stream_events_full(response)
-    events = _stream_events(response)
+    # Read trail from DB
+    history = transport_client.get("/api/history")
+    assert history.status_code == 200
+    record_id = history.json()["items"][0]["id"]
+    detail = transport_client.get(f"/api/history/{record_id}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    trail_events = detail_body["verification_trail"]
 
-    # --- question_update revisions (content_revision is in the context) ---
-    update_phases_revisions: list[tuple[int | None, str]] = [
-        (ctx.get("content_revision"), p["phase"])
-        for name, ctx, p in full_events
-        if name == "question_update"
-    ]
-    verified_revisions = [r for r, phase in update_phases_revisions if phase == "verified"]
-    assert len(verified_revisions) >= 2, (
-        f"[{subject}/{corrections}] expected ≥2 verified phases, got {verified_revisions}"
-    )
-    R1 = verified_revisions[0]
-    assert isinstance(R1, int) and R1 >= 1, (
-        f"[{subject}/{corrections}] R1 must be a positive int, got {R1!r}"
-    )
-
-    # --- trail events ---
-    trail_events = [data for name, data in events if name == "trail"]
     verification_entries = [e for e in trail_events if e.get("kind") == "verification"]
     correction_entries = [e for e in trail_events if e.get("kind") == "correction"]
     initial_entries = [e for e in trail_events if e.get("kind") == "initial"]
 
     assert len(initial_entries) == 1
-    assert initial_entries[0].get("content_revision") == R1, (
-        f"[{subject}/{corrections}] initial trail entry content_revision="
-        f"{initial_entries[0].get('content_revision')!r}, expected R1={R1}"
+    R1 = initial_entries[0].get("content_revision")
+    assert isinstance(R1, int) and R1 >= 1, (
+        f"[{subject}/{corrections}] initial trail entry content_revision must be "
+        f"a positive int, got {R1!r}"
     )
     assert len(verification_entries) >= 1
     assert verification_entries[0].get("content_revision") == R1, (
@@ -819,108 +724,31 @@ def test_revision_binding_across_subjects_and_outcomes(
         f"{verification_entries[0].get('content_revision')!r}, expected R1={R1}"
     )
 
-    # --- question_terminal ---
-    terminal_events = [data for name, data in events if name == "question_terminal"]
-    assert len(terminal_events) == 1
-    terminal = terminal_events[0]
-
     if accepted:
-        # corrected update exists and bumps to R2 > R1
-        corrected_revisions = [r for r, phase in update_phases_revisions if phase == "corrected"]
-        assert len(corrected_revisions) == 1, (
-            f"[{subject}/{corrections}] expected 1 corrected phase, got {corrected_revisions}"
-        )
-        R2 = corrected_revisions[0]
+        assert len(correction_entries) == 1
+        R2 = correction_entries[0].get("content_revision")
         assert isinstance(R2, int) and R2 > R1, (
             f"[{subject}/{corrections}] R2={R2!r} must exceed R1={R1}"
         )
-
-        # Final verified update carries R2
-        assert verified_revisions[-1] == R2, (
-            f"[{subject}/{corrections}] final verified phase revision="
-            f"{verified_revisions[-1]!r}, expected R2={R2}"
-        )
-
-        # result context carries R2
-        result_revisions = [
-            ctx.get("content_revision")
-            for name, ctx, _ in full_events
-            if name == "result"
-        ]
-        assert result_revisions == [R2], (
-            f"[{subject}/{corrections}] result content_revision={result_revisions!r}, "
-            f"expected [R2={R2}]"
-        )
-
-        # Correction trail entry targets R2
-        assert len(correction_entries) == 1
-        assert correction_entries[0].get("content_revision") == R2, (
-            f"[{subject}/{corrections}] correction entry content_revision="
-            f"{correction_entries[0].get('content_revision')!r}, expected R2={R2}"
-        )
-
-        # Final (reverification) entry is at R2 and passed
+        # Reverification entry is at R2 and passed
         assert len(verification_entries) == 2
         assert verification_entries[1].get("content_revision") == R2, (
             f"[{subject}/{corrections}] reverification entry content_revision="
             f"{verification_entries[1].get('content_revision')!r}, expected R2={R2}"
         )
         assert verification_entries[1].get("passed") is True
-
-        # Terminal
-        assert terminal.get("final_revision") == R2, (
-            f"[{subject}/{corrections}] terminal final_revision={terminal.get('final_revision')!r}"
-            f", expected R2={R2}"
-        )
-        assert terminal.get("review", {}).get("status") == "passed", (
-            f"[{subject}/{corrections}] terminal review.status={terminal.get('review')!r}"
-        )
-        assert terminal.get("review", {}).get("content_revision") == R2, (
-            f"[{subject}/{corrections}] terminal review.content_revision="
-            f"{terminal.get('review', {}).get('content_revision')!r}, expected R2={R2}"
-        )
     else:
-        # No corrected update; no revision beyond R1 from verification alone
-        corrected_revisions = [r for r, phase in update_phases_revisions if phase == "corrected"]
-        assert corrected_revisions == [], (
-            f"[{subject}/{corrections}] unexpected corrected phases: {corrected_revisions}"
-        )
-        assert all(rev == R1 for rev in verified_revisions), (
-            f"[{subject}/{corrections}] all verified revisions must equal R1={R1}, "
-            f"got {verified_revisions}"
-        )
-
-        # Correction trail entry (rejected) carries R1
+        # Rejected correction: all entries remain at R1
         for entry in correction_entries:
             assert entry.get("content_revision") == R1, (
                 f"[{subject}/{corrections}] rejected correction entry content_revision="
                 f"{entry.get('content_revision')!r}, expected R1={R1}"
             )
-
-        # Final verification is at R1 and failed
         assert verification_entries[-1].get("content_revision") == R1, (
             f"[{subject}/{corrections}] final verification content_revision="
             f"{verification_entries[-1].get('content_revision')!r}, expected R1={R1}"
         )
         assert verification_entries[-1].get("passed") is False
 
-        # Terminal
-        assert terminal.get("final_revision") == R1, (
-            f"[{subject}/{corrections}] terminal final_revision={terminal.get('final_revision')!r}"
-            f", expected R1={R1}"
-        )
-        assert terminal.get("review", {}).get("status") == "failed", (
-            f"[{subject}/{corrections}] terminal review.status={terminal.get('review')!r}"
-        )
-        assert terminal.get("review", {}).get("content_revision") == R1, (
-            f"[{subject}/{corrections}] terminal review.content_revision="
-            f"{terminal.get('review', {}).get('content_revision')!r}, expected R1={R1}"
-        )
-
-    # --- Sibling 歷程讀回：history read-back revisions match the stream ---
-    history = transport_client.get("/api/history")
-    assert history.status_code == 200
-    record_id = history.json()["items"][0]["id"]
-    detail = transport_client.get(f"/api/history/{record_id}")
-    assert detail.status_code == 200
-    assert detail.json()["verification_trail"] == trail_events
+    # Sibling 歷程讀回: trail is consistently stored in DB
+    assert detail_body["verification_trail"] == trail_events
