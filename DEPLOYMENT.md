@@ -986,6 +986,8 @@ Set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to the p95, rounded up, and record the
 
 | Fact | Value | Date measured |
 |---|---|---|
-| Duplicate pairs / surplus rows | `_pending_` | `_pending_` |
-| Per-question p95 (s) | `_pending_` | `_pending_` |
-| Cleanup decision | `_pending_` | `_pending_` |
+| Duplicate pairs / surplus rows | 0 / 0 | 2026-09-29 |
+| Per-question p95 (s) | 785.5 (n = 50; p50 302.0, p99 882.6, max 897.6; runs from 2026-07-17 to 2026-09-29) | 2026-09-29 |
+| Cleanup decision | Not needed: no duplicates, so the unique constraint can be added directly | 2026-09-29 |
+
+The p95 is a lower bound. On `main` a run's records are saved from the HTTP stream, and Railway cuts a request at about 900 seconds, so questions still running at that point were never saved. That is consistent with the maximum of 897.6 seconds. Fifty samples also make the p95 rough. `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` has not been changed yet; choosing it is task 6.1 of the change.
