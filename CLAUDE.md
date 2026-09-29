@@ -116,6 +116,13 @@ Preview, resolve, history, modification API, and CLI pipeline are excluded.
 
 `gateway/release_controller.py` extends the existing `admission.json` gate with the `exam-generation.release-policy/1` contract: environment, increasing release revision, released build, `open|paused|preparing` admission, recovery formats, reader metadata, and current/prepared-rollback/transition artifacts. `gateway/app.py` serves `/release/policy.json` and `/build-meta.json` from that same record, gates both generation spellings before proxy dispatch, and counts pending admissions through response delivery. It never keeps a positive policy cache. Target publication requires fresh positive #741 drain evidence (all inventory instances and gauges, including pending admissions) plus matching metadata from every serving route; publication leaves admission paused. Application rollback cannot reopen the gateway volume. Use `scripts/release_admission_rehearsal.py` and the committed evidence under `docs/research/2026-09-17-778-release-admission/` for the controlled two-instance checkpoint.
 
+Follow mode (issue #922) adds a narrow exception for staging: `POST /gateway/release/follow`
+(enabled when `GATEWAY_FOLLOW_FRONTEND=1` on the gateway) atomically advances
+`released_build_id` and `release_revision` without drain or route evidence.  The frontend
+nginx entrypoint hook `web/docker-entrypoint.d/50-follow-release.sh` posts the bundle's
+`build_id` on every container start, so each staging deploy automatically updates the
+gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
+
 ### Evidence profiles (issue #739)
 
 `web/src/lib/runEvidence.ts` defines the `generate-legacy`, `modification`, and reserved `generate-v2` profiles. The shared status bar on GeneratePage and inside QuestionCard consumes a profile-tagged evidence object. `generationStream.ts` projects legacy stage events and the five generation card fields; `modificationStream.ts` projects modification steps and decodes its existing SSE events. Modification never requires a generation manifest. `generate-v2` is the generation-only entry point for OpenSpec `per-question-live-progress` (issue #742). The frontend decoder (`createGenerationStreamDecoder` in `generationStream.ts`) routes v2 SSE events through the `RunEvidenceState` reducer (`generationEvidence.ts`), which tracks per-question processing, content receipt, terminal status, and review. `GenerationStatusBar` renders a live 已結束/收到最終結果 counts line; `QuestionCard` renders a compact placeholder when `content.receipt === 'none'` and an evidence status line when content is available. `GeneratePage` renders cards in manifest order with live placeholders. HistoryDetail retains its stored-record card props.

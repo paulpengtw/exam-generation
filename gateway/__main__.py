@@ -41,11 +41,13 @@ def main() -> None:
             }
         )
 
+    follow_frontend = os.environ.get("GATEWAY_FOLLOW_FRONTEND", "").strip() == "1"
     app = create_app(
         backend_url=backend_url,
         state_dir=state_dir,
         control_token=control_token,
         release_controller=controller,
+        follow_frontend=follow_frontend,
     )
 
     uvicorn.run(app, host="0.0.0.0", port=port)

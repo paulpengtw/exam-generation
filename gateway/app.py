@@ -75,6 +75,7 @@ def create_app(
     control_token: str | None = None,
     release_controller: ReleaseController | None = None,
     pending_tracker: PendingAdmissionTracker | None = None,
+    follow_frontend: bool = False,
 ) -> Starlette:
     """Create the gateway ASGI app.
 
@@ -87,6 +88,9 @@ def create_app(
     control_token:
         Secret token required in ``X-Gateway-Control-Token`` for the control
         endpoint.  Pass ``None`` to disable the control endpoint (returns 404).
+    follow_frontend:
+        When True, the ``POST /gateway/release/follow`` endpoint is enabled.
+        When False (the default) the endpoint returns 404 regardless of token.
     """
     # Shared httpx client — created on startup, closed on shutdown
     client_holder: list[httpx.AsyncClient] = []
@@ -269,6 +273,30 @@ def create_app(
             )
         return JSONResponse(result)
 
+    async def gateway_follow(request: Request) -> JSONResponse:
+        if not follow_frontend:
+            return JSONResponse({"detail": "Control endpoint is disabled."}, status_code=404)
+        if response := _require_control_token(request):
+            return response
+        if release_controller is None:
+            return _authority_unavailable()
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"detail": "build_id must be a non-empty string."}, status_code=400)
+        if not isinstance(body, dict):
+            return JSONResponse({"detail": "build_id must be a non-empty string."}, status_code=400)
+        build_id = body.get("build_id")
+        if not isinstance(build_id, str) or not build_id.strip():
+            return JSONResponse({"detail": "build_id must be a non-empty string."}, status_code=400)
+        try:
+            result = release_controller.follow_build(build_id)
+        except ReleasePolicyError as exc:
+            return JSONResponse(
+                {"detail": str(exc), "code": "RELEASE_TRANSITION_REJECTED"}, status_code=409
+            )
+        return JSONResponse(result)
+
     # -----------------------------------------------------------------------
     # Reverse-proxy catch-all
     # -----------------------------------------------------------------------
@@ -393,6 +421,7 @@ def create_app(
         Route("/gateway/release/prepare", gateway_prepare, methods=["POST"]),
         Route("/gateway/release/publish", gateway_publish, methods=["POST"]),
         Route("/gateway/release/retire", gateway_retire, methods=["POST"]),
+        Route("/gateway/release/follow", gateway_follow, methods=["POST"]),
         Route("/release/policy.json", release_policy, methods=["GET"]),
         Route("/build-meta.json", build_meta, methods=["GET"]),
         Route(
