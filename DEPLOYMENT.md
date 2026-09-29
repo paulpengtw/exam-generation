@@ -349,8 +349,8 @@ docker compose exec gateway python scripts/admission_gate.py status --require OP
    - `GATEWAY_RELEASE_REVISION` → `1` for the first controller record
    - `GATEWAY_READER_VERSION` → the recovery-reader version, for example `reader-1`
    - `GATEWAY_SUPPORTED_RECOVERY_FORMATS` → comma-separated formats accepted during recovery, default `exam-generation.recovery/1`. The web client's 儲存草稿並更新 requires the published policy to list `exam-generation.recovery/1`.
-   - `PORT` → `8000` (Railway injects this automatically; no action needed)
-4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).
+   - `PORT` → `8000` explicitly — set this so the gateway listens on the port its public domain targets.  Without it the domain answers 502 "Application failed to respond" even though the deploy shows as succeeded.
+4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).  Set the domain's target port to `8000`, matching `PORT`.
 5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
 6. **Remove the backend's public domain** so nothing can bypass the gate.  The backend is now reachable only via the gateway.
 
