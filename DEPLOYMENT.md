@@ -913,3 +913,79 @@ If `gateway.railway.internal` is unreachable, the hook logs it and nginx starts
 regardless.  Use the public gateway URL as `GATEWAY_FOLLOW_URL` instead.
 
 Production does not set `GATEWAY_FOLLOW_FRONTEND`; production is unchanged.
+
+## Production facts before detached generation runs (issue #903)
+
+The OpenSpec change `openspec/changes/detached-generation-runs/` needs two read-only facts from the production database that only someone with production access can collect. First, check whether `generation_records` already holds duplicate rows per `(generation_log_id, question_id)`; this decides whether a cleanup step must precede the planned unique constraint. Second, measure the per-question p95 generation duration; this sets `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` (about 120 seconds until it is measured). Post both results on issue #903. If duplicates exist, record the cleanup decision on #903 before the uniqueness change ships.
+
+### Connecting
+
+Open a psql session against the Railway Postgres service, for example with `railway connect Postgres`, or with `psql` and the Postgres service's public connection URL. The backend's `DATABASE_URL` uses the `postgresql+asyncpg://` prefix, which psql does not accept; use a plain `postgresql://` URL. Everything below is read-only; wrap it in `BEGIN READ ONLY;` … `ROLLBACK;`.
+
+```sql
+BEGIN READ ONLY;
+-- run the queries below
+ROLLBACK;
+```
+
+### 1. Duplicate pre-check
+
+Rows with a NULL `generation_log_id` are excluded because Postgres treats NULLs as distinct, so they cannot violate the constraint.
+
+```sql
+SELECT count(*)                 AS duplicate_pairs,
+       coalesce(sum(n - 1), 0)  AS surplus_rows
+FROM (
+  SELECT generation_log_id, question_id, count(*) AS n
+  FROM generation_records
+  WHERE generation_log_id IS NOT NULL
+  GROUP BY generation_log_id, question_id
+  HAVING count(*) > 1
+) d;
+```
+
+Only if `duplicate_pairs` is above 0, list examples to inform the cleanup decision:
+
+```sql
+SELECT generation_log_id, question_id,
+       array_agg(status::text || ' @ ' || created_at ORDER BY created_at) AS rows
+FROM generation_records
+WHERE generation_log_id IS NOT NULL
+GROUP BY generation_log_id, question_id
+HAVING count(*) > 1
+ORDER BY min(created_at) DESC
+LIMIT 20;
+```
+
+### 2. Per-question p95 duration
+
+Questions in one run start in parallel after batch planning, and each record is saved when that question finishes, so `generation_records.created_at − generation_logs.started_at` approximates one question's wall time. It includes batch-planning time, which makes it a slight overestimate and is the safe side for a drain window. Only completed rows from the last 90 days are counted; rows with a `parent_record_id` (人工審題修正) are skipped.
+
+```sql
+SELECT count(*)                                                  AS n,
+       round(percentile_cont(0.50) WITHIN GROUP (ORDER BY secs)::numeric, 1) AS p50_s,
+       round(percentile_cont(0.95) WITHIN GROUP (ORDER BY secs)::numeric, 1) AS p95_s,
+       round(percentile_cont(0.99) WITHIN GROUP (ORDER BY secs)::numeric, 1) AS p99_s,
+       round(max(secs)::numeric, 1)                              AS max_s,
+       min(started_at)::date                                     AS from_day,
+       max(started_at)::date                                     AS to_day
+FROM (
+  SELECT extract(epoch FROM r.created_at - l.started_at) AS secs, l.started_at
+  FROM generation_records r
+  JOIN generation_logs l ON l.id = r.generation_log_id
+  WHERE r.status = 'completed'
+    AND r.parent_record_id IS NULL
+    AND l.started_at >= now() - interval '90 days'
+) t
+WHERE secs > 0;
+```
+
+Set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to the p95, rounded up, and record the value here.
+
+### Results
+
+| Fact | Value | Date measured |
+|---|---|---|
+| Duplicate pairs / surplus rows | `_pending_` | `_pending_` |
+| Per-question p95 (s) | `_pending_` | `_pending_` |
+| Cleanup decision | `_pending_` | `_pending_` |
