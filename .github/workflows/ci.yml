@@ -11,6 +11,35 @@ on:
 jobs:
   python:
     runs-on: ubuntu-latest
+
+    # Postgres 16 service container for tests marked @pytest.mark.postgres.
+    # The container is accessible at localhost:5432 while the job runs.
+    # TEST_POSTGRES_URL (set below in env) points marked tests at this container;
+    # DATABASE_URL is intentionally NOT set so the existing SQLite-backed tests
+    # continue to use the server/db.py default (sqlite+aiosqlite:///./dev.db).
+    # See: docs/adr/0035-run-claim-tests-target-postgres-in-ci.md
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        # Wait until Postgres is ready to accept connections before proceeding.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # Postgres-marked tests read this variable.  Unmarked tests are unaffected
+      # because they never reference TEST_POSTGRES_URL; DATABASE_URL stays at
+      # the sqlite+aiosqlite default set inside server/db.py.
+      TEST_POSTGRES_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/postgres
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +62,9 @@ jobs:
         run: uv run ruff check src/ server/ tests/
 
       - name: Python tests (includes TS contract drift guard)
+        # TEST_POSTGRES_URL is set at the job level (see env: above) so the
+        # postgres-marked smoke test runs against the service container.
+        # Unmarked tests continue to use SQLite; their runtime is unaffected.
         run: uv run pytest -q
 
   web:
