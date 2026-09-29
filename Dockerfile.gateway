@@ -8,8 +8,6 @@ COPY scripts/admission_gate.py scripts/admission_gate.py
 
 RUN pip install uv && uv pip install --system '.[gateway]'
 
-VOLUME /var/lib/examgen-gate
-
 EXPOSE 8000
 
 CMD ["python", "-m", "gateway"]
