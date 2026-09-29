@@ -26,8 +26,8 @@
 
 These tasks require Railway console access and cannot be automated in CI.
 
-- [ ] 6.1 On the Railway **staging gateway** service → Variables: add `GATEWAY_FOLLOW_FRONTEND=1`. Redeploy the gateway service so the new route is live.
+- [x] 6.1 On the Railway **staging gateway** service → Variables: add `GATEWAY_FOLLOW_FRONTEND=1`. Redeploy the gateway service so the new route is live.
 
-- [ ] 6.2 On the Railway **staging frontend** service → Variables: add `GATEWAY_CONTROL_TOKEN=${{gateway.GATEWAY_CONTROL_TOKEN}}` (using the Railway reference variable UI) and `GATEWAY_FOLLOW_URL=http://gateway.railway.internal:8000/gateway/release/follow`. Do not redeploy yet.
+- [x] 6.2 On the Railway **staging frontend** service → Variables: add `GATEWAY_CONTROL_TOKEN=${{gateway.GATEWAY_CONTROL_TOKEN}}` (using the Railway reference variable UI) and `GATEWAY_FOLLOW_URL=http://gateway.railway.internal:8000/gateway/release/follow`. Do not redeploy yet.
 
-- [ ] 6.3 Trigger a staging frontend redeploy (push a commit or click "Redeploy" in Railway). Validate: (a) `GET /release/policy.json` returns the new build's `released_build_id`; (b) a new generation request is not blocked by `CLIENT_UPDATE_REQUIRED`. After validation, the per-deploy manual procedure from #891 is retired.
+- [x] 6.3 Trigger a staging frontend redeploy (push a commit or click "Redeploy" in Railway). Validate: (a) `GET /release/policy.json` returns the new build's `released_build_id`; (b) a new generation request is not blocked by `CLIENT_UPDATE_REQUIRED`. After validation, the per-deploy manual procedure from #891 is retired.
