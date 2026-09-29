@@ -355,11 +355,19 @@ class ReleaseController:
             raise ReleasePolicyError("release target environment does not match controller")
         return target
 
-    def _write(self, policy: dict[str, Any], *, changed_by: str, reason: str) -> dict[str, Any]:
+    def _write(
+        self,
+        policy: dict[str, Any],
+        *,
+        changed_by: str,
+        reason: str | None,
+    ) -> dict[str, Any]:
         parsed = parse_policy(policy, expected_environment=self.environment)
+        is_open = parsed["admission"] == "open"
+        effective_reason: str | None = None if is_open else reason
         state = AdmissionState(
-            state="open" if parsed["admission"] == "open" else "paused",
-            reason=None if parsed["admission"] == "open" else reason,
+            state="open" if is_open else "paused",
+            reason=effective_reason,
             changed_at=_now_iso(self._clock),
             changed_by=changed_by,
             schema=parsed["schema"],
@@ -374,6 +382,47 @@ class ReleaseController:
         )
         write_state(self.state_dir, state)
         return parsed
+
+    def follow_build(self, build_id: str) -> dict[str, Any]:
+        """Atomically advance released_build_id to build_id without drain evidence.
+
+        Designed for staging: the frontend nginx entrypoint hook calls this on
+        every container start so the gateway policy tracks the deployed bundle.
+        Admission state (open/paused) is not changed.
+        """
+        _require_string({"build_id": build_id}, "build_id")
+        current = self._require_policy()
+        if current["admission"] == "preparing":
+            raise ReleasePolicyError("release preparation is in progress")
+        if build_id == current["released_build_id"]:
+            return current
+        old_artifact = _artifact_from_policy(current)
+        new_revision = current["release_revision"] + 1
+        new_artifact = {
+            "build_id": build_id,
+            "release_revision": new_revision,
+            "reader_version": current.get("reader_version") or DEFAULT_READER_VERSION,
+        }
+        existing_artifacts = current.get("artifacts") or {}
+        updated = deepcopy(current)
+        updated["release_revision"] = new_revision
+        updated["released_build_id"] = build_id
+        updated["reader_version"] = new_artifact["reader_version"]
+        updated["artifacts"] = {
+            "current": new_artifact,
+            "prepared_rollback": old_artifact,
+            "transition": deepcopy(existing_artifacts.get("transition", [])),
+        }
+        reason = (
+            read_state(self.state_dir).reason
+            if current["admission"] != "open"
+            else "staging follow"
+        )
+        return self._write(
+            updated,
+            changed_by="controller",
+            reason=reason,
+        )
 
     def _validate_switch_evidence(self, evidence: dict[str, Any], target: dict[str, Any]) -> None:
         self._validate_pending_admissions(evidence)

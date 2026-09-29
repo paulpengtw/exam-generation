@@ -859,3 +859,57 @@ Expected: both JSON responses show `"environment": "staging"`, and the smoke tes
 reports a generation that reaches `/api/generate` (not a preflight rejection).
 Production must still show `"environment": "production"` and must be verified
 independently after any change to production variables.
+
+## Staging: gateway follows the frontend build (issue #922)
+
+After one-time operator setup every staging frontend deploy automatically advances the
+gateway `released_build_id` to the new bundle's build ID.  No per-deploy manual steps
+are required: nobody has to edit `GATEWAY_RELEASED_BUILD_ID`, wipe the volume, or run
+`prepare → publish → reopen`.
+
+### How it works
+
+The frontend nginx:alpine image runs every executable script under
+`/docker-entrypoint.d/` synchronously before nginx starts.  `50-follow-release.sh`
+reads `build_id` from `/usr/share/nginx/html/build-meta.json` and POSTs it to
+`POST /gateway/release/follow`.  The gateway atomically advances `released_build_id`
+and `release_revision` in the policy record.  Admission state (`open` or `paused`)
+is not changed.
+
+### One-time operator setup (staging only)
+
+| Service | Variable | Value |
+|---|---|---|
+| Gateway | `GATEWAY_FOLLOW_FRONTEND` | `1` |
+| Frontend | `GATEWAY_CONTROL_TOKEN` | `${{gateway.GATEWAY_CONTROL_TOKEN}}` — Railway [reference variable](https://docs.railway.com/reference/variables), single source of truth |
+| Frontend | `GATEWAY_FOLLOW_URL` | `http://gateway.railway.internal:8000/gateway/release/follow` |
+
+After setting these variables, redeploy the gateway first (so the new endpoint is live),
+then redeploy the frontend.
+
+### Trade-offs
+
+On staging, the drain-before-switch procedure is not used and admission is not paused
+around a deploy.  Old tabs get "update required" once they next check the policy (they
+must reload).  For a few seconds during a deploy, new page loads can still be served the
+old bundle while the gateway has already recorded the new build ID; those loads see
+"update required" once and a reload fixes it.
+
+### Rollback
+
+If a rollback deploys an older image, the hook runs on that image's start and posts the
+older `build_id` at a higher revision than when that image was first deployed.  The
+gateway accepts this (revision always increases).  This behaviour is inferred from the
+nginx entrypoint, which runs `/docker-entrypoint.d/` on every container start; Railway
+does not document this explicitly.
+
+To disable follow mode entirely, remove `GATEWAY_FOLLOW_FRONTEND` from the gateway and
+`GATEWAY_CONTROL_TOKEN` / `GATEWAY_FOLLOW_URL` from the frontend.  The endpoint returns
+404 and the hook is inert.
+
+### Unreachable internal hostname
+
+If `gateway.railway.internal` is unreachable, the hook logs it and nginx starts
+regardless.  Use the public gateway URL as `GATEWAY_FOLLOW_URL` instead.
+
+Production does not set `GATEWAY_FOLLOW_FRONTEND`; production is unchanged.

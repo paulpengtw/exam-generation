@@ -23,6 +23,8 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY web/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY web/docker-entrypoint.d/50-follow-release.sh /docker-entrypoint.d/50-follow-release.sh
+RUN chmod +x /docker-entrypoint.d/50-follow-release.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
