@@ -146,10 +146,10 @@ describe("GeneratePage queue features (issue #912)", () => {
     );
   }, 25_000);
 
-  it("q2: 429 submit shows limit message and re-enables the form", async () => {
+  it("q2: 429 submit shows localized limit message (not server detail) and re-enables the form", async () => {
     server.failSubmit(429, {
       code: "queue_limit_reached",
-      detail: "You already have the maximum number of queued generation runs.",
+      detail: "server detail",
     });
 
     renderPage(ROUTE);
@@ -160,13 +160,16 @@ describe("GeneratePage queue features (issue #912)", () => {
     fireEvent.click(submitBtn);
     await waitFor(() => expect(server.submits()).toHaveLength(1));
 
-    // A readable error message must appear.
+    // The localized i18n message must appear (matches en-US and zh-TW both contain 最多/maximum).
     await waitFor(
       () => expect(
         screen.getByText(/maximum number of queued|最多數量的排隊/i)
       ).toBeInTheDocument(),
       { timeout: 8000 },
     );
+
+    // The raw server detail must NOT appear.
+    expect(screen.queryByText(/server detail/i)).not.toBeInTheDocument();
 
     // The form submit button must be re-enabled (status is "error", not "generating").
     await waitFor(

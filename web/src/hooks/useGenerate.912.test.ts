@@ -21,6 +21,8 @@ vi.mock("../sentry", () => ({ isSentryEnabled: vi.fn().mockReturnValue(false) })
 
 import { useGenerate } from "./useGenerate";
 import { useAuthStore } from "../store/authStore";
+import { useLangStore } from "../store/langStore";
+import { MESSAGES } from "../i18n/messages";
 import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
 import { acceptedRun, waitingQuestion, runSnapshot } from "../test/runFixtures";
 
@@ -152,10 +154,58 @@ describe("submission key", () => {
 // ---------------------------------------------------------------------------
 
 describe("429 queue limit", () => {
+  it("shows the LOCALIZED message (en-US) and NOT the server detail string", async () => {
+    useLangStore.setState({ lang: "en-US" });
+    server.failSubmit(429, {
+      code: "queue_limit_reached",
+      detail: "server detail",
+    });
+    const { result } = renderHook(() => useGenerate());
+    act(() => { void result.current.generate(MINIMAL_PARAMS); });
+    await flush(50);
+
+    expect(result.current.status).toBe("error");
+    // Must show the localized i18n string, not the raw server detail
+    expect(result.current.errorMessage).toBe(MESSAGES["en-US"]["generate.queue_limit"]);
+    expect(result.current.errorMessage).not.toContain("server detail");
+    // No run was started
+    expect(result.current.runId).toBeNull();
+  });
+
+  it("shows the LOCALIZED message (zh-TW) and NOT the server detail string", async () => {
+    useLangStore.setState({ lang: "zh-TW" });
+    server.failSubmit(429, {
+      code: "queue_limit_reached",
+      detail: "server detail",
+    });
+    const { result } = renderHook(() => useGenerate());
+    act(() => { void result.current.generate(MINIMAL_PARAMS); });
+    await flush(50);
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorMessage).toBe(MESSAGES["zh-TW"]["generate.queue_limit"]);
+    expect(result.current.errorMessage).not.toContain("server detail");
+    expect(result.current.runId).toBeNull();
+  });
+
+  it("shows the server detail as fallback when 429 code is absent/unknown", async () => {
+    server.failSubmit(429, {
+      detail: "server detail",
+    });
+    const { result } = renderHook(() => useGenerate());
+    act(() => { void result.current.generate(MINIMAL_PARAMS); });
+    await flush(50);
+
+    expect(result.current.status).toBe("error");
+    // No known errorCode → falls back to server's detail
+    expect(result.current.errorMessage).toContain("server detail");
+    expect(result.current.runId).toBeNull();
+  });
+
   it("shows the error message and keeps form usable (status=error not generating)", async () => {
     server.failSubmit(429, {
       code: "queue_limit_reached",
-      detail: "你目前已有最多數量的排隊出題任務，請等待其中一個完成後再試。",
+      detail: "server detail",
     });
     const { result } = renderHook(() => useGenerate());
     act(() => { void result.current.generate(MINIMAL_PARAMS); });
@@ -163,7 +213,7 @@ describe("429 queue limit", () => {
     await flush(50);
 
     expect(result.current.status).toBe("error");
-    expect(result.current.errorMessage).toContain("你目前已有最多數量的排隊出題任務");
+    expect(result.current.errorMessage).not.toContain("server detail");
     // No run was started
     expect(result.current.runId).toBeNull();
   });
