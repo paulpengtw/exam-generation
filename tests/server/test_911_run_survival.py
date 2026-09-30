@@ -449,6 +449,532 @@ def test_resume_skips_already_ended_questions(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Item 1 — exhausted / time-limit stale runs must be finalised, not stuck
+# ---------------------------------------------------------------------------
+
+def test_exhausted_stale_run_is_finalized_by_claim(tmp_path: Path) -> None:
+    """claim_next_run finalizes (not reclaims) a stale run that has used all attempts."""
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        # Make the run stale with attempts == MAX_ATTEMPTS (exhausted).
+        stale_time = datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_S + 60)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=MAX_ATTEMPTS,
+                    claimed_by="dead-host",
+                    heartbeat_at=stale_time,
+                    started_at=stale_time,
+                )
+            )
+            await session.commit()
+
+        # claim_next_run must finalize the exhausted run and return None.
+        result = await claim_next_run(env.sessions, host_id="live-host")
+        assert result is None, "exhausted stale run must be finalized, not returned"
+
+        # The run must be marked failed.
+        async with env.sessions() as session:
+            log = await session.get(GenerationLog, run_id)
+        assert log.status == "failed"
+        assert log.error == "recovery_exhausted"
+
+        # All unfinished questions must get a terminal with recovery_exhausted.
+        async with env.sessions() as session:
+            states = (
+                await session.execute(
+                    select(GenerationQuestionState)
+                    .where(GenerationQuestionState.generation_log_id == run_id)
+                )
+            ).scalars().all()
+        for state in states:
+            assert state.termination_reason == "failed"
+            assert state.terminal_json is not None
+            assert state.terminal_json.get("unknown_reason") == "recovery_exhausted"
+
+    asyncio.run(_run())
+
+
+def test_time_limit_stale_run_is_finalized_by_claim(tmp_path: Path) -> None:
+    """claim_next_run finalizes a stale run whose wall-clock limit has been exceeded."""
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        # Make the run stale AND past the 2h limit (but attempts == 1, not exhausted).
+        past = datetime.now(timezone.utc) - timedelta(seconds=TIME_LIMIT_S + 60)
+        stale_time = datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_S + 60)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=1,
+                    claimed_by="dead-host",
+                    heartbeat_at=stale_time,
+                    started_at=past,
+                )
+            )
+            await session.commit()
+
+        result = await claim_next_run(env.sessions, host_id="live-host")
+        assert result is None, "time-limit stale run must be finalized, not returned"
+
+        async with env.sessions() as session:
+            log = await session.get(GenerationLog, run_id)
+        assert log.status == "failed"
+        assert log.error == "time_limit"
+
+        async with env.sessions() as session:
+            states = (
+                await session.execute(
+                    select(GenerationQuestionState)
+                    .where(GenerationQuestionState.generation_log_id == run_id)
+                )
+            ).scalars().all()
+        for state in states:
+            assert state.termination_reason == "failed"
+            assert state.terminal_json is not None
+            assert state.terminal_json.get("unknown_reason") == "time_limit"
+
+    asyncio.run(_run())
+
+
+def test_exhausted_stale_run_unblocks_teachers_queued_run(tmp_path: Path) -> None:
+    """After claim_next_run finalizes an exhausted stale run, the same teacher's
+    queued run becomes claimable on the next claim attempt."""
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+
+        # Create and exhaust a running run.
+        accepted_stale = await env.accept(params, owner)
+        run_id_stale = uuid.UUID(accepted_stale.run_id)
+        stale_time = datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_S + 60)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id_stale)
+                .values(
+                    status="running",
+                    attempts=MAX_ATTEMPTS,
+                    claimed_by="dead-host",
+                    heartbeat_at=stale_time,
+                    started_at=stale_time,
+                )
+            )
+            await session.commit()
+
+        # Directly insert a queued run for the same teacher (bypassing accept_run
+        # so we don't hit the queue-limit check against the running run).
+        from server.models import GenerationQuestionState as _GQS  # noqa: PLC0415
+        queued_run_id = uuid.uuid4()
+        qid = f"q_{str(queued_run_id).replace('-', '')}_001"
+        async with env.sessions() as session:
+            session.add(GenerationLog(
+                id=queued_run_id,
+                user_id=owner,
+                status="queued",
+                params_json=params.model_dump(),
+                submission_key=str(uuid.uuid4()),
+                started_at=datetime.now(timezone.utc),
+                heartbeat_at=datetime.now(timezone.utc),
+                attempts=0,
+            ))
+            await session.flush()
+            session.add(_GQS(
+                generation_log_id=queued_run_id,
+                question_id=qid,
+                index=0,
+                processing="waiting",
+            ))
+            await session.commit()
+
+        # First claim: finalizes the stale exhausted run, returns None.
+        result1 = await claim_next_run(env.sessions, host_id="live-host")
+        assert result1 is None, "first claim should finalize exhausted run and return None"
+
+        # Second claim: the queued run should now be claimable.
+        result2 = await claim_next_run(env.sessions, host_id="live-host")
+        assert result2 is not None, "second claim should find the teacher's queued run"
+        assert result2.run_id == queued_run_id
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Item 4 — fake-clock boundary tests
+# ---------------------------------------------------------------------------
+
+def test_stale_boundary_at_exactly_threshold(tmp_path: Path) -> None:
+    """A run is stale at exactly STALE_THRESHOLD_S seconds, not at STALE_THRESHOLD_S - 1."""
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        now = datetime.now(timezone.utc)
+        # Exactly at threshold: heartbeat_at = now - STALE_THRESHOLD_S.
+        at_threshold = now - timedelta(seconds=STALE_THRESHOLD_S)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=1,
+                    claimed_by="dead-host",
+                    heartbeat_at=at_threshold,
+                    started_at=at_threshold,
+                )
+            )
+            await session.commit()
+
+        # claim_next_run uses now=datetime.now() by default.
+        # At exactly the threshold (<=), the run should be found as stale.
+        claimed = await claim_next_run(env.sessions, host_id="live-host", now=now)
+        assert claimed is not None, "run at exactly STALE_THRESHOLD_S should be stale"
+        assert claimed.run_id == run_id
+
+    asyncio.run(_run())
+
+
+def test_not_stale_at_one_second_before_threshold(tmp_path: Path) -> None:
+    """A run is NOT stale at STALE_THRESHOLD_S - 1 seconds."""
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        now = datetime.now(timezone.utc)
+        # One second before threshold: run is NOT yet stale.
+        just_before = now - timedelta(seconds=STALE_THRESHOLD_S - 1)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=1,
+                    claimed_by="live-host",
+                    heartbeat_at=just_before,
+                    started_at=just_before,
+                )
+            )
+            await session.commit()
+
+        claimed = await claim_next_run(env.sessions, host_id="other-host", now=now)
+        assert claimed is None, "run at STALE_THRESHOLD_S - 1 s should not be stale"
+
+    asyncio.run(_run())
+
+
+def test_time_limit_via_heartbeat_stops_run(tmp_path: Path) -> None:
+    """When the heartbeat detects the time limit, the run is terminated with time_limit."""
+
+    env = _Env(tmp_path)
+
+    # Fake clock: starts at a time that will exceed the limit on the first heartbeat.
+    # We back-date started_at to TIME_LIMIT_S + 60 seconds ago.
+    start_time = datetime.now(timezone.utc) - timedelta(seconds=TIME_LIMIT_S + 60)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        # Pre-set started_at to back in time so heartbeat detects time limit.
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=1,
+                    claimed_by="host",
+                    heartbeat_at=start_time,
+                    started_at=start_time,
+                )
+            )
+            await session.commit()
+
+        claimed = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=1,
+        )
+        await env.execute(claimed, time_limit_s=1.0)  # tight limit so heartbeat triggers quickly
+
+        async with env.sessions() as session:
+            log = await session.get(GenerationLog, run_id)
+        assert log.status == "failed"
+        assert log.error == "time_limit"
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Item 2 — reason plumbing: read_run returns termination data correctly
+# ---------------------------------------------------------------------------
+
+def test_read_run_exposes_recovery_exhausted_reason(tmp_path: Path) -> None:
+    """read_run returns terminal.unknown_reason='recovery_exhausted' for exhausted runs."""
+    from server.generate.run import read_run  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        # Execute with attempt > MAX_ATTEMPTS → recovery_exhausted.
+        over_limit = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=MAX_ATTEMPTS + 1,
+        )
+        await env.execute(over_limit)
+
+        async with env.sessions() as session:
+            snapshot = await read_run(run_id, owner, session=session, config=env.config)
+
+        assert snapshot is not None
+        assert snapshot["status"] == "failed"
+        assert snapshot["error"] == "recovery_exhausted"
+        for q in snapshot["questions"]:
+            assert q["termination_reason"] == "failed"
+            assert q["terminal"] is not None
+            assert q["terminal"].get("unknown_reason") == "recovery_exhausted"
+
+    asyncio.run(_run())
+
+
+def test_read_run_exposes_time_limit_reason(tmp_path: Path) -> None:
+    """read_run returns terminal.unknown_reason='time_limit' for time-limited runs."""
+    from server.generate.run import read_run  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    started_at_past = datetime.now(timezone.utc) - timedelta(seconds=TIME_LIMIT_S + 60)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=1,
+                    claimed_by="host",
+                    started_at=started_at_past,
+                    heartbeat_at=started_at_past,
+                )
+            )
+            await session.commit()
+
+        claimed = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=1,
+        )
+        await env.execute(claimed)
+
+        async with env.sessions() as session:
+            snapshot = await read_run(run_id, owner, session=session, config=env.config)
+
+        assert snapshot is not None
+        assert snapshot["status"] == "failed"
+        assert snapshot["error"] == "time_limit"
+        for q in snapshot["questions"]:
+            assert q["terminal"] is not None
+            assert q["terminal"].get("unknown_reason") == "time_limit"
+
+    asyncio.run(_run())
+
+
+def test_read_run_normal_question_keeps_normal_termination(tmp_path: Path) -> None:
+    """A normally finished question retains termination_reason='normal' in read_run."""
+    from server.generate.run import read_run  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        claimed = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=1,
+        )
+        await env.execute(claimed)
+
+        async with env.sessions() as session:
+            snapshot = await read_run(run_id, owner, session=session, config=env.config)
+
+        assert snapshot is not None
+        assert snapshot["status"] == "completed"
+        for q in snapshot["questions"]:
+            assert q["termination_reason"] == "normal"
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Item 5 — resume with saved record: exactly one generation_records row
+# ---------------------------------------------------------------------------
+
+def test_resume_with_saved_record_no_duplicate(tmp_path: Path) -> None:
+    """A question that already has a generation_record but no termination_reason
+    must not get a second record after resume; exactly one row must remain."""
+    from server.generate.persistence import persist_generation_record  # noqa: PLC0415
+    from server.models import GenerationRecord  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        q0_id = accepted.questions[0]["question_id"]
+
+        # Persist a generation_record for the question (simulating partial progress).
+        question = _question(q0_id)
+        await persist_generation_record(
+            user_id=owner,
+            generation_log_id=run_id,
+            subject="math",
+            params=params,
+            question=question.model_dump(mode="json"),
+            session_factory=env.sessions,
+        )
+
+        # Do NOT set termination_reason — the question is saved but not terminated.
+        # Resume: the question is NOT in skip_question_ids (no termination_reason).
+        claimed = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=2,
+        )
+        await env.execute(claimed)
+
+        # Exactly one GenerationRecord row must exist for this question.
+        async with env.sessions() as session:
+            rows = (
+                await session.execute(
+                    select(GenerationRecord)
+                    .where(
+                        GenerationRecord.generation_log_id == run_id,
+                        GenerationRecord.question_id == q0_id,
+                    )
+                )
+            ).scalars().all()
+        # The insert-or-ignore constraint means only one row survives.
+        assert len(rows) == 1, f"expected 1 record, got {len(rows)}"
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Item 6 — attempt number in trail entries
+# ---------------------------------------------------------------------------
+
+def test_attempt_number_tagged_in_trail_entries(tmp_path: Path) -> None:
+    """execute_run with attempt=2 tags figure-policy trail entries with 'attempt': 2."""
+    from server.generate.persistence import FigurePolicyTrailRecorder  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    # Collect trail entries emitted during generation.
+    trail_entries: list[dict] = []
+
+    def _patched_make_recorder(*, generation_log_id, loop, session_factory, attempt=1, prior_entries=None):  # noqa: ANN001, ANN202
+        recorder = FigurePolicyTrailRecorder(
+            generation_log_id, loop, session_factory, attempt=attempt,
+            prior_entries=prior_entries,
+        )
+        original_call = recorder.__call__
+
+        def _tracking_call(entry: Any) -> None:  # noqa: ANN001
+            trail_entries.append({"attempt": attempt, "entry": entry})
+            original_call(entry)
+
+        recorder.__call__ = _tracking_call  # type: ignore[method-assign]
+        return recorder
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        claimed = ClaimedRun(
+            run_id=run_id,
+            user_id=owner,
+            params_json=dict(params.model_dump()),
+            attempt=2,  # second attempt — entries should be tagged with attempt=2
+        )
+
+        import server.generate.service as _svc  # noqa: PLC0415
+        with patch.object(_svc, "make_figure_policy_trail_recorder", _patched_make_recorder):
+            await env.execute(claimed)
+
+        # When attempt=2, _build_run_context must pass attempt=2 to the trail recorder.
+        # Verify by checking the recorder was created with attempt=2.
+        # (The patch captures attempt from the factory call.)
+        assert any(e["attempt"] == 2 for e in trail_entries), (
+            "no trail recorder was created with attempt=2; "
+            "make_figure_policy_trail_recorder must receive attempt=claimed.attempt"
+        )
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
 # Constants sanity checks
 # ---------------------------------------------------------------------------
 
