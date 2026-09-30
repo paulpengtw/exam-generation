@@ -886,7 +886,7 @@ def test_resume_with_saved_record_no_duplicate(tmp_path: Path) -> None:
             generation_log_id=run_id,
             subject="math",
             params=params,
-            question=question.model_dump(mode="json"),
+            payload=question.model_dump(mode="json"),
             session_factory=env.sessions,
         )
 
@@ -927,24 +927,17 @@ def test_attempt_number_tagged_in_trail_entries(tmp_path: Path) -> None:
 
     env = _Env(tmp_path)
 
-    # Collect trail entries emitted during generation.
-    trail_entries: list[dict] = []
+    # Track the `attempt` value the factory was called with.
+    factory_calls: list[int] = []
 
     def _patched_make_recorder(  # noqa: ANN001, ANN202
         *, generation_log_id, loop, session_factory, attempt=1, prior_entries=None
     ):
-        recorder = FigurePolicyTrailRecorder(
+        factory_calls.append(attempt)
+        return FigurePolicyTrailRecorder(
             generation_log_id, loop, session_factory, attempt=attempt,
             prior_entries=prior_entries,
         )
-        original_call = recorder.__call__
-
-        def _tracking_call(entry: Any) -> None:  # noqa: ANN001
-            trail_entries.append({"attempt": attempt, "entry": entry})
-            original_call(entry)
-
-        recorder.__call__ = _tracking_call  # type: ignore[method-assign]
-        return recorder
 
     async def _run() -> None:
         owner = await env.setup()
@@ -956,19 +949,21 @@ def test_attempt_number_tagged_in_trail_entries(tmp_path: Path) -> None:
             run_id=run_id,
             user_id=owner,
             params_json=dict(params.model_dump()),
-            attempt=2,  # second attempt — entries should be tagged with attempt=2
+            attempt=2,  # second attempt — factory must receive attempt=2
         )
 
         import server.generate.service as _svc  # noqa: PLC0415
         with patch.object(_svc, "make_figure_policy_trail_recorder", _patched_make_recorder):
             await env.execute(claimed)
 
-        # When attempt=2, _build_run_context must pass attempt=2 to the trail recorder.
-        # Verify by checking the recorder was created with attempt=2.
-        # (The patch captures attempt from the factory call.)
-        assert any(e["attempt"] == 2 for e in trail_entries), (
-            "no trail recorder was created with attempt=2; "
-            "make_figure_policy_trail_recorder must receive attempt=claimed.attempt"
+        # The factory must have been called with attempt=2 from _build_run_context.
+        assert factory_calls, (
+            "make_figure_policy_trail_recorder was never called; "
+            "execute_run must call generate_question_stream which calls _build_run_context"
+        )
+        assert all(a == 2 for a in factory_calls), (
+            f"make_figure_policy_trail_recorder was called with attempt={factory_calls!r}; "
+            "all calls must receive attempt=claimed.attempt (2)"
         )
 
     asyncio.run(_run())
