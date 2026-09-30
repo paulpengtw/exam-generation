@@ -135,6 +135,26 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 **Three-way distinction between connection-loss reducers.** `closeRun` (in `generationEvidence.ts`) is called only when the run is definitively over (terminal status received plus `done` sentinel): it sets `closed: true` and marks questions without a terminal as `processing: "unknown"`. `applyStreamLost` is called when the SSE connection drops while the run is still executing: it does NOT set `closed: true`, does NOT change `processing`, and only clears live-only `activity` indicators. `applyPollReadFailed` is called after three consecutive poll failures (transient network errors): it marks no-terminal questions as `processing: "unknown"` (idempotent) but does not set `closed: true`; a subsequent successful poll that returns a valid snapshot calls `applyRunSnapshot` which restores processing from the snapshot, clearing the "unknown" state. These three functions are intentionally distinct and must not be conflated. `tests/server/test_909_live_route.py` proves the SSE wire format carries the full `{event, context, payload}` envelope for each published generation event. The modification pipeline is unaffected: `GenerationStatusBar.test.tsx` and `QuestionCard.test.tsx` carry existing tests that render modification-profile evidence through the same shared components.
 
+### Owner cancels a run (issue #910)
+
+`POST /api/runs/{id}/cancel` lets the authenticated owner request cancellation of a queued or running detached run. Non-owners always receive 404 (existence-hiding; never 403).
+
+**Backend route and flag.** `cancel_run(run_id, user_id, *, session)` in `server/generate/run.py`:
+- If all question states already have a non-null `termination_reason`: returns `{cancelled: False, reason: "already_ended"}`.
+- If status is `"queued"`: immediately sets status `"cancelled"` (no host in-flight); returns `{cancelled: True}`.
+- If status is `"running"`: sets `cancel_requested = True` on `GenerationLog`; returns `{cancelled: True}`.
+- Idempotent: a second call on an already-`cancel_requested` run returns `{cancelled: True}` again.
+
+**Host integration.** `_heartbeat()` (in `execute_run`) checks `GenerationLog.cancel_requested` on every tick and, when `True`, calls `confirmed_cancel_event.set()`. `execute_run` checks `confirmed_cancel_event.is_set()` after the stream finishes: if set and status is not `"failed"`, it records status as `"cancelled"`. Workers that reach `confirmed_cancel_event.is_set()` before completing emit a `termination_reason="cancelled"` terminal for their question.
+
+**Latency.** Cancel is acknowledged immediately (202 body). The run transitions to `status="cancelled"` only after the next heartbeat fires (interval ≤ 0.1 s in tests, configurable in production) or after all questions complete — whichever comes first.
+
+**Race rule.** `_QuestionStateRecorder._record_terminal()` uses `WHERE termination_reason IS NULL` for exactly-once semantics: a normal terminal that commits first wins; a concurrent cancel terminal for the same question is silently discarded.
+
+**Frontend cancel control.** `useGenerate` exposes `cancelRun(): Promise<boolean>` and `cancelRequested: boolean`. `GeneratePage` renders a `data-testid="cancel-run-btn"` button while `status === "generating"`. The button shows `generate.btn_cancel_pending` ("取消中…") while `cancelFeedback.state === "pending"` OR `cancelRequested` is true. Errors use `generate.cancel_error` via `useActionFeedback`. Key files: `web/src/api/client.ts` (`cancelRun`), `web/src/lib/runSnapshot.ts` (`cancel_requested?`), `web/src/i18n/messages.ts` (en-US / zh-TW strings).
+
+**Tests.** `tests/server/test_910_cancel.py` (9 backend tests), `web/src/pages/GeneratePage.cancel.test.tsx` (5 frontend component tests).
+
 ### Generation stream protocol v3 — detached runs (issue #908)
 
 **Protocol v3 supersedes v2 on this branch (`wip/908-detached-runs`).** Clients **must** send `stream_version=3` on POST `/api/generate`; any other value (including `2` or absent) returns HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [3]}`. `stream_version` is a transport-only field excluded from `params_json`.

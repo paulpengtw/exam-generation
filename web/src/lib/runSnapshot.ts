@@ -71,6 +71,8 @@ export interface RunSnapshot {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  /** True when the owner has requested cancellation but not all questions have ended yet. */
+  cancel_requested?: boolean;
   questions: RunSnapshotQuestion[];
   live_events_available?: boolean;
 }
@@ -187,6 +189,7 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
     completed_at: stringOrNull(raw.completed_at),
     error: stringOrNull(raw.error),
     questions,
+    cancel_requested: raw.cancel_requested === true ? true : undefined,
     live_events_available: raw.live_events_available === true ? true : undefined,
   };
 }

@@ -28,6 +28,7 @@ import dataclasses
 import logging
 import os
 import socket
+import threading
 import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
@@ -286,6 +287,7 @@ async def read_run(
         "started_at": _iso(log.started_at),
         "completed_at": _iso(log.completed_at),
         "error": log.error,
+        "cancel_requested": log.cancel_requested,
         "questions": questions,
         "live_events_available": is_live_available(str(log.id)),
     }
@@ -349,6 +351,116 @@ async def claim_next_run(
         )
         await session.commit()
     return claimed
+
+
+# ---------------------------------------------------------------------------
+# Cancel (issue #910)
+# ---------------------------------------------------------------------------
+
+
+def _cancelled_terminal(reason: str = "cancelled before completion") -> dict[str, Any]:
+    """A cancelled terminal for a question that ended without completion."""
+    payload = {
+        "termination_reason": "cancelled",
+        "has_final": False,
+        "final_revision": None,
+        "delivery_status": "unknown",
+        "expected": [],
+        "delivered": [],
+        "missing": [],
+        "review": {"status": "unknown", "reason": "no final content"},
+        "unknown_reason": reason,
+    }
+    QuestionTerminalPayload.model_validate(payload)
+    return payload
+
+
+async def cancel_run(
+    run_id: str | uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    session: AsyncSession,
+) -> dict[str, Any] | None:
+    """Cancel a 生成執行 (owner-only, idempotent).
+
+    Returns ``None`` when the run is not found or not owned (existence-hiding).
+    Returns a dict with ``{"cancelled": bool, "reason": str}`` describing what
+    happened:
+
+    - ``cancelled=False, reason="already_ended"`` — all questions had a
+      終止原因 already; nothing changed.
+    - ``cancelled=True, reason="queued_run_cancelled"`` — the run was still
+      queued; questions are marked cancelled immediately.
+    - ``cancelled=True`` — cancel_requested flag set; the executing host will
+      pick it up on the next heartbeat and confirm cancellation.
+    """
+    try:
+        log_id = run_id if isinstance(run_id, uuid.UUID) else uuid.UUID(str(run_id))
+    except ValueError:
+        return None
+
+    log = (
+        await session.execute(
+            select(GenerationLog).where(
+                GenerationLog.id == log_id, GenerationLog.user_id == user_id
+            )
+        )
+    ).scalar_one_or_none()
+    if log is None:
+        return None
+
+    states = (
+        await session.execute(
+            select(GenerationQuestionState).where(
+                GenerationQuestionState.generation_log_id == log_id
+            )
+        )
+    ).scalars().all()
+
+    # Not a detached run (e.g. a pre-detached 人工審題修正 log).
+    if not states:
+        return None
+
+    # AC3: if all questions already have a termination_reason, the run is done.
+    if all(s.termination_reason is not None for s in states):
+        return {"cancelled": False, "reason": "already_ended"}
+
+    now = _utcnow()
+
+    # Queued run: cancel immediately without waiting for a host to claim it.
+    if log.status == "queued":
+        terminal = _cancelled_terminal("cancelled before execution")
+        await session.execute(
+            update(GenerationQuestionState)
+            .where(
+                GenerationQuestionState.generation_log_id == log_id,
+                GenerationQuestionState.termination_reason.is_(None),
+            )
+            .values(
+                processing="ended",
+                current_step=None,
+                termination_reason="cancelled",
+                terminal_json=terminal,
+                updated_at=now,
+            )
+        )
+        await session.execute(
+            update(GenerationLog)
+            .where(GenerationLog.id == log_id)
+            .values(status="cancelled", completed_at=now, cancel_requested=True)
+        )
+        await session.commit()
+        return {"cancelled": True, "reason": "queued_run_cancelled"}
+
+    # Running run: set the flag; the executing host picks it up on the next heartbeat.
+    if not log.cancel_requested:
+        await session.execute(
+            update(GenerationLog)
+            .where(GenerationLog.id == log_id)
+            .values(cancel_requested=True)
+        )
+        await session.commit()
+    return {"cancelled": True}
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +612,7 @@ async def _heartbeat(
     *,
     interval: float,
     clock: Clock,
+    confirmed_cancel_event: threading.Event | None = None,
 ) -> None:
     while True:
         await asyncio.sleep(interval)
@@ -511,6 +624,15 @@ async def _heartbeat(
                     .values(heartbeat_at=clock())
                 )
                 await session.commit()
+                # Check cancel_requested on every heartbeat (issue #910).
+                if confirmed_cancel_event is not None and not confirmed_cancel_event.is_set():
+                    flag = (
+                        await session.execute(
+                            select(GenerationLog.cancel_requested).where(GenerationLog.id == run_id)
+                        )
+                    ).scalar_one_or_none()
+                    if flag:
+                        confirmed_cancel_event.set()
         except Exception as exc:  # noqa: BLE001 — a missed beat must not stop the run
             logger.warning("run heartbeat failed for %s: %s", run_id, type(exc).__name__)
 
@@ -528,10 +650,13 @@ async def execute_run(
     clock: Clock = _utcnow,
 ) -> None:
     """Execute one claimed run to the end and persist its outcome."""
+    # issue #910: a shared event signals the generation pipeline to cancel.
+    confirmed_cancel_event = threading.Event()
     recorder = _QuestionStateRecorder(claimed.run_id, session_factory)
     heartbeat = asyncio.create_task(
         _heartbeat(
-            claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock
+            claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock,
+            confirmed_cancel_event=confirmed_cancel_event,
         )
     )
     run_str_id = str(claimed.run_id)
@@ -544,6 +669,16 @@ async def execute_run(
     params: GenerateParams | None = None
     try:
         params = GenerateParams.model_validate(claimed.params_json)
+        # Check cancel_requested at the start of execution — covers the race where a
+        # queued run is cancelled between being claimed and execution starting (issue #910).
+        async with session_factory() as _check_session:
+            _flag = (
+                await _check_session.execute(
+                    select(GenerationLog.cancel_requested).where(GenerationLog.id == claimed.run_id)
+                )
+            ).scalar_one_or_none()
+            if _flag:
+                confirmed_cancel_event.set()
         async for event in generate_question_stream(
             params,
             config,
@@ -553,6 +688,7 @@ async def execute_run(
             subjects=subjects,
             session_factory=session_factory,
             client_factory=client_factory,
+            confirmed_cancel_event=confirmed_cancel_event,
         ):
             if event.get("event") == SSEEventName.ERROR:
                 status = "failed"
@@ -578,6 +714,9 @@ async def execute_run(
         async with _get_lock():
             _live_observers.pop(run_str_id, None)
 
+    # Cancellation overrides any intermediate "completed"/"failed" status (issue #910).
+    if confirmed_cancel_event.is_set() and status != "failed":
+        status = "cancelled"
     await recorder.fail_unfinished(error or "question ended without a terminal")
     if status == "failed" and params is not None:
         await persist_failed_generation_record(

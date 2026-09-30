@@ -34,6 +34,7 @@ from server.generate.models import (
 from server.generate.release_authority import check_build_admission
 from server.generate.run import (
     accept_run,
+    cancel_run,
     is_live_available,
     read_run,
     subscribe_live,
@@ -444,6 +445,27 @@ async def read_run_endpoint(
     if snapshot is None:
         raise HTTPException(status_code=404, detail="run not found")
     return snapshot
+
+
+@router.post("/runs/{run_id}/cancel", status_code=200)
+@limiter.limit("30/minute", key_func=jwt_user_key)
+async def cancel_run_endpoint(
+    request: Request,
+    run_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> dict[str, Any]:
+    """Cancel a 生成執行 (owner-only, idempotent).
+
+    Existence-hiding: a non-owner or unknown id gets the same 404 as GET.
+    Sets cancel_requested; the executing host confirms within ~one heartbeat.
+    If the run is still queued, it is cancelled immediately.
+    If all questions have already ended, this is a no-op (idempotent).
+    """
+    result = await cancel_run(run_id, user.id, session=session)
+    if result is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    return result
 
 
 @router.get("/runs/{run_id}/events")

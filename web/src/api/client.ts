@@ -352,6 +352,15 @@ export async function getRun(runId: string): Promise<unknown> {
   return (await res.json()) as unknown;
 }
 
+/**
+ * Request cancellation of a 生成執行 (`POST /api/runs/{id}/cancel`).
+ * Owner-only; a non-owner or unknown id gets `ApiError` status 404.
+ * Idempotent: succeeds even if the run is already ended or already cancelled.
+ */
+export async function cancelRun(runId: string): Promise<void> {
+  await apiFetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+}
+
 export async function downloadHistoryJson(id: string, signal?: AbortSignal): Promise<Blob> {
   const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`, { signal });
   return await res.blob();

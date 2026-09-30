@@ -23,7 +23,7 @@ import {
 import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
 import { createGenerationStreamDecoder, type RunManifest } from "../lib/generationStream";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
-import { ApiError, getRun } from "../api/client";
+import { ApiError, cancelRun as apiCancelRun, getRun } from "../api/client";
 import {
   formatResolverFieldErrors,
   isResolverFieldErrorLike,
@@ -372,10 +372,18 @@ export interface UseGenerateReturn {
   generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
   /** True when three or more consecutive poll attempts failed transiently. */
   pollReadFailed: boolean;
+  /** True when the server has recorded a cancel_requested flag for the current run. */
+  cancelRequested: boolean;
   /** Reopen a detached run by id and keep polling it. Never cancels anything. */
   resume: (runId: string) => Promise<ResumeOutcome>;
   restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
   reset: () => void;
+  /**
+   * Request server-side cancellation of the current run (issue #910).
+   * Returns true when the request was accepted (200), false on 404, or throws
+   * on unexpected errors. Idempotent: succeeds even if the run already ended.
+   */
+  cancelRun: () => Promise<boolean>;
 }
 function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
@@ -622,6 +630,7 @@ export function useGenerate(): UseGenerateReturn {
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
   const [pollReadFailCount, setPollReadFailCount] = useState(0);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const activeRef = useRef<ActiveRun | null>(null);
   /** Run whose state is currently on screen, even after its polling ended. */
   const shownRunRef = useRef<string | null>(null);
@@ -708,6 +717,7 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     setResultsCompletion(null);
     setTerminalEvidence(false);
+    setCancelRequested(false);
     // Clean up live stream state (abort only the controller — no cancel request)
     liveAbortRef.current?.abort();
     liveAbortRef.current = null;
@@ -926,6 +936,8 @@ export function useGenerate(): UseGenerateReturn {
 
   /** Fold a polled snapshot into state. Repeating the same snapshot changes nothing. */
   const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
+    // issue #910: track cancel_requested from the server so 取消中 survives a page reopen.
+    setCancelRequested(snapshot.cancel_requested === true);
     const previous = evidenceRef.current;
     let next = applyRunSnapshot(previous, snapshot);
     if (next !== previous) {
@@ -1291,6 +1303,19 @@ export function useGenerate(): UseGenerateReturn {
     }
   }, [clearRunState, endOperation, failWatching, newRun, pollOnce, startPolling, stopWatching]);
 
+  // issue #910: cancel the current run on the server.
+  const cancelRun = useCallback(async (): Promise<boolean> => {
+    const currentRunId = runId ?? activeRef.current?.runId;
+    if (!currentRunId) return false;
+    try {
+      await apiCancelRun(currentRunId);
+      return true;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return false;
+      throw err;
+    }
+  }, [runId]);
+
   return {
     admission,
     admissionError,
@@ -1311,8 +1336,10 @@ export function useGenerate(): UseGenerateReturn {
     resultsCompletion,
     terminalEvidence,
     pollReadFailed: pollReadFailCount >= 3,
+    cancelRequested,
     generate,
     resume,
     reset,
+    cancelRun,
   };
 }

@@ -154,6 +154,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_download_all": "Download all as JSON",
     "generate.btn_download_all_odt": "Download all as ODT",
     "generate.btn_clear": "Clear results",
+    "generate.btn_cancel": "Cancel",
+    "generate.btn_cancel_pending": "Cancelling…",
+    "generate.cancel_error": "Failed to cancel generation. Please try again.",
 
     "history.title": "Generation history",
     "history.nav_link": "History",
@@ -824,6 +827,9 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_download_all": "下載全部 JSON",
     "generate.btn_download_all_odt": "下載全部 ODT",
     "generate.btn_clear": "清除結果",
+    "generate.btn_cancel": "取消",
+    "generate.btn_cancel_pending": "取消中…",
+    "generate.cancel_error": "取消出題失敗，請再試一次。",
 
     "history.title": "產生紀錄",
     "history.nav_link": "紀錄",

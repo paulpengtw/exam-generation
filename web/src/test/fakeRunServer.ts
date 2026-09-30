@@ -22,6 +22,8 @@ export interface FakeRunServer {
   polls(): RecordedRequest[];
   /** POST /api/generate requests only. */
   submits(): RecordedRequest[];
+  /** POST /api/runs/{id}/cancel requests only. */
+  cancels(): RecordedRequest[];
   /** Snapshot returned for a run id from now on. */
   setSnapshot(runId: string, snapshot: RunSnapshot): void;
   /** Make a run id answer 404 (unknown, or owned by someone else). */
@@ -32,6 +34,8 @@ export interface FakeRunServer {
   setAcceptance(accepted: AcceptedRun): void;
   /** Make every poll reject like a dropped connection until cleared. */
   dropConnection(dropped: boolean): void;
+  /** Next cancel request answers with this status/body instead of a 200. */
+  failCancel(status: number, body: unknown): void;
   restore(): void;
 }
 
@@ -56,6 +60,7 @@ export function installFakeRunServer(): FakeRunServer {
   const snapshots = new Map<string, RunSnapshot>();
   const hidden = new Set<string>();
   let submitFailure: { status: number; body: unknown } | null = null;
+  let cancelFailure: { status: number; body: unknown } | null = null;
   let acceptance: AcceptedRun | null = null;
   let dropped = false;
 
@@ -87,6 +92,17 @@ export function installFakeRunServer(): FakeRunServer {
       if (hidden.has(id) || !snapshot) return json(404, { detail: "run not found" });
       return json(200, snapshot);
     }
+    const cancelMatch = /^\/api\/runs\/([^/]+)\/cancel$/.exec(url);
+    if (method === "POST" && cancelMatch) {
+      const id = decodeURIComponent(cancelMatch[1]);
+      if (cancelFailure) {
+        const failure = cancelFailure;
+        cancelFailure = null;
+        return json(failure.status, failure.body);
+      }
+      if (hidden.has(id) || !snapshots.has(id)) return json(404, { detail: "run not found" });
+      return json(200, { cancelled: true });
+    }
     return json(404, { detail: `unexpected ${method} ${url}` });
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -95,9 +111,11 @@ export function installFakeRunServer(): FakeRunServer {
     requests,
     polls: () => requests.filter((r) => r.method === "GET" && r.url.startsWith("/api/runs/")),
     submits: () => requests.filter((r) => r.method === "POST" && r.url === "/api/generate"),
+    cancels: () => requests.filter((r) => r.method === "POST" && r.url.includes("/cancel")),
     setSnapshot: (runId, snapshot) => { snapshots.set(runId, snapshot); hidden.delete(runId); },
     hideRun: (runId) => { hidden.add(runId); },
     failSubmit: (status, body) => { submitFailure = { status, body }; },
+    failCancel: (status, body) => { cancelFailure = { status, body }; },
     setAcceptance: (accepted) => { acceptance = accepted; },
     dropConnection: (value) => { dropped = value; },
     restore: () => { vi.stubGlobal("fetch", originalFetch); },

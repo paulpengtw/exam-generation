@@ -142,6 +142,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     runId,
     resume,
     pollReadFailed,
+    cancelRequested,
+    cancelRun,
   } = useGenerate();
   // A detached run is addressed by `?run=<id>` (issue #908): closing the page
   // and reopening that URL resumes watching the same run.
@@ -424,6 +426,17 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }[target];
     targetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  // issue #910: cancel control.
+  // 取消中 is shown while the request is pending OR while the server reports cancel_requested
+  // (so it survives a page reopen while the server still processes cancellation).
+  const cancelFeedback = useActionFeedback<void>({
+    action: async () => { await cancelRun(); },
+    genericError: t("generate.cancel_error"),
+    successState: "idle",
+  });
+  // True during optimistic pending OR while server confirms cancellation.
+  const isCancelling = cancelFeedback.state === "pending" || cancelRequested;
 
   const jsonFeedback = useActionFeedback({
     action: async () => {
@@ -736,6 +749,27 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             />
             {pollReadFailed && (
               <div role="status">{t("generate.run_read_unavailable")}</div>
+            )}
+            {/* issue #910: cancel button — shown while the run is active */}
+            {status === "generating" && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="cancel-run-btn"
+                  disabled={isCancelling || cancelFeedback.state === "pending"}
+                  onClick={() => cancelFeedback.run()}
+                  className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isCancelling ? t("generate.btn_cancel_pending") : t("generate.btn_cancel")}
+                </button>
+                {cancelFeedback.reason && (
+                  <InlineFailureNotice
+                    reason={cancelFeedback.reason}
+                    onRetry={cancelFeedback.retry}
+                    onDismiss={cancelFeedback.dismiss}
+                  />
+                )}
+              </div>
             )}
           </section>
         )}
