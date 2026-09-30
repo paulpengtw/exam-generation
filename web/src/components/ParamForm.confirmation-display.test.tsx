@@ -669,6 +669,55 @@ describe("ParamForm 發送前確認 display semantics", () => {
     });
   });
 
+  it("auto-triggered planner sends model_plan and effort_plan when gemini is in the allowed list", async () => {
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6"],
+      effort: {
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "claude-opus-4-6": ["low", "medium", "high"],
+      },
+      defaults: { plan: "claude-opus-4-6", execute: "gemini-3.1-pro-preview", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "high" },
+    });
+    await openConfirmation("math", { topic: "分數" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    expect(planCoreQuestionsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ model_plan: "gemini-3.1-pro-preview", effort_plan: expect.any(String) }),
+    );
+  });
+
+  it("auto-triggered planner omits model_plan when gemini is not in the allowed list", async () => {
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["claude-opus-4-6", "claude-sonnet-4-6"],
+      effort: { "claude-opus-4-6": ["low", "medium", "high"] },
+      defaults: { plan: "claude-opus-4-6", execute: "claude-opus-4-6", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "medium" },
+    });
+    await openConfirmation("math", { topic: "分數" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    const call = planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.model_plan).toBeUndefined();
+  });
+
+  it("auto-triggered planner clamps effort to Gemini's roster when defaults.effort_plan is unsupported", async () => {
+    // defaults.effort_plan="max" but gemini only supports ["low","medium","high"]
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6"],
+      effort: {
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "claude-opus-4-6": ["low", "medium", "high", "max"],
+      },
+      defaults: { plan: "claude-opus-4-6", execute: "gemini-3.1-pro-preview", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "max" },
+    });
+    await openConfirmation("math", { topic: "分數" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    const call = planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.model_plan).toBe("gemini-3.1-pro-preview");
+    // effort_plan must be within gemini's ["low", "medium", "high"] — not "max"
+    expect(["low", "medium", "high"]).toContain(call.effort_plan);
+  });
+
   it("N=1 displays and submits the same one-element per-question payload", async () => {
     getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
     const onSubmit = vi.fn();

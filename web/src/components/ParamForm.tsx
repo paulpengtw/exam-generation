@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { flushSync } from "react-dom";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
@@ -30,6 +30,7 @@ import {
   type SocialStudiesPinRuleViolation,
 } from "../utils/socialStudiesPinRules";
 import CoreQuestionPicker from "./CoreQuestionPicker";
+import { clampPickerEffort } from "./pickerEffortClamp";
 import SubQuestionConfigEditor from "./SubQuestionConfigEditor";
 import SubQuestionCurriculumPickers, { SearchPicker } from "./SubQuestionCurriculumPickers";
 import SubquestionConfigCards, { type ResolvedSubQuestionConfig } from "./SubquestionConfigCards";
@@ -1424,6 +1425,10 @@ export default function ParamForm({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [models, setModels] = useState<AvailableModels | null>(null);
   const [modelsResolved, setModelsResolved] = useState(false);
+  // Picker-level planner model/effort — session-only, unpersisted, separate from the main form's
+  // model_plan/effort_plan. Defaults to gemini-3.1-pro-preview (reconciled on models load).
+  const [pickerModelPlan, setPickerModelPlan] = useState("gemini-3.1-pro-preview");
+  const [pickerEffortPlan, setPickerEffortPlan] = useState("");
   const [useCurriculumSearch, setUseCurriculumSearch] = useState<boolean>(true);
   // Restored confirmation state is display-only until a teacher explicitly
   // edits/resubmits a field. This guard suppresses both preview effects until
@@ -1450,6 +1455,18 @@ export default function ParamForm({
     inputKey: string;
     operation: OperationHandle;
   } | null>(null);
+  // Refs kept in sync with picker model/effort state and models via useLayoutEffect, so
+  // the auto-trigger effect always reads the latest values without extra re-runs.
+  const pickerModelPlanRef = useRef(pickerModelPlan);
+  const pickerEffortPlanRef = useRef(pickerEffortPlan);
+  const modelsRef = useRef<AvailableModels | null>(models);
+  // useLayoutEffect runs synchronously after DOM updates, before useEffect — so these
+  // refs are always current when the auto-trigger effect reads them.
+  useLayoutEffect(() => {
+    pickerModelPlanRef.current = pickerModelPlan;
+    pickerEffortPlanRef.current = pickerEffortPlan;
+    modelsRef.current = models;
+  }, [pickerModelPlan, pickerEffortPlan, models]);
   const redrawsRef = useRef<Record<string, number>>(
     recoveryConfirmation ? cloneJson(recoveryConfirmation.redraws) : {},
   );
@@ -1987,11 +2004,18 @@ export default function ParamForm({
     );
     const request = { inputKey, operation };
     coreQuestionPlannerRef.current = request;
+    const currentModels = modelsRef.current;
+    const effectivePickerModel =
+      currentModels && pickerModelPlanRef.current && currentModels.allowed.includes(pickerModelPlanRef.current)
+        ? pickerModelPlanRef.current
+        : undefined;
     void planCoreQuestions({
       topic: latestParams.topic ?? "",
       subject,
       subject_filter: pendingSubjectFilter,
       grade: latestParams.grade,
+      model_plan: effectivePickerModel,
+      effort_plan: pickerEffortPlanRef.current || undefined,
     }).then(({ candidates }) => {
       if (coreQuestionPlannerRef.current !== request) return;
       coreQuestionPlannerRef.current = null;
@@ -2354,6 +2378,30 @@ export default function ParamForm({
       cancelled = true;
     };
   }, [recoveryConfirmation, recoveryForm, restoreFormSnapshot, setField]);
+
+  // Reconcile picker model/effort against the live allowlist when models resolve.
+  // gemini-3.1-pro-preview is the desired picker default; fall back to "" (server default)
+  // when Gemini is not in the allowed list. Effort is clamped to the levels the resolved
+  // model actually supports so we never send an unsupported effort (e.g. max/xhigh to Gemini).
+  useEffect(() => {
+    if (!models) return;
+    // Compute the post-reconciliation picker model synchronously so we can clamp effort.
+    const currentPickerModel = pickerModelPlanRef.current;
+    const reconciledModel =
+      currentPickerModel && models.allowed.includes(currentPickerModel)
+        ? currentPickerModel
+        : models.allowed.includes("gemini-3.1-pro-preview")
+          ? "gemini-3.1-pro-preview"
+          : "";
+    setPickerModelPlan((prev) => {
+      if (prev && models.allowed.includes(prev)) return prev;
+      return reconciledModel;
+    });
+    if (models.effort) {
+      const serverDefault = models.defaults.effort_plan ?? "medium";
+      setPickerEffortPlan((prev) => clampPickerEffort(models, reconciledModel, prev || serverDefault));
+    }
+  }, [models]);
 
   useEffect(() => {
     window.localStorage.setItem("model_plan", modelPlan);
@@ -5275,6 +5323,11 @@ export default function ParamForm({
               onPick={(q) => setField("coreQuestion", q)}
               onClear={() => setField("coreQuestion", null)}
               pickedValue={coreQuestion}
+              models={models}
+              pickerModelPlan={pickerModelPlan}
+              pickerEffortPlan={pickerEffortPlan}
+              onPickerModelPlanChange={setPickerModelPlan}
+              onPickerEffortPlanChange={setPickerEffortPlan}
             />
           )}
         </div>

@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { planCoreQuestions } from "../api/client";
+import { useMemo, useState } from "react";
+import { planCoreQuestions, type AvailableModels } from "../api/client";
 import { useT } from "../i18n/useT";
+import { clampPickerEffort } from "./pickerEffortClamp";
 import {
   ActionButton,
   InlineFailureNotice,
@@ -10,6 +11,10 @@ import {
 // Keep this above the server LLM_TIMEOUT_SECONDS bound (600 seconds by default).
 const CORE_QUESTION_PLANNER_TIMEOUT_MS = 630_000;
 
+// Server fallback roster for the effort dropdown when the effective model has no entry.
+// Matches _EFFORT_LEVELS.get(model, [...]) in server/generate/routes.py.
+const UNKNOWN_MODEL_EFFORT_LEVELS = ["low", "medium", "high", "max"];
+
 export interface CoreQuestionPickerProps {
   topic: string;
   subject?: string;
@@ -18,6 +23,15 @@ export interface CoreQuestionPickerProps {
   onPick: (coreQuestion: string) => void;
   onClear: () => void;
   pickedValue: string | null;
+  /** Available models from GET /api/models. When provided, shows a model/effort selector. */
+  models?: AvailableModels | null;
+  /** Currently selected planner model for this picker (session-only, unpersisted).
+   *  Defaults to "gemini-3.1-pro-preview". ParamForm initialises this to that value. */
+  pickerModelPlan?: string;
+  /** Currently selected effort level for this picker (session-only, unpersisted). */
+  pickerEffortPlan?: string;
+  onPickerModelPlanChange?: (value: string) => void;
+  onPickerEffortPlanChange?: (value: string) => void;
 }
 
 export default function CoreQuestionPicker({
@@ -28,9 +42,31 @@ export default function CoreQuestionPicker({
   onPick,
   onClear,
   pickedValue,
+  models,
+  pickerModelPlan = "",
+  pickerEffortPlan = "",
+  onPickerModelPlanChange,
+  onPickerEffortPlanChange,
 }: CoreQuestionPickerProps) {
   const t = useT();
   const [candidates, setCandidates] = useState<string[]>([]);
+
+  // Effort levels available for the currently selected picker model.
+  // When pickerModelPlan is "" (server default), use defaults.plan's roster.
+  // Falls back to the server's UNKNOWN_MODEL_EFFORT_LEVELS for models not in the roster.
+  const pickerEffortLevels = useMemo(() => {
+    if (!models?.effort) return [];
+    const effectiveModel = pickerModelPlan || models.defaults.plan;
+    return (effectiveModel && models.effort[effectiveModel])
+      ? models.effort[effectiveModel]
+      : UNKNOWN_MODEL_EFFORT_LEVELS;
+  }, [models, pickerModelPlan]);
+
+  // Only send model_plan when models have loaded and the selection is in the allowed list.
+  const effectivePickerModel =
+    models && pickerModelPlan && models.allowed.includes(pickerModelPlan)
+      ? pickerModelPlan
+      : undefined;
 
   const feedback = useActionFeedback({
     action: (signal: AbortSignal) => planCoreQuestions({
@@ -38,6 +74,8 @@ export default function CoreQuestionPicker({
       subject,
       subject_filter: subjectFilter ? [subjectFilter] : undefined,
       grade,
+      model_plan: effectivePickerModel,
+      effort_plan: pickerEffortPlan || undefined,
     }, signal),
     genericError: t("form.plan_error"),
     timeoutMs: CORE_QUESTION_PLANNER_TIMEOUT_MS,
@@ -49,8 +87,60 @@ export default function CoreQuestionPicker({
     onClear();
   }
 
+  const showModelSelector = !!(models && models.allowed.length > 0);
+
   return (
     <div className="space-y-3">
+      {showModelSelector && (
+        <div className="flex flex-wrap gap-2">
+          <label className="flex flex-col gap-1 text-xs text-gray-700">
+            <span>{t("form.picker_model_plan_label")}</span>
+            <select
+              aria-label={t("form.picker_model_plan_label")}
+              value={pickerModelPlan}
+              onChange={(e) => {
+                const newModel = e.target.value;
+                onPickerModelPlanChange?.(newModel);
+                // Clamp the effort to what the new model supports (handles "" → defaults.plan).
+                if (models && pickerEffortPlan) {
+                  const clamped = clampPickerEffort(models, newModel, pickerEffortPlan);
+                  if (clamped !== pickerEffortPlan) {
+                    onPickerEffortPlanChange?.(clamped);
+                  }
+                }
+              }}
+              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+            >
+              <option value="">
+                {t("params.model_default_option")} ({models.defaults.plan})
+              </option>
+              {models.allowed.map((m) => (
+                <option key={`picker-plan-${m}`} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          {pickerEffortLevels.length > 0 && (
+            <label className="flex flex-col gap-1 text-xs text-gray-700">
+              <span>{t("form.picker_effort_plan_label")}</span>
+              <select
+                aria-label={t("form.picker_effort_plan_label")}
+                value={pickerEffortPlan}
+                onChange={(e) => onPickerEffortPlanChange?.(e.target.value)}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              >
+                {pickerEffortLevels.map((level) => (
+                  <option key={level} value={level}>
+                    {level}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         <ActionButton
           feedback={feedback}
