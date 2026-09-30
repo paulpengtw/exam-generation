@@ -4,15 +4,12 @@ Tasks 2.1–2.5, 3.1–3.3 — TDD: failing tests written before implementation.
 """
 from __future__ import annotations
 
-import dataclasses
-import re
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.config import Config
-
 
 # ---------------------------------------------------------------------------
 # Helpers to build a minimal LLMClient with a fake provider that raises.
@@ -195,13 +192,28 @@ class TestCallFailureCarriesDetail:
 
 class TestLlmFailureGuard:
 
-    def test_every_llm_failure_site_uses_extract_provider_error(self) -> None:
-        """Every 'llm_failure' literal is preceded by extract_provider_error within 10 lines."""
+    def test_every_llm_failure_site_uses_report_provider_failure_helper(self) -> None:
+        """Every 'llm_failure' literal is inside _report_provider_failure helper.
+
+        After the refactor, all four dispatch sites call _report_provider_failure,
+        which is the single place where "llm_failure" is emitted and
+        extract_provider_error is called.
+        """
         import inspect
+
         from src import llm_client
         source = inspect.getsource(llm_client)
-        lines = source.splitlines()
 
+        # The helper must exist
+        assert "_report_provider_failure" in source, (
+            "_report_provider_failure helper not found in llm_client"
+        )
+        # extract_provider_error must be called inside the helper
+        assert "extract_provider_error" in source, (
+            "extract_provider_error not found in llm_client"
+        )
+
+        lines = source.splitlines()
         failure_positions = [
             i for i, line in enumerate(lines)
             if '"llm_failure"' in line or "'llm_failure'" in line
@@ -209,13 +221,12 @@ class TestLlmFailureGuard:
         assert failure_positions, "no llm_failure emission sites found"
 
         for pos in failure_positions:
-            # Look at the 10 lines BEFORE the emission site
-            window_start = max(0, pos - 10)
+            # Each llm_failure emission must be inside _report_provider_failure
+            window_start = max(0, pos - 50)
             window = lines[window_start:pos + 1]
             window_text = "\n".join(window)
-            assert "extract_provider_error" in window_text, (
-                f"llm_failure at line {pos + 1} is missing an extract_provider_error call "
-                f"in the preceding 10 lines.\n"
+            assert "_report_provider_failure" in window_text, (
+                f"llm_failure at line {pos + 1} is not inside _report_provider_failure.\n"
                 f"Context:\n{window_text}"
             )
 
@@ -230,6 +241,7 @@ class TestWarningLog:
     def test_warning_log_emitted_on_call_failure(self, caplog: pytest.LogCaptureFixture) -> None:
         """Exactly one WARNING from src.llm_client with required fields."""
         import logging
+
         from src.llm_client import LLMClient
         config = _make_config()
         events: list[dict] = []
@@ -248,8 +260,13 @@ class TestWarningLog:
                         scope=None,
                     )
 
-        warnings = [r for r in caplog.records if r.levelname == "WARNING" and "llm_failure" in r.message]
-        assert warnings, f"no llm_failure WARNING found; records={[r.message for r in caplog.records]}"
+        warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "llm_failure" in r.message
+        ]
+        assert warnings, (
+            f"no llm_failure WARNING found; records={[r.message for r in caplog.records]}"
+        )
         msg = warnings[0].message
         assert "provider=" in msg or "provider" in msg
         assert "http_status=" in msg or "http_status" in msg
@@ -259,6 +276,7 @@ class TestWarningLog:
     def test_warning_log_does_not_contain_api_key(self, caplog: pytest.LogCaptureFixture) -> None:
         """WARNING log entry does not expose the API key."""
         import logging
+
         from src.llm_client import LLMClient
         config = _make_config(api_key="sk-test-key")
         events: list[dict] = []
@@ -288,6 +306,7 @@ class TestWarningLog:
     ) -> None:
         """WARNING log does not include provider_message or raw_body_truncated."""
         import logging
+
         from src.llm_client import LLMClient
         config = _make_config()
         events: list[dict] = []
@@ -324,6 +343,7 @@ class TestWarningLog:
     ) -> None:
         """A successful _call() produces no llm_failure event and no WARNING."""
         import logging
+
         from src.llm_client import LLMClient
         config = _make_config()
         events: list[dict] = []
@@ -343,3 +363,109 @@ class TestWarningLog:
         assert not failure_events, f"unexpected llm_failure events: {failure_events}"
         failure_warnings = [r for r in caplog.records if "llm_failure" in r.message]
         assert not failure_warnings, f"unexpected WARNING: {failure_warnings}"
+
+
+# ---------------------------------------------------------------------------
+# Task 3.4 — WARNING fires even when no observer is attached (CLI runs)
+# ---------------------------------------------------------------------------
+
+class TestWarningLogNoObserver:
+
+    def test_warning_fires_without_observer(self, caplog: pytest.LogCaptureFixture) -> None:
+        """WARNING is emitted even when no observer is attached (CLI runs)."""
+        import logging
+
+        from src.llm_client import LLMClient
+        config = _make_config()
+        # No observer — client._observer is None
+        client = LLMClient(config)
+        assert client.get_observer() is None, "expected no observer"
+
+        fake_exc = _make_fake_exc()
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_client"):
+            with patch.object(client, "_anthropic_call", side_effect=fake_exc):
+                with pytest.raises(Exception):
+                    client._call(
+                        [{"role": "user", "content": "hello"}],
+                        "claude-opus-4-6",
+                        "generate",
+                        scope=None,
+                    )
+
+        warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "llm_failure" in r.message
+        ]
+        assert warnings, (
+            "WARNING must fire even without an observer; "
+            f"records={[r.message for r in caplog.records]}"
+        )
+
+    def test_no_observer_means_no_llm_failure_event_but_warning_still_fires(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Without an observer there is no llm_failure event, but WARNING still fires."""
+        import logging
+
+        from src.llm_client import LLMClient
+        config = _make_config()
+        client = LLMClient(config)
+        # deliberately do NOT call set_observer
+
+        fake_exc = _make_fake_exc()
+        captured_events: list[dict] = []
+
+        with caplog.at_level(logging.WARNING, logger="src.llm_client"):
+            with patch.object(client, "_anthropic_call", side_effect=fake_exc):
+                with pytest.raises(Exception):
+                    client._call(
+                        [{"role": "user", "content": "hello"}],
+                        "claude-opus-4-6",
+                        "generate",
+                        scope=None,
+                    )
+
+        # No events captured (no observer)
+        assert not captured_events
+        # But WARNING must have fired
+        warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "llm_failure" in r.message
+        ]
+        assert warnings, "WARNING must fire even without observer"
+
+
+# ---------------------------------------------------------------------------
+# Task 3.5 — exception safety: diagnostic failure never masks original exc
+# ---------------------------------------------------------------------------
+
+class TestExceptionSafety:
+
+    def test_extractor_internal_failure_does_not_mask_original_exception(self) -> None:
+        """If extract_provider_error raises internally, the original exc still propagates."""
+        from unittest.mock import patch as _patch
+
+        from src.llm_client import LLMClient
+        config = _make_config()
+        client = LLMClient(config)
+
+        original_exc = _make_fake_exc(status_code=503)
+
+        def bad_extractor(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("extractor blew up")
+
+        with _patch("src.llm_client.extract_provider_error", side_effect=bad_extractor):
+            with patch.object(client, "_anthropic_call", side_effect=original_exc):
+                with pytest.raises(Exception) as exc_info:
+                    client._call(
+                        [{"role": "user", "content": "hello"}],
+                        "claude-opus-4-6",
+                        "generate",
+                        scope=None,
+                    )
+
+        # Must be the same original exception object — not the internal RuntimeError
+        assert exc_info.value is original_exc, (
+            f"expected original_exc, got {exc_info.value!r}"
+        )

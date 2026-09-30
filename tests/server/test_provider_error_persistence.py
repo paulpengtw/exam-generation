@@ -12,12 +12,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from server.generate import persistence
 from server.generate.exchange_recorder import ExchangeRecorder
 from server.models import Base, GenerationLog, LLMExchange, User
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 
 @asynccontextmanager
@@ -73,7 +72,10 @@ def _anthropic_spend_cap_failure_event(
         "provider_message": "You have reached your API usage limits",
         "request_id": None,
         "retry_after_seconds": None,
-        "raw_body_truncated": '{"type":"error","error":{"type":"rate_limit_error","code":"enforced_spend_limit_reached"}}',
+        "raw_body_truncated": (
+            '{"type":"error","error":'
+            '{"type":"rate_limit_error","code":"enforced_spend_limit_reached"}}'
+        ),
         "error_type": "RateLimitError",
     }
     if run_id is not None and call_id is not None:
@@ -198,7 +200,7 @@ class TestProviderErrorPersistence:
                 assert recorder is None, "expected None when retention_days=0"
 
                 async with sessions() as session:
-                    from sqlalchemy import select, func
+                    from sqlalchemy import func, select
                     result = await session.execute(
                         select(func.count()).select_from(LLMExchange)
                     )

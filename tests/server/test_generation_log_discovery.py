@@ -254,7 +254,9 @@ def test_failed_generation_keeps_its_advertised_log_and_completed_exchange(
     assert detail["status"] == "failed"
     assert detail["generation_log_id"] == log_id
     exchanges = math_client.get(f"/api/generation-logs/{log_id}/exchanges").json()
-    assert [row["agent"] for row in exchanges] == ["generator"]
+    # The generator exchange must be present; verifier or other failure rows
+    # may also appear (verifier failure now captured as llm_failure exchange).
+    assert any(row["agent"] == "generator" for row in exchanges)
 
 
 @pytest.mark.parametrize("status", ["completed", "failed", "aborted"])

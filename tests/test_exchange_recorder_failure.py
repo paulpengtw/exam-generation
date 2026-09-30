@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -216,7 +216,9 @@ class TestNoRecorderNoRow:
 
 class TestFlushFailureWriteError:
 
-    def test_write_failure_logs_warning_not_propagated(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_write_failure_logs_warning_not_propagated(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """If write_row raises, ExchangeRecorder logs WARNING and does not raise."""
         import logging
 

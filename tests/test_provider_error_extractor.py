@@ -97,7 +97,9 @@ class TestExtractProviderError:
         """Google list-wrapped quota 429 → RESOURCE_EXHAUSTED extracted."""
         from src.llm_client import extract_provider_error
 
-        body = [{"error": {"code": 429, "message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"}}]
+        body = [{
+            "error": {"code": 429, "message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"},
+        }]
         exc = _make_exc(status_code=429, body=body)
         detail = extract_provider_error(exc, provider="gemini", model="gemini-3.1-pro-preview")
 
@@ -214,7 +216,9 @@ class TestExtractProviderError:
             "details": [
                 {
                     "@type": "type.googleapis.com/google.rpc.QuotaFailure",
-                    "violations": [{"quotaId": "GenerateContent-Requests-Per-Minute", "subject": ""}],
+                    "violations": [
+                        {"quotaId": "GenerateContent-Requests-Per-Minute", "subject": ""},
+                    ],
                 }
             ],
         }}]

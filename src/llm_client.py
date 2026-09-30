@@ -955,6 +955,52 @@ class LLMClient:
             })
         return content
 
+    def _report_provider_failure(
+        self,
+        exc: Exception,
+        *,
+        provider: str,
+        model: str,
+        call_scope: "CallScope | None",
+        purpose: str,
+        agent: str,
+    ) -> None:
+        """Extract, log, and optionally emit llm_failure detail. Never raises.
+
+        WARNING is emitted unconditionally (so CLI runs without an observer
+        still forward errors to Sentry via LoggingIntegration). The observer
+        event is emitted only when an observer is attached.
+        Any internal exception is swallowed so the original caller exception
+        always propagates.
+        """
+        try:
+            detail = extract_provider_error(exc, provider=provider, model=model)
+            logger.warning(
+                "llm_failure provider=%s model=%s http_status=%s "
+                "error_type=%s error_code=%s request_id=%s retry_after_seconds=%s",
+                detail.provider,
+                detail.model,
+                detail.http_status,
+                detail.provider_error_type,
+                detail.provider_error_code,
+                detail.request_id,
+                detail.retry_after_seconds,
+            )
+            if self._observer:
+                detail_dict = dataclasses.asdict(detail)
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    error_type=type(exc).__name__,
+                    **detail_dict,
+                )
+        except Exception as inner:  # noqa: BLE001
+            logger.debug(
+                "llm_failure diagnostic step failed: %s", type(inner).__name__
+            )
+
     def _call(
         self,
         messages: list[dict],
@@ -1011,11 +1057,14 @@ class LLMClient:
                 provider, messages, model, purpose, options, agent, call_scope
             )
         except Exception as exc:
-            if self._observer:
-                detail = extract_provider_error(exc, provider=provider, model=model)
-                logger.warning("llm_failure provider=%s model=%s http_status=%s error_type=%s error_code=%s request_id=%s retry_after_seconds=%s", detail.provider, detail.model, detail.http_status, detail.provider_error_type, detail.provider_error_code, detail.request_id, detail.retry_after_seconds)  # noqa: E501
-                detail_dict = dataclasses.asdict(detail)
-                self._emit_call_event("llm_failure", call_scope, purpose=purpose, agent=agent, error_type=type(exc).__name__, **detail_dict)  # noqa: E501
+            self._report_provider_failure(
+                exc,
+                provider=provider,
+                model=model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
     def _anthropic_call(
@@ -1430,12 +1479,14 @@ class LLMClient:
             )
             return str(output)
         except Exception as exc:
-            if self._observer:
-                img_model = self.config.image_model
-                detail = extract_provider_error(exc, provider="openai", model=img_model)
-                logger.warning("llm_failure provider=%s model=%s http_status=%s error_type=%s error_code=%s request_id=%s retry_after_seconds=%s", detail.provider, detail.model, detail.http_status, detail.provider_error_type, detail.provider_error_code, detail.request_id, detail.retry_after_seconds)  # noqa: E501
-                detail_dict = dataclasses.asdict(detail)
-                self._emit_call_event("llm_failure", call_scope, purpose=purpose, agent=_PURPOSE_TO_AGENT[purpose], error_type=type(exc).__name__, **detail_dict)  # noqa: E501
+            self._report_provider_failure(
+                exc,
+                provider="openai",
+                model=self.config.image_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=_PURPOSE_TO_AGENT[purpose],
+            )
             raise
 
     def generate_with_tools(
@@ -1571,11 +1622,14 @@ class LLMClient:
                 })
             return final_text, collected_citations
         except Exception as exc:
-            if self._observer:
-                detail = extract_provider_error(exc, provider="anthropic", model=call_model)
-                logger.warning("llm_failure provider=%s model=%s http_status=%s error_type=%s error_code=%s request_id=%s retry_after_seconds=%s", detail.provider, detail.model, detail.http_status, detail.provider_error_type, detail.provider_error_code, detail.request_id, detail.retry_after_seconds)  # noqa: E501
-                detail_dict = dataclasses.asdict(detail)
-                self._emit_call_event("llm_failure", call_scope, purpose=purpose, agent=agent, error_type=type(exc).__name__, **detail_dict)  # noqa: E501
+            self._report_provider_failure(
+                exc,
+                provider="anthropic",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
     def generate_with_google_search(
@@ -1643,11 +1697,14 @@ class LLMClient:
                 )
             return content, citations
         except Exception as exc:
-            if self._observer:
-                detail = extract_provider_error(exc, provider="gemini", model=call_model)
-                logger.warning("llm_failure provider=%s model=%s http_status=%s error_type=%s error_code=%s request_id=%s retry_after_seconds=%s", detail.provider, detail.model, detail.http_status, detail.provider_error_type, detail.provider_error_code, detail.request_id, detail.retry_after_seconds)  # noqa: E501
-                detail_dict = dataclasses.asdict(detail)
-                self._emit_call_event("llm_failure", call_scope, purpose=purpose, agent=agent, error_type=type(exc).__name__, **detail_dict)  # noqa: E501
+            self._report_provider_failure(
+                exc,
+                provider="gemini",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
 

@@ -176,8 +176,11 @@ def test_completed_planner_exchange_survives_later_generation_failure(planner_ca
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
-    assert [row["agent"] for row in rows] == ["planner"]
-    assert rows[0]["response_body"]["reasoning"] == "planning evidence"
+    # The planner's successful exchange must be present; failed generation
+    # workers may also produce llm_failure rows now.
+    planner_rows = [row for row in rows if row["agent"] == "planner"]
+    assert planner_rows, "planner exchange row must exist"
+    assert planner_rows[0]["response_body"]["reasoning"] == "planning evidence"
     history = client.get("/api/history").json()
     detail = client.get(f"/api/history/{history['items'][0]['id']}").json()
     assert detail["status"] == "failed"
@@ -199,7 +202,15 @@ def test_failed_planner_falls_back_to_generation_without_fabricating_exchange(
     assert response.status_code == 200
     rows = response.json()
     assert rows
-    assert all(row["agent"] != "planner" for row in rows)
+    # A failed planning call may now produce a failure row (response_body["error"]),
+    # but must NOT produce a fabricated successful exchange row.
+    planner_success = [
+        row for row in rows
+        if row["agent"] == "planner" and "error" not in row.get("response_body", {})
+    ]
+    assert not planner_success, (
+        "failed planner must not fabricate a successful exchange row"
+    )
     assert any(row["agent"] == "generator" for row in rows)
 
 
