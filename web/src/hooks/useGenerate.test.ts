@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const captureExceptionMock = vi.hoisted(() => vi.fn());
 const isSentryEnabledMock = vi.hoisted(() => vi.fn().mockReturnValue(true));
+// fetchEventSource mock — starts as a no-op; individual test suites configure it.
+const fetchEventSourceMock = vi.hoisted(() => vi.fn<
+  [string, { onopen?: (r: Response) => Promise<void> | void; onmessage?: (ev: { event: string; data: string; id?: string; retry?: number }) => void; onerror?: (err: unknown) => void; onclose?: () => void; signal?: AbortSignal; openWhenHidden?: boolean; headers?: Record<string, string>; method?: string }],
+  Promise<void>
+>().mockResolvedValue(undefined));
 
 vi.mock("@sentry/react", () => ({
   captureException: captureExceptionMock,
@@ -10,6 +15,10 @@ vi.mock("@sentry/react", () => ({
 
 vi.mock("../sentry", () => ({
   isSentryEnabled: isSentryEnabledMock,
+}));
+
+vi.mock("@microsoft/fetch-event-source", () => ({
+  fetchEventSource: fetchEventSourceMock,
 }));
 
 import {
@@ -1184,5 +1193,411 @@ describe("useGenerate — pollReadFailed (issue #909)", () => {
     // Flag cleared; processing restored to "running" from snapshot
     expect(result.current.pollReadFailed).toBe(false);
     expect(result.current.evidence?.questions["q-1"].processing).toBe("running");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live SSE consumer tests (issue #909)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — live events (issue #909)", () => {
+  /** Helpers to build SSE event wire format (full {event, context, payload} envelope). */
+  function sseEnvelope(
+    name: string,
+    payload: unknown,
+    questionId: string,
+    seq: number,
+    runId = "run-1",
+    extraContext: Record<string, unknown> = {},
+  ): { event: string; data: string } {
+    return {
+      event: name,
+      data: JSON.stringify({
+        event: name,
+        context: { run_id: runId, question_id: questionId, event_seq: seq, ...extraContext },
+        payload,
+      }),
+    };
+  }
+
+  function terminalEnvelope(questionId: string, seq: number, runId = "run-1") {
+    return sseEnvelope(
+      "question_terminal",
+      {
+        termination_reason: "normal",
+        has_final: true,
+        final_revision: 1,
+        delivery_status: "complete",
+        expected: [], delivered: [], missing: [],
+        review: { status: "passed", content_revision: 1 },
+      },
+      questionId,
+      seq,
+      runId,
+    );
+  }
+
+  function resultEnvelope(questionId: string, seq: number, contentRevision = 1, runId = "run-1") {
+    return sseEnvelope(
+      "result",
+      {
+        id: questionId,
+        情境: [],
+        題型種類: "single",
+        題型: "multiple_choice",
+        題目: [`text ${questionId}`],
+        正確解題分析: ["a"],
+      },
+      questionId,
+      seq,
+      runId,
+      { content_revision: contentRevision },
+    );
+  }
+
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+    // Default: simulate a connection that stays open (no events, no close)
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      // Stream stays open until aborted via opts.signal
+    });
+  });
+
+  it("T1: stream not opened when snapshot does not advertise live_events_available", async () => {
+    // Default snapshot: no live_events_available
+    await startRun(1);
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+  });
+
+  it("T2: stream opened exactly once when advertised; live question_terminal updates evidence before next poll", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    // Pass the live-events snapshot directly to startRun
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    // Advance timer to trigger first poll which sees live_events_available
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush(); // let the async fetchEventSource call settle
+
+    // Stream should be opened exactly once
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+    expect(fetchEventSourceMock.mock.calls[0][0]).toMatch(/\/api\/runs\/run-1\/events/);
+
+    // Verify auth headers (X-Frontend-Build-ID)
+    const callOpts = fetchEventSourceMock.mock.calls[0][1] as { headers?: Record<string, string> };
+    const headers = callOpts.headers ?? {};
+    const buildId = headers["X-Frontend-Build-ID"] ?? headers["x-frontend-build-id"];
+    expect(buildId).toBe("test-build-id");
+
+    // Deliver live result + terminal events through the captured onmessage
+    await act(async () => {
+      capturedOnMessage?.(resultEnvelope("q-1", 2));
+      capturedOnMessage?.(terminalEnvelope("q-1", 3));
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Evidence updated: q-1 should now have a final result
+    expect(result.current.evidence?.questions["q-1"].content.receipt).toBe("final");
+
+    // Second poll: snapshot still running; verify stream NOT reopened (liveRunIdRef is still set)
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")], { live_events_available: true }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("T3: started event with different run_id closes stream without changing evidence", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    let capturedSignal: AbortSignal | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      capturedSignal = opts.signal;
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    const evidenceBefore = result.current.evidence;
+
+    // Deliver a "started" event with a DIFFERENT run_id
+    const wrongStartedEvent = {
+      event: "started",
+      data: JSON.stringify({
+        event: "started",
+        context: { run_id: "run-WRONG", event_seq: 1 },
+        payload: {
+          protocol_version: 2,
+          total: 1,
+          questions: [{ index: 0, question_id: "q-1" }],
+        },
+      }),
+    };
+    await act(async () => {
+      capturedOnMessage?.(wrongStartedEvent);
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Stream should be aborted
+    expect(capturedSignal?.aborted).toBe(true);
+    // Evidence unchanged
+    expect(result.current.evidence).toBe(evidenceBefore);
+  });
+
+  it("T4: stream error falls back silently; no error state, polling continues, no question becomes unknown", async () => {
+    let capturedOnError: ((err: unknown) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnError = opts.onerror;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    // Simulate a stream error (onerror re-throws to prevent retry)
+    await act(async () => {
+      try { capturedOnError?.(new Error("connection lost")); } catch { /* expected re-throw */ }
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // No error status surfaced
+    expect(result.current.status).toBe("generating");
+    expect(result.current.errorMessage).toBeNull();
+    // No question should be "unknown" from stream loss
+    expect(result.current.evidence?.questions["q-1"].processing).not.toBe("unknown");
+    // Polling still continuing
+    const pollsBefore = server.polls().length;
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")], { live_events_available: false }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    expect(server.polls().length).toBeGreaterThan(pollsBefore);
+  });
+
+  it("T5: later snapshot recording same outcome as live events leaves ended/final counts unchanged", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    // Deliver result + terminal via live stream
+    await act(async () => {
+      capturedOnMessage?.(resultEnvelope("q-1", 2));
+      capturedOnMessage?.(terminalEnvelope("q-1", 3));
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Count after live events
+    const endedAfterLive = selectEndedCount(result.current.evidence!);
+    const finalAfterLive = selectFinalReceivedCount(result.current.evidence!);
+    expect(endedAfterLive).toBe(1);
+    expect(finalAfterLive).toBe(1);
+
+    // Now snapshot delivers the same outcome
+    server.setSnapshot("run-1", runSnapshot(
+      [endedQuestion("q-1", { question: examQuestion("q-1") })],
+      { live_events_available: false, status: "completed" },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+
+    // Counts unchanged (snapshot is idempotent)
+    expect(selectEndedCount(result.current.evidence!)).toBe(endedAfterLive);
+    expect(selectFinalReceivedCount(result.current.evidence!)).toBe(finalAfterLive);
+  });
+
+  it("T6: unmount aborts stream controller; no cancel request sent; no second POST /api/generate", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      capturedSignal = opts.signal;
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      // Stream stays open until signalled
+    });
+
+    const { unmount } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    const submitsBefore = server.submits().length;
+
+    // Unmount the hook — stopWatching should abort only the AbortController
+    act(() => { unmount(); });
+    await flush();
+
+    // AbortController aborted
+    expect(capturedSignal?.aborted).toBe(true);
+    // No cancel requests sent
+    const cancelRequests = server.requests.filter(
+      (r) => r.url.includes("cancel") || r.method === "DELETE",
+    );
+    expect(cancelRequests).toHaveLength(0);
+    // No second POST /api/generate
+    expect(server.submits().length).toBe(submitsBefore);
+  });
+
+  it("T3b: started with a different manifest closes the stream without changing evidence", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    let capturedSignal: AbortSignal | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      capturedSignal = opts.signal;
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    const evidenceBefore = result.current.evidence;
+
+    // Deliver a "started" event with matching run_id but different total/questions
+    const mismatchedManifestEvent = {
+      event: "started",
+      data: JSON.stringify({
+        event: "started",
+        context: { run_id: "run-1", event_seq: 1 },
+        payload: {
+          protocol_version: 3,
+          total: 99, // mismatched total
+          questions: [{ index: 0, question_id: "q-DIFFERENT" }],
+        },
+      }),
+    };
+    await act(async () => {
+      capturedOnMessage?.(mismatchedManifestEvent);
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Stream should be aborted due to manifest mismatch
+    expect(capturedSignal?.aborted).toBe(true);
+    // Evidence unchanged
+    expect(result.current.evidence).toBe(evidenceBefore);
+  });
+
+  it("T7: done closes the stream and it is not reopened by the library", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    let capturedSignal: AbortSignal | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      capturedSignal = opts.signal;
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+    expect(capturedSignal?.aborted).toBe(false);
+
+    // Send done event
+    await act(async () => {
+      capturedOnMessage?.({ event: "done", data: "" });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Signal aborted after done
+    expect(capturedSignal?.aborted).toBe(true);
+    // No error surfaced
+    expect(result.current.status).toBe("generating");
+    expect(result.current.errorMessage).toBeNull();
+  });
+
+  it("T8: after a stream error the stream is not reopened on later polls", async () => {
+    let capturedOnError: ((err: unknown) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnError = opts.onerror;
+    });
+
+    await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+
+    // Simulate a stream error
+    await act(async () => {
+      try { capturedOnError?.(new Error("network loss")); } catch { /* expected re-throw */ }
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Subsequent polls still advertise live_events_available — stream must NOT reopen
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")], { live_events_available: true }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")], { live_events_available: true }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")], { live_events_available: true }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+
+    // fetchEventSource was called exactly once despite multiple polls advertising live_events_available
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("T9: a resumed run seeds the decoder from the snapshot and applies a live question_terminal", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    // Resume a run that advertises live events
+    server.setSnapshot("run-1", runSnapshot(
+      [waitingQuestion("q-1")],
+      { live_events_available: true },
+    ));
+    const { result } = renderHook(() => useGenerate());
+    act(() => { void result.current.resume("run-1"); });
+    await flush();
+    // The first poll from resume opens the stream
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+
+    expect(fetchEventSourceMock).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("generating");
+
+    // Deliver a live question_terminal for q-1
+    await act(async () => {
+      capturedOnMessage?.(terminalEnvelope("q-1", 2));
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Evidence updated: q-1 should now be ended
+    expect(result.current.evidence?.questions["q-1"].processing).toBe("ended");
   });
 });

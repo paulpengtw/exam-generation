@@ -12,7 +12,7 @@ import {
   type RunSnapshot,
   type RunSnapshotQuestion,
 } from "./runSnapshot";
-import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
+import { applyPollReadFailed, applyStreamLost, applyV2Event, selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
 import { createGenerationStreamDecoder } from "./generationStream";
 
 function terminal(revision: number | null = 1, reason: "normal" | "failed" = "normal") {
@@ -448,6 +448,68 @@ describe("spec scenarios", () => {
     expect(selectFinalReceivedCount(state2)).toBe(2);
     expect(state2.questions["q-4"].processing).toBe("ended");
     // No terminal conflict: final_revision 1 matches nominalRevision 1
+    expect(state2.questions["q-4"].terminalConflict).toBeFalsy();
+  });
+
+  it("D persisted final applied (nominalRevision=1); later snapshot delivers D terminal with final_revision=3 — no conflict, D ended, counts correct", () => {
+    // Regression: when the initial snapshot stored the result under nominalRevision=1
+    // and the terminal arrives with final_revision=3, the terminal handler used to
+    // see content.revision(1) !== final_revision(3) and raise terminalConflict.
+    // The fix re-applies the result at the correct final_revision before applying
+    // the terminal.
+    const dFinalResult = {
+      record_id: "rec-q-4-final-r3",
+      question: {
+        id: "q-4",
+        情境: [],
+        題型種類: "single",
+        題型: "multiple_choice",
+        題目: ["final text q-4 r3"],
+        正確解題分析: ["a"],
+      },
+      verification_trail: [],
+      figure_policy_trail: [],
+      reference_example_record: { disabled: false, entries: [] },
+    };
+    // Initial snapshot: D has a persisted result but no terminal yet.
+    const snap1 = snapshot([
+      endedQuestion("q-1"),
+      { ...question("q-4"), result: { ...dFinalResult } },
+    ]);
+    const state1 = applyRunSnapshot(null, snap1);
+    expect(selectEndedCount(state1)).toBe(1); // only A (q-1) ended
+    expect(selectFinalReceivedCount(state1)).toBe(2); // A + D (persisted final)
+    expect(state1.questions["q-4"].processing).not.toBe("ended");
+    expect(state1.questions["q-4"].terminal).toBeNull();
+
+    // Second snapshot: D now has a terminal with final_revision=3 (mismatch with nominalRevision=1).
+    const dTerminal = {
+      termination_reason: "normal",
+      has_final: true,
+      final_revision: 3,          // does NOT match nominalRevision=1
+      delivery_status: "complete",
+      expected: [],
+      delivered: [],
+      missing: [],
+      review: { status: "passed", content_revision: 3 },
+    };
+    const snap2 = snapshot([
+      endedQuestion("q-1"),
+      {
+        ...question("q-4"),
+        processing: "ended",
+        termination_reason: "normal",
+        terminal: dTerminal,
+        result: { ...dFinalResult },
+      },
+    ]);
+    const state2 = applyRunSnapshot(state1, snap2);
+    // D is now ended — X increases by 1
+    expect(selectEndedCount(state2)).toBe(2);
+    // Y is unchanged: D was already counted toward finalReceived in snap1
+    expect(selectFinalReceivedCount(state2)).toBe(2);
+    expect(state2.questions["q-4"].processing).toBe("ended");
+    // No terminal conflict: fix re-applies result at final_revision=3 before terminal
     expect(state2.questions["q-4"].terminalConflict).toBeFalsy();
   });
 

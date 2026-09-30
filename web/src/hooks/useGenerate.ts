@@ -20,7 +20,9 @@ import {
   DETACHED_RUN_PROTOCOL_VERSION,
   type RunSnapshot,
 } from "../lib/runSnapshot";
-import { applyPollReadFailed, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
+import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
+import { createGenerationStreamDecoder, type RunManifest } from "../lib/generationStream";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { ApiError, getRun } from "../api/client";
 import {
   formatResolverFieldErrors,
@@ -623,6 +625,18 @@ export function useGenerate(): UseGenerateReturn {
   const activeRef = useRef<ActiveRun | null>(null);
   /** Run whose state is currently on screen, even after its polling ended. */
   const shownRunRef = useRef<string | null>(null);
+  /** AbortController for the current live SSE stream (issue #909). */
+  const liveAbortRef = useRef<AbortController | null>(null);
+  /** Run id whose live stream is currently open, or null when none. */
+  const liveRunIdRef = useRef<string | null>(null);
+  /** Manifest from the accepted run, used to pre-seed the live decoder. */
+  const acceptedManifestRef = useRef<RunManifest | null>(null);
+  /**
+   * Runs whose live stream has permanently ended (error / non-200 / run_id or
+   * manifest mismatch / clean `done`). The stream is never reopened for these.
+   * Reset when a new run starts (clearRunState).
+   */
+  const liveEndedRunsRef = useRef<Set<string>>(new Set());
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -648,6 +662,10 @@ export function useGenerate(): UseGenerateReturn {
     run.detachVisibility?.();
     run.detachVisibility = null;
     activeRef.current = null;
+    // Abort only the AbortController — no cancel request to server (issue #909 §f).
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+    liveRunIdRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -690,6 +708,12 @@ export function useGenerate(): UseGenerateReturn {
     setSubQuestionTotal(null);
     setResultsCompletion(null);
     setTerminalEvidence(false);
+    // Clean up live stream state (abort only the controller — no cancel request)
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+    liveRunIdRef.current = null;
+    acceptedManifestRef.current = null;
+    liveEndedRunsRef.current = new Set();
   }, []);
 
   const reset = useCallback(() => {
@@ -730,6 +754,176 @@ export function useGenerate(): UseGenerateReturn {
     return true;
   }, []);
 
+  /**
+   * Open the live SSE stream for a run (issue #909).
+   *
+   * Called from applySnapshot when the polled snapshot advertises
+   * live_events_available=true and no stream is already open for this run.
+   * Events are fed through createGenerationStreamDecoder (pre-seeded with the
+   * accepted manifest so late subscribers work) and applied to evidenceRef via
+   * applyV2Event.  On stream end/error: applyStreamLost clears activity only
+   * (never closeRun).  Polling continues as the authoritative source regardless.
+   */
+  const openLiveStream = useCallback((runId: string): void => {
+    // Already tracking this run — do not open a second stream
+    if (liveRunIdRef.current === runId) return;
+    // After a stream for this run ended (error / mismatch / done), never reopen it
+    if (liveEndedRunsRef.current.has(runId)) return;
+
+    // Abort any previous stream (for a different run that ended)
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+
+    const controller = new AbortController();
+    liveAbortRef.current = controller;
+    liveRunIdRef.current = runId;
+
+    const manifest = acceptedManifestRef.current;
+    const decoder = createGenerationStreamDecoder(
+      manifest ? { preSeededManifest: manifest } : undefined,
+    );
+    const token = useAuthStore.getState().token;
+
+    /** Mark this run's stream as permanently ended and clean up refs. */
+    const closeStream = () => {
+      liveEndedRunsRef.current.add(runId);
+      controller.abort();
+      if (liveRunIdRef.current === runId) liveRunIdRef.current = null;
+      if (liveAbortRef.current === controller) liveAbortRef.current = null;
+    };
+
+    void fetchEventSource(`/api/runs/${encodeURIComponent(runId)}/events`, {
+      method: "GET",
+      headers: {
+        "X-Frontend-Build-ID": __BUILD_ID__,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller.signal,
+      openWhenHidden: true,
+
+      async onopen(response) {
+        if (response.ok) return;
+        // Non-200 response: surface nothing, clear stream state, don't retry
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        throw new Error(`events: HTTP ${response.status}`);
+      },
+
+      onmessage(ev) {
+        if (controller.signal.aborted) return;
+        if (liveRunIdRef.current !== runId) return;
+
+        if (ev.event === "done") {
+          // Sentinel: run finished cleanly — close the stream and don't reconnect
+          closeStream();
+          return;
+        }
+
+        // Defensive run_id validation before the decoder sees the event.
+        // With a pre-seeded decoder, an event whose context.run_id differs from
+        // the accepted run is silently dropped by the decoder (kind:"ignore"),
+        // so the hook must detect the mismatch here and abort the stream.
+        try {
+          const parsed = JSON.parse(ev.data) as unknown;
+          if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "context" in (parsed as object) &&
+            (parsed as Record<string, unknown>).context !== null &&
+            typeof (parsed as Record<string, unknown>).context === "object" &&
+            "run_id" in ((parsed as Record<string, unknown>).context as object) &&
+            typeof ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id === "string"
+          ) {
+            const payloadRunId = ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id as string;
+            if (payloadRunId !== runId) {
+              closeStream();
+              return;
+            }
+            // If this is a "started" event, also validate the manifest (T3b)
+            if (
+              ev.event === "started" &&
+              acceptedManifestRef.current !== null &&
+              "payload" in (parsed as object)
+            ) {
+              const payload = ((parsed as Record<string, unknown>).payload) as Record<string, unknown> | null | undefined;
+              if (payload !== null && payload !== undefined && typeof payload === "object") {
+                const payloadTotal = (payload as Record<string, unknown>).total;
+                const payloadQuestions = (payload as Record<string, unknown>).questions;
+                const accepted = acceptedManifestRef.current;
+                const totalMismatch = typeof payloadTotal === "number" && payloadTotal !== accepted.total;
+                let idsMismatch = false;
+                if (Array.isArray(payloadQuestions) && payloadQuestions.length === accepted.manifest.length) {
+                  idsMismatch = payloadQuestions.some((q: unknown, i: number) =>
+                    q !== null && typeof q === "object" &&
+                    (q as Record<string, unknown>).question_id !== accepted.manifest[i]?.questionId
+                  );
+                } else if (Array.isArray(payloadQuestions)) {
+                  idsMismatch = true;
+                }
+                if (totalMismatch || idsMismatch) {
+                  closeStream();
+                  return;
+                }
+              }
+            }
+          }
+        } catch { /* non-JSON or missing fields — let decoder handle */ }
+
+        const decoded = decoder.decode(ev.event, ev.data);
+        for (const decodedEvent of decoded) {
+          if (decodedEvent.kind !== "v2") continue;
+
+          // "started" — evidence already set from the 202 / snapshot; skip
+          if (decodedEvent.event.name === "started") continue;
+
+          const prev = evidenceRef.current;
+          if (prev === null) continue;
+          const next = applyV2Event(prev, decodedEvent);
+          if (next !== prev) {
+            evidenceRef.current = next;
+            setEvidence(next);
+            const derived = deriveDisplay(next);
+            setDisplayResults(derived.displayResults);
+            setResults(derived.results);
+          }
+        }
+      },
+
+      onclose() {
+        // Server closed the connection without a `done` sentinel — treat as lost
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        // Throwing here prevents fetchEventSource from attempting a reconnect
+        throw new Error("events: server closed connection");
+      },
+
+      onerror(err) {
+        // Stream error: apply stream lost (clears activity only), permanently close
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        throw err; // prevent fetchEventSource retry
+      },
+    });
+  }, []);
+
   /** Fold a polled snapshot into state. Repeating the same snapshot changes nothing. */
   const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
     const previous = evidenceRef.current;
@@ -756,6 +950,24 @@ export function useGenerate(): UseGenerateReturn {
       setGenerationLogId(snapshot.run_id);
       setRunId(snapshot.run_id);
       shownRunRef.current = snapshot.run_id;
+    }
+
+    // Open the live SSE stream when the snapshot advertises it (issue #909 §a).
+    // Only when: the run is not yet ended AND the snapshot says live events are
+    // available AND no stream is already open for this run.
+    const isEnded = snapshotEnded(snapshot) || isTerminalRunStatus(snapshot.status);
+    if (!isEnded && snapshot.live_events_available === true && run.runId !== null) {
+      // For resumed runs (acceptedManifestRef is null), seed the decoder manifest
+      // from the first snapshot so the decoder does not wait forever for a
+      // "started" event that late subscribers never receive (issue #909 §d).
+      if (acceptedManifestRef.current === null) {
+        acceptedManifestRef.current = {
+          runId: snapshot.run_id,
+          total: snapshot.total,
+          manifest: snapshot.questions.map((q) => ({ index: q.index, questionId: q.question_id })),
+        };
+      }
+      openLiveStream(run.runId);
     }
 
     let ended = snapshotEnded(snapshot);
@@ -792,7 +1004,7 @@ export function useGenerate(): UseGenerateReturn {
       endOperation("completed");
     }
     return { ended: true };
-  }, [endOperation]);
+  }, [endOperation, openLiveStream]);
 
   /** One `GET /api/runs/{id}`. Only reads; never cancels. */
   const pollOnce = useCallback(async (run: ActiveRun): Promise<PollResult> => {
@@ -1014,6 +1226,12 @@ export function useGenerate(): UseGenerateReturn {
     }
 
     run.runId = accepted.run.run_id;
+    // Store manifest for pre-seeding the live decoder (issue #909 §b)
+    acceptedManifestRef.current = {
+      runId: accepted.run.run_id,
+      total: accepted.run.total,
+      manifest: accepted.run.questions.map((q) => ({ index: q.index, questionId: q.question_id })),
+    };
     const initial = evidenceFromAccepted(accepted.run);
     evidenceRef.current = initial;
     setEvidence(initial);

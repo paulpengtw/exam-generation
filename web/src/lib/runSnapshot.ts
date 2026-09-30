@@ -375,7 +375,7 @@ function applyQuestion(
   const finalRevision = terminal.has_final === true && typeof terminal.final_revision === "number"
     ? terminal.final_revision
     : null;
-  if (q.result !== null && finalRevision !== null && qev.content.receipt !== "final") {
+  if (q.result !== null && finalRevision !== null && (qev.content.receipt !== "final" || qev.content.revision !== finalRevision)) {
     state = applyV2Event(state, {
       kind: "v2",
       event: {
