@@ -12,7 +12,7 @@ import {
   type RunSnapshot,
   type RunSnapshotQuestion,
 } from "./runSnapshot";
-import { selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
+import { applyV2Event, closeRun, selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
 
 function terminal(revision: number | null = 1, reason: "normal" | "failed" = "normal") {
   return revision === null
@@ -313,20 +313,35 @@ describe("projections", () => {
 
 describe("spec scenarios", () => {
   it("mixed outcomes — selectEndedCount and selectFinalReceivedCount", () => {
-    // q-1: terminal(1,"normal") + result → complete+terminal → endedCount+1, finalReceivedCount+1
-    // q-2: terminal(null,"failed") + result (has_final=false; result not applied) → endedCount+1
-    // q-3: terminal(null,"failed") no result → endedCount+1
+    // q-1: terminal(1,"normal") + result → has_final=true → endedCount+1, finalReceivedCount+1
+    // q-2: failed terminal with has_final=true, review.failed + result → endedCount+1, finalReceivedCount+1
+    // q-3: terminal(null,"failed") no result → has_final=false → endedCount+1, finalReceivedCount NOT counted
     // q-4: result but no terminal → neither count
-    // endedCount=3 (q-1,q-2,q-3), finalReceivedCount=1 (only q-1 has has_final=true)
+    // endedCount=3 (q-1,q-2,q-3), finalReceivedCount=2 (q-1 and q-2 have has_final=true)
     const snap = snapshot([
       endedQuestion("q-1"),
-      { ...question("q-2"), processing: "ended", termination_reason: "failed", terminal: terminal(null, "failed"), result: endedQuestion("q-2").result },
+      {
+        ...question("q-2"),
+        processing: "ended",
+        termination_reason: "failed",
+        terminal: {
+          termination_reason: "failed",
+          has_final: true,
+          final_revision: 1,
+          delivery_status: "complete",
+          expected: [],
+          delivered: [],
+          missing: [],
+          review: { status: "failed", content_revision: 1 },
+        },
+        result: endedQuestion("q-2").result,
+      },
       { ...question("q-3"), processing: "ended", termination_reason: "failed", terminal: terminal(null, "failed") },
       { ...question("q-4"), result: endedQuestion("q-4").result },
     ]);
     const state = applyRunSnapshot(null, snap);
     expect(selectEndedCount(state)).toBe(3);
-    expect(selectFinalReceivedCount(state)).toBe(1);
+    expect(selectFinalReceivedCount(state)).toBe(2);
   });
 
   it("idempotent: applying same snapshot twice gives same counts", () => {
@@ -347,5 +362,48 @@ describe("spec scenarios", () => {
     const state2 = applyRunSnapshot(state1, snap2);
     expect(selectEndedCount(state2)).toBe(1);
     expect(selectFinalReceivedCount(state2)).toBe(1);
+  });
+
+  it("counts are read after returning", () => {
+    // Simulate reopening the page after a completed run — snapshot has final results
+    const snap = snapshot(
+      [endedQuestion("q-1"), endedQuestion("q-2"), endedQuestion("q-3")],
+      { status: "completed" },
+    );
+    const state = applyRunSnapshot(null, snap);
+    expect(selectEndedCount(state)).toBe(3);
+    expect(selectFinalReceivedCount(state)).toBe(3);
+  });
+
+  it("connection ends during generation", () => {
+    // q-1 finishes normally; q-2 is still in flight when the connection drops
+    let state = applyRunSnapshot(null, snapshot([question("q-1"), question("q-2")]));
+    state = applyV2Event(state, {
+      kind: "v2",
+      event: {
+        name: "question_terminal",
+        context: { question_id: "q-1" },
+        payload: terminal(1),
+      },
+    });
+    state = closeRun(state);
+    expect(state.questions["q-1"].processing).toBe("ended");
+    expect(state.questions["q-2"].processing).toBe("unknown");
+    expect(selectEndedCount(state)).toBe(1);
+  });
+
+  it("stale started event rejected", () => {
+    // Once a terminal is applied, a stale snapshot showing the question as
+    // still running must not revert the terminal.
+    const initialSnap = snapshot([endedQuestion("q-1"), question("q-2")]);
+    const state = applyRunSnapshot(null, initialSnap);
+    expect(state.questions["q-1"].terminal).not.toBeNull();
+
+    // Stale snapshot: q-1 appears to still be running (earlier poll result)
+    const staleSnap = snapshot([question("q-1"), question("q-2")], { status: "running" });
+    const reapplied = applyRunSnapshot(state, staleSnap);
+    // Terminal on q-1 should be preserved — stale data does not revert it
+    expect(reapplied.questions["q-1"].terminal).not.toBeNull();
+    expect(selectEndedCount(reapplied)).toBe(1);
   });
 });

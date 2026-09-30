@@ -477,9 +477,10 @@ async def run_events_endpoint(
         try:
             while True:
                 event = await queue.get()
+                event_name = event.get("event", "message")
                 data = json.dumps(event)
-                yield f"data: {data}\n\n"
-                if event.get("event") == "done":
+                yield f"event: {event_name}\ndata: {data}\n\n"
+                if event_name == "done":
                     break
         finally:
             await unsubscribe_live(run_id, queue)

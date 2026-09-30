@@ -76,33 +76,58 @@ def _get_lock() -> asyncio.Lock:
 
 async def subscribe_live(run_id: str) -> asyncio.Queue:
     """Register a new observer queue for *run_id* and return it."""
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
     async with _get_lock():
         _live_observers.setdefault(run_id, []).append(queue)
     return queue
 
 
 async def unsubscribe_live(run_id: str, queue: asyncio.Queue) -> None:
-    """Remove *queue* from the registry for *run_id*."""
+    """Remove *queue* from the registry for *run_id*.
+
+    The slot (key) is preserved so ``is_live_available`` keeps returning True
+    while the run is executing.  Only ``execute_run``'s finally block removes
+    the key.
+    """
     async with _get_lock():
         observers = _live_observers.get(run_id, [])
         if queue in observers:
             observers.remove(queue)
-        if not observers:
-            _live_observers.pop(run_id, None)
 
 
 def is_live_available(run_id: str) -> bool:
-    """True when at least one observer queue is registered for *run_id*."""
-    return bool(_live_observers.get(run_id))
+    """True when the run's observer slot exists (i.e. the run is executing in this process).
+
+    Returns True even when no observer queues are currently connected.
+    Availability means the slot was registered by ``execute_run``, not that
+    anyone is watching.
+    """
+    return run_id in _live_observers
 
 
 async def _publish_live(run_id: str, event: dict) -> None:
-    """Broadcast *event* to all registered observers for *run_id*."""
-    async with _get_lock():
-        observers = list(_live_observers.get(run_id, []))
-    for queue in observers:
-        await queue.put(event)
+    """Broadcast *event* to all registered observers for *run_id*.
+
+    Non-blocking: uses ``put_nowait`` so a slow or disconnected observer
+    never blocks ``execute_run``.  Overflowing queues drop the event with a
+    WARNING; any other exception is suppressed so the run is never affected.
+    """
+    try:
+        async with _get_lock():
+            observers = list(_live_observers.get(run_id, []))
+        for queue in observers:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning(
+                    "live observer queue full for run %s, dropping event", run_id
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "live observer put_nowait failed for run %s", run_id, exc_info=True
+                )
+    except Exception:  # noqa: BLE001
+        logger.warning("_publish_live failed for run %s", run_id, exc_info=True)
 
 
 Clock = Callable[[], datetime]

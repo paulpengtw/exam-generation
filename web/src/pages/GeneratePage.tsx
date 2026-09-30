@@ -141,6 +141,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     evidence: runEvidence,
     runId,
     resume,
+    pollReadFailed,
   } = useGenerate();
   // A detached run is addressed by `?run=<id>` (issue #908): closing the page
   // and reopening that URL resumes watching the same run.
@@ -733,6 +734,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               requestedTotal={requestedTotal}
               completedCount={results.length}
             />
+            {pollReadFailed && (
+              <div role="status">{t("generate.run_read_unavailable")}</div>
+            )}
           </section>
         )}
 
