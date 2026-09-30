@@ -98,6 +98,9 @@ End-to-end trace of `GET /api/generate` from browser button click to rendered qu
                 │       Sidecars (verification_trail, figure_policy_trail,
                 │       reference_example_record) are saved here, NOT in the queue envelope.
                 │       RESULT is published regardless of save success or failure.
+                │       Uniqueness (issue #907): a repeated save of the same
+                │       (generation_log_id, question_id) keeps the first row and returns
+                │       its id without raising, retrying, or reporting to Sentry.
                 │
                 └── 10. queue.put_nowait {event:"result", data: question_json + image_base64}
                         (sidecars no longer included in the envelope — issue #904)
