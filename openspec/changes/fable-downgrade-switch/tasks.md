@@ -1,17 +1,17 @@
 ## 1. Switch and substitution helpers
 
-- [ ] 1.1 Write failing tests in a new `tests/test_fable_downgrade_config.py` for `LLM_FABLE_DOWNGRADE` parsing (unset, `1`, `true`, `TRUE`, ` 1 `, `0`, `false`, `yes`, empty) and verify they fail because `Config.fable_downgrade` does not exist
-- [ ] 1.2 Add `fable_downgrade: bool = False`, its `from_env` parsing, and `FABLE_DOWNGRADE_TARGET` to `src/config.py`; verify 1.1 passes and that `ServerConfig.from_env()` exposes the same field
-- [ ] 1.3 Add tests then implement `Config.dispatch_model` (switch off → unchanged; `claude-fable-5`, `claude-fable-5-1`, `claude-fable-5-20250901` → target; `claude-opus-5`, `claude-sonnet-5`, `gemini-3.1-pro-preview` → unchanged); verify the tests pass
-- [ ] 1.4 Add tests then implement `Config.dispatch_effort` (`xhigh` → `high` only when substituted; `low`/`medium`/`high`/`max` unchanged; non-Fable model with `xhigh` unchanged); verify the tests pass
+- [x] 1.1 Write failing tests in a new `tests/test_fable_downgrade_config.py` for `LLM_FABLE_DOWNGRADE` parsing (unset, `1`, `true`, `TRUE`, ` 1 `, `0`, `false`, `yes`, empty) and verify they fail because `Config.fable_downgrade` does not exist
+- [x] 1.2 Add `fable_downgrade: bool = False`, its `from_env` parsing, and `FABLE_DOWNGRADE_TARGET` to `src/config.py`; verify 1.1 passes and that `ServerConfig.from_env()` exposes the same field
+- [x] 1.3 Add tests then implement `Config.dispatch_model` (switch off → unchanged; `claude-fable-5`, `claude-fable-5-1`, `claude-fable-5-20250901` → target; `claude-opus-5`, `claude-sonnet-5`, `gemini-3.1-pro-preview` → unchanged); verify the tests pass
+- [x] 1.4 Add tests then implement `Config.dispatch_effort` (`xhigh` → `high` only when substituted; `low`/`medium`/`high`/`max` unchanged; non-Fable model with `xhigh` unchanged); verify the tests pass
 
 ## 2. Dispatch guards
 
-- [ ] 2.1 Write failing tests in a new `tests/test_fable_downgrade_dispatch.py` that drive `LLMClient.generate`, `generate_json`, `generate_with_image`, and `plan` with a fake Anthropic client and assert the SDK receives `model="claude-opus-4-6"`, adaptive thinking, and `max_tokens=16384` when the switch is on and the requested id is `claude-fable-5`
-- [ ] 2.2 Apply `dispatch_model` in `LLMClient._call()` and pass the requested id to `_effort_kwargs` so `dispatch_effort` applies; verify 2.1 passes, including an `xhigh` → `high` case and a `max` → `max` case
-- [ ] 2.3 Write a failing test, then apply the same guard in `LLMClient.generate_with_tools()`; verify the web-search request names `claude-opus-4-6` when the verify tier is a Fable model
-- [ ] 2.4 Emit one WARNING per substituted call naming both ids; verify with `caplog` that the entry exists and contains no prompt text
-- [ ] 2.5 Add a switch-off regression test asserting the SDK kwargs and emitted events for a `claude-fable-5` call are equal to those captured before the guard; verify it passes
+- [x] 2.1 Write failing tests in a new `tests/test_fable_downgrade_dispatch.py` that drive `LLMClient.generate`, `generate_json`, `generate_with_image`, and `plan` with a fake Anthropic client and assert the SDK receives `model="claude-opus-4-6"`, adaptive thinking, and `max_tokens=16384` when the switch is on and the requested id is `claude-fable-5`
+- [x] 2.2 Apply `dispatch_model` in `LLMClient._call()` and pass the requested id to `_effort_kwargs` so `dispatch_effort` applies; verify 2.1 passes, including an `xhigh` → `high` case and a `max` → `max` case
+- [x] 2.3 Write a failing test, then apply the same guard in `LLMClient.generate_with_tools()`; verify the web-search request names `claude-opus-4-6` when the verify tier is a Fable model
+- [x] 2.4 Emit one WARNING per substituted call naming both ids; verify with `caplog` that the entry exists and contains no prompt text
+- [x] 2.5 Add a switch-off regression test asserting the SDK kwargs and emitted events for a `claude-fable-5` call are equal to those captured before the guard; verify it passes
 - [ ] 2.6 Add a guard-coverage test that scans `src/llm_client.py` for SDK dispatch calls (`messages.create`, `messages.stream`, `chat.completions.create`, `images.generate`) and fails when a site is neither guarded nor on an explicit exemption list; verify it passes and fails when a guard is removed
 
 ## 3. Recording the requested and ran models
@@ -24,7 +24,7 @@
 
 ## 4. Admission and roster stay unchanged
 
-- [ ] 4.1 Add server tests with the switch on: the models endpoint returns the same list in the same order, and a generation request naming `claude-fable-5` with effort `xhigh` is admitted without HTTP 422; verify both pass without changing admission code
+- [x] 4.1 Add server tests with the switch on: the models endpoint returns the same list in the same order, and a generation request naming `claude-fable-5` with effort `xhigh` is admitted without HTTP 422; verify both pass without changing admission code
 
 ## 5. History detail
 
@@ -34,8 +34,8 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Add the `LLM_FABLE_DOWNGRADE` row to the backend variables table in `DEPLOYMENT.md` and to the README environment table, stating that a Railway variable change applies only after the staged change is deployed; verify both tables render and name the backend service only
-- [ ] 6.2 Add a short section to `CLAUDE.md` under the LLM provider section describing the switch, the fixed target, the two guarded entry points, and the recording rule; verify it matches `design.md`
+- [x] 6.1 Add the `LLM_FABLE_DOWNGRADE` row to the backend variables table in `DEPLOYMENT.md` and to the README environment table, stating that a Railway variable change applies only after the staged change is deployed; verify both tables render and name the backend service only
+- [x] 6.2 Add a short section to `CLAUDE.md` under the LLM provider section describing the switch, the fixed target, the two guarded entry points, and the recording rule; verify it matches `design.md`
 
 ## 7. Verification
 

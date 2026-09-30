@@ -43,6 +43,9 @@ EFFORT_LEVELS: dict[str, list[str]] = {
     "gemini-3.1-pro-preview": THREE_EFFORT_LEVELS,
 }
 
+# Substitute model used when LLM_FABLE_DOWNGRADE is enabled.
+FABLE_DOWNGRADE_TARGET: str = "claude-opus-4-6"
+
 
 @dataclass
 class Config:
@@ -82,6 +85,9 @@ class Config:
     effort_correct: str = DEFAULT_EFFORT_CORRECT  # empty → inherit effort_execute
     llm_timeout_seconds: int = 600   # HTTP timeout for LLM API calls (LLM_TIMEOUT_SECONDS)
     image_timeout_seconds: int = 300  # HTTP timeout for image API calls (IMAGE_TIMEOUT_SECONDS)
+    # Fable model downgrade switch (issue #940). When True, any call whose model id
+    # contains "fable" is transparently dispatched to FABLE_DOWNGRADE_TARGET instead.
+    fable_downgrade: bool = False
 
     @classmethod
     def from_env(cls, env_file: str | Path | None = None) -> Config:
@@ -128,7 +134,34 @@ class Config:
             effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
             llm_timeout_seconds=int(os.environ.get("LLM_TIMEOUT_SECONDS", "600")),
             image_timeout_seconds=int(os.environ.get("IMAGE_TIMEOUT_SECONDS", "300")),
+            fable_downgrade=(
+                os.environ.get("LLM_FABLE_DOWNGRADE", "").strip().lower() in {"1", "true"}
+            ),
         )
+
+    def dispatch_model(self, model: str) -> str:
+        """Return the effective model id after applying the fable-downgrade switch.
+
+        When ``fable_downgrade`` is True and the model id contains ``"fable"``
+        (case-insensitive), returns ``FABLE_DOWNGRADE_TARGET``; otherwise returns
+        ``model`` unchanged.  The switch is off by default.
+        """
+        if self.fable_downgrade and "fable" in model.lower():
+            return FABLE_DOWNGRADE_TARGET
+        return model
+
+    def dispatch_effort(self, effort: str | None, dispatched_model: str) -> str | None:
+        """Clamp effort for the dispatched model.
+
+        When ``dispatched_model`` is ``FABLE_DOWNGRADE_TARGET`` and ``effort``
+        is ``"xhigh"`` (not accepted by that model), returns ``"high"`` instead.
+        All other effort values and non-target dispatched models are returned
+        unchanged.  This is called *after* ``dispatch_model`` so the caller
+        already holds the effective model id.
+        """
+        if dispatched_model == FABLE_DOWNGRADE_TARGET and effort == "xhigh":
+            return "high"
+        return effort
 
     def validate(self) -> None:
         """Check that required config values are present."""

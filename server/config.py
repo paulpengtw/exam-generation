@@ -178,6 +178,9 @@ class ServerConfig(Config):
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
             effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
             effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
+            fable_downgrade=(
+                os.environ.get("LLM_FABLE_DOWNGRADE", "").strip().lower() in {"1", "true"}
+            ),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).

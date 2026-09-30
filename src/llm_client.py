@@ -766,8 +766,25 @@ class LLMClient:
         if _call_scope_sink is not None and call_scope is not None:
             _call_scope_sink.append(call_scope)
 
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_model = model
+        model = self.config.dispatch_model(model)
+        if model != _requested_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_model,
+                model,
+            )
+
         provider = resolve_provider(model)
         options = self._provider_options(model, purpose, provider)
+
+        # Clamp effort for the substituted model (xhigh is not accepted by opus-4-6).
+        if model != _requested_model and provider == "anthropic":
+            _raw_effort = self._effort_for_purpose(purpose)
+            _eff_effort = self.config.dispatch_effort(_raw_effort, model)
+            if _eff_effort != _raw_effort:
+                options["extra_body"]["output_config"]["effort"] = _eff_effort
         if provider != "anthropic" and self._observer and self.config.llm_stream:
             options.update({
                 "stream": True,
@@ -1249,11 +1266,29 @@ class LLMClient:
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
+
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_call_model = call_model
+        call_model = self.config.dispatch_model(call_model)
+        if call_model != _requested_call_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_call_model,
+                call_model,
+            )
+
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
         operation_scope = self._operation_scope(scope, kind=purpose)
         call_scope: CallScope | None = None
         options = self._provider_options(call_model, purpose, "anthropic")
         options["tools"] = tools
+
+        # Clamp effort for the substituted model (xhigh is not accepted by opus-4-6).
+        if call_model != _requested_call_model:
+            _raw_effort = self._effort_for_purpose(purpose)
+            _eff_effort = self.config.dispatch_effort(_raw_effort, call_model)
+            if _eff_effort != _raw_effort:
+                options["extra_body"]["output_config"]["effort"] = _eff_effort
 
         system_param = (
             [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
