@@ -1032,3 +1032,16 @@ with an `IntegrityError` catch in `accept_run`.
 `GET /api/runs/{id}` includes `queue_position` (0-based integer) when the run is
 in `queued` status.  The frontend displays `排隊中 · 前面還有 k 個` on the
 generate page while the run is waiting.
+
+### GENERATION_HOST_CONCURRENCY
+
+`GENERATION_HOST_CONCURRENCY` (env var on the **backend** service, default `3`)
+sets how many generation runs the host's `run_host_loop` worker may execute in
+parallel at any one time.  When more runs are queued than this limit allows, the
+excess stays in `queued` status until a running slot frees up.
+
+To change the limit on Railway: add `GENERATION_HOST_CONCURRENCY=N` as an
+environment variable on the backend service.  Increase this value if you have
+spare CPU/memory and want to process queued runs faster; decrease it if parallel
+LLM calls are exhausting rate limits or memory.  A value of `1` serialises all
+generation on that host.

@@ -565,3 +565,88 @@ def test_ss_defers_failed_policy_tombstone_until_workers_finish(tmp_path: Path) 
         assert {entry["label"] for entry in failed.figure_policy_trail_json} == {"題幹", "小題 1"}
 
     asyncio.run(_run())
+
+
+def test_host_loop_respects_max_concurrent_runs(tmp_path: Path) -> None:
+    """run_host_loop with max_concurrent_runs=2 never starts more than 2 runs simultaneously.
+
+    Three runs from three distinct teachers (so the one-run-per-teacher claim
+    rule cannot artificially cap concurrency) are queued.  Each do_generate
+    holds for a short interval so we can measure how many are in-flight at
+    once.  With max_concurrent_runs=2 the observed peak must be ≤ 2.
+    """
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner1, owner2 = await env.setup()
+        owner3 = uuid.uuid4()
+        async with env.sessions() as session:
+            session.add(User(id=owner3, email="owner3@test.com"))
+            await session.commit()
+
+        params = resolved_generate_params({**_MATH, "count": 1})
+        for owner in [owner1, owner2, owner3]:
+            await env.accept(params, owner)
+
+        concurrent = 0
+        max_concurrent = 0
+        lock = threading.Lock()
+
+        def _slow_generate(rng_params: Any, overrides: Any, **kwargs: Any) -> Any:
+            nonlocal concurrent, max_concurrent
+            client: _FakeClient = kwargs["client"]
+            client.emit(
+                {"type": "stage", "agent": "generator", "stage": "llm_generate",
+                 "status": "start", "ts": time.time()}
+            )
+            with lock:
+                concurrent += 1
+                if concurrent > max_concurrent:
+                    max_concurrent = concurrent
+            # Hold for a moment so the host loop can (fail to) pick up a third run.
+            time.sleep(0.25)
+            with lock:
+                concurrent -= 1
+            client.emit(
+                {"type": "stage", "agent": "generator", "stage": "llm_generate",
+                 "status": "end", "ts": time.time()}
+            )
+            return _question(kwargs["question_id"])
+
+        stop = asyncio.Event()
+        loop_task = asyncio.create_task(
+            run_host_loop(
+                stop,
+                app_state=env.app_state,
+                config=env.config,
+                session_factory=env.sessions,
+                client_factory=_FakeClient,
+                subjects=_spec(_slow_generate),
+                idle_interval=0.05,
+                max_concurrent_runs=2,
+            )
+        )
+        # Wait for all 3 runs to complete.
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+            async with env.sessions() as session:
+                pending = (
+                    await session.execute(
+                        select(GenerationLog.id).where(
+                            GenerationLog.status.in_(("queued", "running"))
+                        )
+                    )
+                ).first()
+            if pending is None:
+                break
+        else:
+            raise AssertionError("runs did not finish in time")
+        stop.set()
+        await asyncio.wait_for(loop_task, timeout=20.0)
+
+        assert max_concurrent <= 2, (
+            f"Expected max 2 concurrent runs but observed {max_concurrent}"
+        )
+
+    asyncio.run(_run())

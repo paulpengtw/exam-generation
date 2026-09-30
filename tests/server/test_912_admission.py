@@ -19,7 +19,6 @@ import asyncio
 import uuid
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -34,7 +33,7 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.generate.run import QUEUE_LIMIT, QueueLimitError, accept_run, list_runs, read_run
+from server.generate.run import QUEUE_LIMIT, QueueLimitError, accept_run
 from server.models import Base, GenerationLog, User
 from server.rate_limit import limiter
 from tests.server.generate_test_utils import complete_math_query_params
@@ -370,7 +369,8 @@ def test_list_runs_is_owner_only(harness: _Harness) -> None:
 def test_accept_run_unit_dedup() -> None:
     """accept_run returns the same AcceptedRun for a repeated (user, key)."""
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     async def _run(tmp_path_str: str) -> None:
         db_url = f"sqlite+aiosqlite:///{tmp_path_str}/unit.db"
@@ -403,7 +403,8 @@ def test_accept_run_unit_dedup() -> None:
 def test_accept_run_unit_queue_limit() -> None:
     """accept_run raises QueueLimitError when queue is full."""
     import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     async def _run(tmp_path_str: str) -> None:
         db_url = f"sqlite+aiosqlite:///{tmp_path_str}/unit_limit.db"
@@ -440,42 +441,208 @@ def test_accept_run_unit_queue_limit() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Postgres-specific race-condition test
+# Postgres-specific race-condition and FIFO tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.postgres
-def test_submission_key_unique_constraint_enforced_by_postgres(
-    postgres_session_factory: Any,
-) -> None:
+def test_submission_key_unique_constraint_enforced_by_postgres(pg_engine: Any) -> None:
     """The DB-level UniqueConstraint on (user_id, submission_key) is enforced by Postgres.
 
-    This test verifies that two concurrent inserts with the same key result in
-    exactly one row in the DB (the IntegrityError recovery path in accept_run
-    returns the existing run).
+    Uses the session-scoped pg_engine fixture (NullPool, each test drives its
+    own asyncio.run() loop so connections are never reused across loops).
     """
     import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
     from server.generate.models import GenerateParams
 
     async def _run() -> tuple[str, str]:
-        sessions = postgres_session_factory
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        sf = async_sessionmaker(pg_engine, expire_on_commit=False, class_=AsyncSession)
         user_id = uuid.uuid4()
-        async with sessions() as session:
-            session.add(User(id=user_id, email=f"pg_{user_id}@example.com"))
+        async with sf() as session:
+            session.add(User(id=user_id, email=f"pg_dedup_{user_id}@example.com"))
             await session.commit()
 
         params = GenerateParams(**{k: v for k, v in complete_math_query_params(
             **{k: v for k, v in _MATH_BASE.items() if k != "subject"}
-        ).items() if k != "stream_version"}, submission_key="race-key")
+        ).items() if k != "stream_version"}, submission_key="pg-dedup-key")
 
-        # Simulate two concurrent accept_run calls by running them sequentially
-        # (true concurrency testing is done by the accept_run unit test above;
-        # here we verify the Postgres constraint exists and the dedup path works).
-        async with sessions() as s1:
+        # Sequential dedup: second accept_run with the same key must return the
+        # first run (IntegrityError → rollback → look up winner path).
+        async with sf() as s1:
             ar1 = await accept_run(params, user_id, session=s1)
-        async with sessions() as s2:
+        async with sf() as s2:
             ar2 = await accept_run(params, user_id, session=s2)
         return ar1.run_id, ar2.run_id
 
     run1, run2 = asyncio.run(_run())
     assert run1 == run2, f"Postgres dedup must return same run: {run1} != {run2}"
+
+
+@pytest.mark.postgres
+def test_concurrent_queue_limit_exactly_one_wins(pg_engine: Any) -> None:
+    """Two concurrent accept_run calls at the limit boundary: exactly one queued run is created.
+
+    With the per-teacher SELECT … FOR UPDATE serialisation lock, whichever
+    transaction acquires the lock first will insert successfully; the second
+    will see queued_count == QUEUE_LIMIT and raise QueueLimitError.  Without
+    the lock both would read queued_count == QUEUE_LIMIT - 1 and try to insert
+    concurrently — the unique-key constraint catches an identical submission_key
+    but cannot prevent two different-key inserts from both slipping through.
+    """
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from server.generate.models import GenerateParams
+
+    async def _run() -> None:
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        sf = async_sessionmaker(pg_engine, expire_on_commit=False, class_=AsyncSession)
+        user_id = uuid.uuid4()
+        async with sf() as session:
+            session.add(User(id=user_id, email=f"pg_race_limit_{user_id}@example.com"))
+            await session.commit()
+
+        def _make_params(key: str) -> GenerateParams:
+            return GenerateParams(**{k: v for k, v in complete_math_query_params(
+                **{k: v for k, v in _MATH_BASE.items() if k != "subject"}
+            ).items() if k != "stream_version"}, submission_key=key)
+
+        # Fill queue to QUEUE_LIMIT - 1 runs.
+        for i in range(QUEUE_LIMIT - 1):
+            async with sf() as s:
+                await accept_run(_make_params(f"pre-{i}"), user_id, session=s)
+
+        # Two concurrent calls: one for the last slot, one that should be blocked.
+        results: list[Any] = [None, None]
+
+        async def _submit(idx: int, key: str) -> None:
+            try:
+                async with sf() as s:
+                    results[idx] = await accept_run(_make_params(key), user_id, session=s)
+            except QueueLimitError:
+                results[idx] = "limit"
+
+        await asyncio.gather(
+            _submit(0, "concurrent-a"),
+            _submit(1, "concurrent-b"),
+        )
+
+        successes = [r for r in results if r != "limit"]
+        failures = [r for r in results if r == "limit"]
+        # Exactly one should succeed and one should hit the limit.
+        assert len(successes) == 1, f"Expected 1 success, got results={results}"
+        assert len(failures) == 1, f"Expected 1 limit error, got results={results}"
+
+    asyncio.run(_run())
+
+
+@pytest.mark.postgres
+def test_concurrent_same_key_both_get_same_run(pg_engine: Any) -> None:
+    """Two concurrent accept_run calls with the same submission_key both get the same run_id."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from server.generate.models import GenerateParams
+
+    async def _run() -> tuple[str, str]:
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        sf = async_sessionmaker(pg_engine, expire_on_commit=False, class_=AsyncSession)
+        user_id = uuid.uuid4()
+        async with sf() as session:
+            session.add(User(id=user_id, email=f"pg_same_key_{user_id}@example.com"))
+            await session.commit()
+
+        params = GenerateParams(**{k: v for k, v in complete_math_query_params(
+            **{k: v for k, v in _MATH_BASE.items() if k != "subject"}
+        ).items() if k != "stream_version"}, submission_key="concurrent-same-key")
+
+        run_ids: list[str] = [None, None]  # type: ignore[list-item]
+
+        async def _submit(idx: int) -> None:
+            async with sf() as s:
+                ar = await accept_run(params, user_id, session=s)
+                run_ids[idx] = ar.run_id
+
+        await asyncio.gather(_submit(0), _submit(1))
+        return run_ids[0], run_ids[1]
+
+    run1, run2 = asyncio.run(_run())
+    assert run1 is not None and run2 is not None
+    assert run1 == run2, (
+        f"Concurrent same-key submits must return same run: {run1!r} != {run2!r}"
+    )
+
+
+@pytest.mark.postgres
+def test_fifo_claim_order_matches_submission_order(pg_engine: Any) -> None:
+    """claim_next_run returns runs in submission order (FIFO) for the same teacher.
+
+    Verifies the ORDER BY started_at, id clause in claim_next_run works on Postgres.
+    """
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from server.generate.models import GenerateParams
+    from server.generate.run import claim_next_run
+
+    async def _run() -> list[str]:
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # Truncate tables so rows from other postgres tests do not affect
+            # the claim order.  CASCADE handles FK-dependent child rows.
+            from sqlalchemy import text as _text
+            await conn.execute(
+                _text(
+                    "TRUNCATE TABLE generation_logs, users RESTART IDENTITY CASCADE"
+                )
+            )
+        sf = async_sessionmaker(pg_engine, expire_on_commit=False, class_=AsyncSession)
+
+        # Two distinct teachers so each teacher can have one run claimed at a time.
+        teacher1 = uuid.uuid4()
+        teacher2 = uuid.uuid4()
+        teacher3 = uuid.uuid4()
+        async with sf() as session:
+            session.add_all([
+                User(id=teacher1, email=f"t1_{teacher1}@example.com"),
+                User(id=teacher2, email=f"t2_{teacher2}@example.com"),
+                User(id=teacher3, email=f"t3_{teacher3}@example.com"),
+            ])
+            await session.commit()
+
+        def _make_params() -> GenerateParams:
+            return GenerateParams(**{k: v for k, v in complete_math_query_params(
+                **{k: v for k, v in _MATH_BASE.items() if k != "subject"}
+            ).items() if k != "stream_version"})
+
+        # Submit in order: teacher1, teacher2, teacher3.
+        async with sf() as s:
+            ar1 = await accept_run(_make_params(), teacher1, session=s)
+        async with sf() as s:
+            ar2 = await accept_run(_make_params(), teacher2, session=s)
+        async with sf() as s:
+            ar3 = await accept_run(_make_params(), teacher3, session=s)
+
+        # Claim all three; FIFO means teacher1's run comes first.
+        claimed_order = []
+        for _ in range(3):
+            c = await claim_next_run(sf, host_id="fifo-host")
+            if c is not None:
+                claimed_order.append(str(c.run_id))
+        return claimed_order, [ar1.run_id, ar2.run_id, ar3.run_id]
+
+    claimed, expected = asyncio.run(_run())
+    assert claimed == expected, (
+        f"Claimed order {claimed} does not match submission order {expected}"
+    )

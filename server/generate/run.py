@@ -47,7 +47,7 @@ from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams
 from server.generate.persistence import persist_failed_generation_record
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS, SubjectSpec
-from server.models import GenerationLog, GenerationQuestionState, GenerationRecord
+from server.models import GenerationLog, GenerationQuestionState, GenerationRecord, User
 from src.common.generation_events import allocate_manifest
 
 logger = logging.getLogger(__name__)
@@ -234,6 +234,15 @@ async def accept_run(
         ).scalar_one_or_none()
         if existing_log is not None:
             return await _build_accepted_run_from_log(existing_log, session)
+
+    # --- Per-teacher serialization lock (Postgres) ---------------------------
+    # Acquire an exclusive row lock on the teacher's User record.  On Postgres
+    # this serialises concurrent accept_run calls from the same user so the
+    # queue-count check and the INSERT are atomic per teacher.  SQLAlchemy
+    # no-ops with_for_update() on SQLite, so this branch is safe on both.
+    await session.execute(
+        select(User).where(User.id == user_id).with_for_update()
+    )
 
     # --- Queue limit check ---------------------------------------------------
     queued_count: int = (
