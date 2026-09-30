@@ -534,6 +534,9 @@ def _parse_subquestion(
         )
         if raw_question_type not in tuple(member.value for member in QuestionType):
             raise SubquestionParseError("題型欄位不是可辨識的題型")
+        題目 = sq_raw.get("題目", "")
+        if not isinstance(題目, str) or not 題目.strip():
+            raise SubquestionParseError("子題缺少必要的「題目」文字（空白或遺漏）")
         result = SubQuestion(
             # The model may describe the slot, but it never owns its identity.
             # The normalized plan position is the only routing source.
@@ -550,7 +553,7 @@ def _parse_subquestion(
             ),
             認知歷程=cognitive_process,
             題型=raw_question_type,
-            題目=sq_raw.get("題目", ""),
+            題目=題目,
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
             評分規準=rubric,
