@@ -169,6 +169,22 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 **Key files.** `server/generate/run.py` (`accept_run`, `list_runs`), `server/generate/routes.py` (`GET /api/runs`, 429 response), `server/generate/models.py` (`submission_key` field + `SERVER_ONLY_GENERATE_FIELDS`), `web/src/hooks/useGenerate.ts` (`submissionKeyRef`, `queuePosition`), `web/src/lib/runSnapshot.ts` (`queue_position`), `web/src/pages/GeneratePage.tsx` (queue position display), `web/src/test/fakeRunServer.ts` (`dropSubmitConnection`), `tests/server/test_912_admission.py` (15 SQLite + 1 postgres test).
 
+### 「尚未結束」 section and History nav badge (issue #913)
+
+**HistoryPage unfinished section.** `HistoryList` polls `GET /api/runs` every 4 s when visible (20 s when hidden) and renders a `<section aria-label="尚未結束">` above the ordinary history list whenever any queued or running run exists. Each run links to `/generate?run=<id>`. Labels: `cancel_requested=true` → "取消中"; `status="running"` → "生成中"; `status="queued"` → "排隊中 · 前面還有 k 個" (k = `queue_position`). When a run ID that was active in the previous poll is gone from the active set, `loadInitial()` is called to pull that ended run into the ordinary list without a manual reload. On mount the badge marker is updated to now via `setLastSeenAt`, clearing any pending badge.
+
+**History nav badge.** `useHistoryBadge(userId)` in `web/src/lib/useHistoryBadge.ts` polls `GET /api/runs` every 30 s (60 s when hidden). It calls `computeBadge(runs, lastSeenAt)` from `web/src/lib/historyBadge.ts` and returns `true` when any `run.completed_at > lastSeenAt`. On first visit `initLastSeenAt` sets the marker to now so no badge fires for all historical runs. `GeneratePage` mounts a red dot `aria-label="有生成已結束"` on the History button when the hook returns true. All localStorage access is wrapped in try/catch.
+
+**Badge marker storage.** Key: `exam_history_last_seen_<userId>`. Set to now when HistoryPage mounts (clearing the badge); initialized to now on first-ever visit (preventing a retroactive badge). Implemented in `web/src/lib/historyBadge.ts` (`getLastSeenAt`, `setLastSeenAt`, `initLastSeenAt`, `computeBadge`).
+
+**Backend addition.** `server/generate/run.py` `list_runs` return rows now include `cancel_requested: bool(log.cancel_requested)` so the frontend can show "取消中".
+
+**i18n.** 6 new keys in both locales: `history.unfinished_title`, `history.run_running`, `history.run_cancelling`, `history.run_queued` (with `{k}` placeholder), `history.unfinished_error`, `history.badge_label`.
+
+**Tests.** `web/src/pages/HistoryPage.unfinished.test.tsx` (5 tests: queued position, running, cancelling, hidden-section, link, transition refetch); `web/src/lib/useHistoryBadge.test.ts` (6 tests: false/true result, no userId, storage error, poll interval, tab-hidden slower interval); `web/src/i18n/messages.913-unfinished-badge.test.ts` (i18n completeness, 14 assertions). `web/src/test/fakeRunServer.ts` extended with `setRunList`, `failRunList`, `listPolls`.
+
+**Key files.** `web/src/lib/historyBadge.ts`, `web/src/lib/useHistoryBadge.ts`, `web/src/pages/HistoryPage.tsx` (unfinished section + polling), `web/src/pages/GeneratePage.tsx` (badge on History button), `server/generate/run.py` (`cancel_requested` in list rows).
+
 ### Generation stream protocol v3 — detached runs (issue #908)
 
 **Protocol v3 supersedes v2 on this branch (`wip/908-detached-runs`).** Clients **must** send `stream_version=3` on POST `/api/generate`; any other value (including `2` or absent) returns HTTP 426 with body `{code: "CLIENT_UPDATE_REQUIRED", supported_stream_versions: [3]}`. `stream_version` is a transport-only field excluded from `params_json`.

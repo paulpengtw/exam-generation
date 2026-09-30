@@ -47,6 +47,7 @@ import {
   startTabCollisionListener,
   resetTabIdForCollision,
 } from "../lib/recovery/storage";
+import { useHistoryBadge } from "../lib/useHistoryBadge";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -121,6 +122,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logoutExplicit = useAuthStore((s) => s.logoutExplicit);
+  const historyBadge = useHistoryBadge(user?.id);
   const {
     status,
     progressLines,
@@ -676,9 +678,15 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             <button
               type="button"
               onClick={() => handleNavigation("/history")}
-              className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+              className="relative rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("history.nav_link")}
+              {historyBadge && (
+                <span
+                  aria-label={t("history.badge_label")}
+                  className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500"
+                />
+              )}
             </button>
             {user && (
               <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">

@@ -492,6 +492,7 @@ async def list_runs(
             "started_at": _iso(log.started_at),
             "completed_at": _iso(log.completed_at),
             "queue_position": queue_position,
+            "cancel_requested": bool(log.cancel_requested),
         })
     return rows
 

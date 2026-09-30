@@ -35,8 +35,8 @@
 - [x] 4.1 Make `useGenerate` generate a submission key per 確定發送, submit, then poll `GET /api/runs/{id}` (about 3 s while visible, slower when hidden). Remove the abort on unmount and reset. Verify: `useGenerate.test.ts` covers the key reuse on retry, polling, and unmount not cancelling.
 - [x] 4.2 Add a persisted-state adapter feeding `generationEvidence`, so cards, the 生成進度列 and 已結束 X/N / 收到最終結果 Y counts combine live and persisted evidence without double counting. Verify: vitest cases from the modified `per-question-live-progress` scenarios pass, including counts after returning and connection loss.
 - [x] 4.3 Add the Cancel control with an immediate 取消中 state. Verify: a component test shows 取消中, then the cancelled 終止原因 from polled state.
-- [ ] 4.4 Add the 「尚未結束」 section to `HistoryPage` with 「排隊中 · 前面還有 k 個」, and move ended runs into the normal list. Verify: `HistoryPage` tests for queued, executing and ended runs pass.
-- [ ] 4.5 Add the navigation badge for newly ended runs, with a per-browser last-seen marker wrapped in try/catch. Verify: a component test shows the badge appears after a run ends and clears once viewed.
+- [x] 4.4 Add the 「尚未結束」 section to `HistoryPage` with 「排隊中 · 前面還有 k 個」, and move ended runs into the normal list. Verify: `HistoryPage` tests for queued, executing and ended runs pass.
+- [x] 4.5 Add the navigation badge for newly ended runs, with a per-browser last-seen marker wrapped in try/catch. Verify: a component test shows the badge appears after a run ends and clears once viewed.
 - [x] 4.6 Add the i18n strings (尚未結束, 排隊中, 取消中, the queue-limit message, the recovery-exhausted and time-limit reasons) for every locale. Verify: the i18n completeness test passes.
 
 ## 5. Cutover and operations (slice 3 release)

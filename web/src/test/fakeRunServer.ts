@@ -1,11 +1,13 @@
 /**
  * A scriptable stand-in for the detached-run endpoints (issue #908):
- * `POST /api/generate` (202 acceptance) and `GET /api/runs/{id}` (snapshot).
+ * `POST /api/generate` (202 acceptance), `GET /api/runs` (list), and
+ * `GET /api/runs/{id}` (snapshot).
  * Installs itself as the global `fetch` and records every request, so tests
  * can assert both what was sent and that nothing else (e.g. a cancel) was.
  */
 import { vi } from "vitest";
 
+import type { RunListItem } from "../api/client";
 import type { AcceptedRun, RunSnapshot } from "../lib/runSnapshot";
 import { acceptedRun } from "./runFixtures";
 
@@ -20,6 +22,8 @@ export interface FakeRunServer {
   requests: RecordedRequest[];
   /** GET /api/runs/{id} requests only. */
   polls(): RecordedRequest[];
+  /** GET /api/runs (list) requests only. */
+  listPolls(): RecordedRequest[];
   /** POST /api/generate requests only. */
   submits(): RecordedRequest[];
   /** POST /api/runs/{id}/cancel requests only. */
@@ -42,6 +46,10 @@ export interface FakeRunServer {
   dropSubmitConnection(dropped: boolean): void;
   /** Next cancel request answers with this status/body instead of a 200. */
   failCancel(status: number, body: unknown): void;
+  /** Set the run list returned by GET /api/runs. */
+  setRunList(items: RunListItem[]): void;
+  /** Make GET /api/runs return an error status. */
+  failRunList(status: number, body: unknown): void;
   restore(): void;
 }
 
@@ -67,9 +75,11 @@ export function installFakeRunServer(): FakeRunServer {
   const hidden = new Set<string>();
   let submitFailure: { status: number; body: unknown } | null = null;
   let cancelFailure: { status: number; body: unknown } | null = null;
+  let runListFailure: { status: number; body: unknown } | null = null;
   let acceptance: AcceptedRun | null = null;
   let dropped = false;
   let submitDropped = false;
+  let runList: RunListItem[] = [];
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
@@ -91,6 +101,15 @@ export function installFakeRunServer(): FakeRunServer {
         ? (body as { count: number }).count
         : 1;
       return json(202, acceptance ?? acceptedRun(count));
+    }
+    // GET /api/runs (list) — must come before the /{id} regex
+    if (method === "GET" && url === "/api/runs") {
+      if (runListFailure) {
+        const failure = runListFailure;
+        runListFailure = null;
+        return json(failure.status, failure.body);
+      }
+      return json(200, runList);
     }
     const match = /^\/api\/runs\/([^/]+)$/.exec(url);
     if (method === "GET" && match) {
@@ -117,7 +136,8 @@ export function installFakeRunServer(): FakeRunServer {
 
   return {
     requests,
-    polls: () => requests.filter((r) => r.method === "GET" && r.url.startsWith("/api/runs/")),
+    polls: () => requests.filter((r) => r.method === "GET" && /^\/api\/runs\/[^/]+$/.test(r.url)),
+    listPolls: () => requests.filter((r) => r.method === "GET" && r.url === "/api/runs"),
     submits: () => requests.filter((r) => r.method === "POST" && r.url === "/api/generate"),
     cancels: () => requests.filter((r) => r.method === "POST" && r.url.includes("/cancel")),
     setSnapshot: (runId, snapshot) => { snapshots.set(runId, snapshot); hidden.delete(runId); },
@@ -127,6 +147,8 @@ export function installFakeRunServer(): FakeRunServer {
     setAcceptance: (accepted) => { acceptance = accepted; },
     dropConnection: (value) => { dropped = value; },
     dropSubmitConnection: (value) => { submitDropped = value; },
+    setRunList: (items) => { runList = items; },
+    failRunList: (status, body) => { runListFailure = { status, body }; },
     restore: () => { vi.stubGlobal("fetch", originalFetch); },
   };
 }

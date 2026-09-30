@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -11,12 +11,15 @@ import {
 import { useT } from "../i18n/useT";
 import {
   listHistory,
+  listRuns,
   type HistoryListItem,
   type HistoryListResponse,
+  type RunListItem,
 } from "../api/client";
 import { useAuthStore } from "../store/authStore";
 import HistoryDetail from "./HistoryDetail";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
+import { initLastSeenAt, setLastSeenAt } from "../lib/historyBadge";
 
 const PAGE_SIZE = 20;
 
@@ -35,6 +38,15 @@ export default function HistoryPage() {
   return <HistoryList />;
 }
 
+/** Interval for polling unfinished runs (ms). Slower when tab is hidden. */
+const UNFINISHED_POLL_VISIBLE_MS = 4_000;
+const UNFINISHED_POLL_HIDDEN_MS = 20_000;
+
+/** True when the run is still active (queued or running). */
+function isActiveStatus(status: string): boolean {
+  return status === "queued" || status === "running";
+}
+
 function HistoryList() {
   const navigate = useNavigate();
   const t = useT();
@@ -44,11 +56,28 @@ function HistoryList() {
   const [offset, setOffset] = useState(0);
   const [subject, setSubject] = useState<string>("");
 
+  // Unfinished runs section state
+  const [unfinishedRuns, setUnfinishedRuns] = useState<RunListItem[]>([]);
+  const [unfinishedError, setUnfinishedError] = useState<string | null>(null);
+  // Track which run IDs were active in the previous poll so we can detect transitions.
+  const prevActiveIdsRef = useRef<Set<string> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useSurfaceParticipation("history.list", {
     readiness: data !== null || error !== null ? "ready" : "hydrating",
     hasEditableState: false,
     hasReceivedResults: false,
   });
+
+  // Mark history as viewed: update the last-seen badge marker.
+  useEffect(() => {
+    if (!user) return;
+    const now = new Date().toISOString();
+    // initLastSeenAt ensures first-visit doesn't light up the badge.
+    initLastSeenAt(user.id, now);
+    // Always update to now when visiting History, which clears the badge.
+    setLastSeenAt(user.id, now);
+  }, [user]);
 
   const loadInitial = useCallback(async () => {
     setError(null);
@@ -68,6 +97,62 @@ function HistoryList() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- data fetch on mount/param change, matches existing VerifyPage/ParamForm pattern
     void loadInitial();
+  }, [loadInitial]);
+
+  // Polling for unfinished runs.
+  useEffect(() => {
+    let aborted = false;
+
+    async function pollOnce() {
+      try {
+        const runs = await listRuns();
+        if (aborted) return;
+        const active = runs.filter((r) => isActiveStatus(r.status));
+        setUnfinishedRuns(active);
+        setUnfinishedError(null);
+
+        // Detect runs that transitioned out of active (ended since last poll).
+        const prev = prevActiveIdsRef.current;
+        if (prev !== null && prev.size > 0) {
+          const activeNow = new Set(active.map((r) => r.run_id));
+          let anyEnded = false;
+          for (const id of prev) {
+            if (!activeNow.has(id)) { anyEnded = true; break; }
+          }
+          if (anyEnded) {
+            // Refetch the ordinary history list so the ended run appears.
+            void loadInitial();
+          }
+        }
+        prevActiveIdsRef.current = new Set(active.map((r) => r.run_id));
+      } catch {
+        if (!aborted) {
+          setUnfinishedError("error");
+        }
+      }
+    }
+
+    function schedule() {
+      if (aborted) return;
+      const delay =
+        document.visibilityState === "hidden"
+          ? UNFINISHED_POLL_HIDDEN_MS
+          : UNFINISHED_POLL_VISIBLE_MS;
+      pollTimerRef.current = setTimeout(() => {
+        void pollOnce().then(() => { schedule(); });
+      }, delay);
+    }
+
+    // Run immediately, then schedule repeats.
+    void pollOnce().then(() => { schedule(); });
+
+    return () => {
+      aborted = true;
+      if (pollTimerRef.current !== null) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
   }, [loadInitial]);
 
   const previousFeedback = useActionFeedback<HistoryListResponse>({
@@ -150,6 +235,48 @@ function HistoryList() {
             </select>
           </label>
         </div>
+
+        {/* 尚未結束 (unfinished) section — queued + running runs */}
+        {(unfinishedRuns.length > 0 || unfinishedError) && (
+          <section
+            aria-label={t("history.unfinished_title")}
+            className="rounded border bg-white p-3 shadow-sm"
+          >
+            <h2 className="mb-2 text-sm font-semibold text-gray-700">
+              {t("history.unfinished_title")}
+            </h2>
+            {unfinishedError && (
+              <p className="text-sm text-red-600">{t("history.unfinished_error")}</p>
+            )}
+            <ul className="space-y-1">
+              {unfinishedRuns.map((run) => {
+                const label = run.cancel_requested
+                  ? t("history.run_cancelling")
+                  : run.status === "queued"
+                    ? t("history.run_queued").replace(
+                        "{k}",
+                        String(run.queue_position ?? 0),
+                      )
+                    : t("history.run_running");
+                return (
+                  <li key={run.run_id}>
+                    <Link
+                      to={`/generate?run=${run.run_id}`}
+                      className="flex items-center gap-2 rounded px-2 py-1 text-sm text-blue-700 hover:bg-blue-50"
+                    >
+                      <span className="truncate font-medium">
+                        {run.subject ?? run.run_id}
+                      </span>
+                      <span className="ml-auto whitespace-nowrap rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+                        {label}
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
 
         {error && (
           <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">

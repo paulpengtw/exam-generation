@@ -342,6 +342,27 @@ export async function getHistoryDetail(id: string): Promise<HistoryDetail> {
   return (await res.json()) as HistoryDetail;
 }
 
+/** Summary row from `GET /api/runs` (all of the owner's runs, newest first). */
+export interface RunListItem {
+  run_id: string;
+  status: string;
+  subject: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  queue_position: number | null;
+  cancel_requested: boolean;
+}
+
+/**
+ * List all of the authenticated owner's runs (`GET /api/runs`), newest first.
+ * Each row includes `queue_position` (non-null only when status === "queued")
+ * and `cancel_requested`.
+ */
+export async function listRuns(opts: { signal?: AbortSignal } = {}): Promise<RunListItem[]> {
+  const res = await apiFetch("/api/runs", { signal: opts.signal });
+  return (await res.json()) as RunListItem[];
+}
+
 /**
  * Read the persisted state of a detached 生成執行 (`GET /api/runs/{id}`).
  * Owner-only: any other caller (or an unknown id) gets `ApiError` status 404.
