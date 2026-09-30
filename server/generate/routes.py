@@ -11,9 +11,9 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import Field, ValidationError
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.auth.dependencies import get_config, get_current_user
@@ -32,7 +32,7 @@ from server.generate.models import (
     ResolveResponse,
 )
 from server.generate.release_authority import check_build_admission
-from server.generate.run import accept_run, read_run
+from server.generate.run import accept_run, is_live_available, read_run, subscribe_live, unsubscribe_live
 from server.generate.service import build_prompt_previews
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
@@ -438,6 +438,51 @@ async def read_run_endpoint(
     if snapshot is None:
         raise HTTPException(status_code=404, detail="run not found")
     return snapshot
+
+
+@router.get("/runs/{run_id}/events")
+@limiter.limit("30/minute", key_func=jwt_user_key)
+async def run_events_endpoint(
+    request: Request,
+    run_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+) -> StreamingResponse:
+    """SSE stream of live events for an in-process run; 404 if not live or not owner."""
+    # Verify ownership — reuse the same existence-hiding pattern as read_run_endpoint.
+    try:
+        run_uuid = uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="run not found")
+    result = await session.execute(
+        select(GenerationLog).where(
+            and_(GenerationLog.id == run_uuid, GenerationLog.user_id == user.id)
+        )
+    )
+    log = result.scalar_one_or_none()
+    if log is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if not is_live_available(run_id):
+        raise HTTPException(status_code=404, detail="run not found")
+
+    queue = await subscribe_live(run_id)
+
+    async def event_generator():
+        try:
+            while True:
+                event = await queue.get()
+                data = json.dumps(event)
+                yield f"data: {data}\n\n"
+                if event.get("event") == "done":
+                    break
+        finally:
+            await unsubscribe_live(run_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _check_generation_admission(params: GenerateParams, config: ServerConfig) -> None:

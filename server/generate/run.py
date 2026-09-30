@@ -58,6 +58,53 @@ IDLE_INTERVAL_S = 2.0
 # enter this set, so the claim cannot pick them up.
 UNFINISHED_RUN_STATUSES = ("queued", "running")
 
+# ---------------------------------------------------------------------------
+# Live observer registry (issue #909)
+# ---------------------------------------------------------------------------
+
+_live_observers: dict[str, list[asyncio.Queue]] = {}
+_live_observers_lock: asyncio.Lock | None = None
+
+
+def _get_lock() -> asyncio.Lock:
+    """Return the module-level lock, creating it lazily in the running loop."""
+    global _live_observers_lock  # noqa: PLW0603
+    if _live_observers_lock is None:
+        _live_observers_lock = asyncio.Lock()
+    return _live_observers_lock
+
+
+async def subscribe_live(run_id: str) -> asyncio.Queue:
+    """Register a new observer queue for *run_id* and return it."""
+    queue: asyncio.Queue = asyncio.Queue()
+    async with _get_lock():
+        _live_observers.setdefault(run_id, []).append(queue)
+    return queue
+
+
+async def unsubscribe_live(run_id: str, queue: asyncio.Queue) -> None:
+    """Remove *queue* from the registry for *run_id*."""
+    async with _get_lock():
+        observers = _live_observers.get(run_id, [])
+        if queue in observers:
+            observers.remove(queue)
+        if not observers:
+            _live_observers.pop(run_id, None)
+
+
+def is_live_available(run_id: str) -> bool:
+    """True when at least one observer queue is registered for *run_id*."""
+    return bool(_live_observers.get(run_id))
+
+
+async def _publish_live(run_id: str, event: dict) -> None:
+    """Broadcast *event* to all registered observers for *run_id*."""
+    async with _get_lock():
+        observers = list(_live_observers.get(run_id, []))
+    for queue in observers:
+        await queue.put(event)
+
+
 Clock = Callable[[], datetime]
 
 
@@ -215,6 +262,7 @@ async def read_run(
         "completed_at": _iso(log.completed_at),
         "error": log.error,
         "questions": questions,
+        "live_events_available": is_live_available(str(log.id)),
     }
 
 
@@ -461,6 +509,11 @@ async def execute_run(
             claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock
         )
     )
+    run_str_id = str(claimed.run_id)
+    # Initialise the live observer slot so is_live_available() returns True
+    # for this run as soon as execution begins.
+    async with _get_lock():
+        _live_observers.setdefault(run_str_id, [])
     status = "completed"
     error: str | None = None
     params: GenerateParams | None = None
@@ -485,6 +538,7 @@ async def execute_run(
                     else str(payload)
                 )
             await recorder.observe(event)
+            await _publish_live(run_str_id, event)
     except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
         status = "failed"
         error = f"Run execution failed ({type(exc).__name__})"
@@ -493,6 +547,11 @@ async def execute_run(
         heartbeat.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await heartbeat
+        # Publish a sentinel so observers know the stream ended.
+        await _publish_live(run_str_id, {"event": "done", "payload": None})
+        # Remove the run's observer slot from the registry.
+        async with _get_lock():
+            _live_observers.pop(run_str_id, None)
 
     await recorder.fail_unfinished(error or "question ended without a terminal")
     if status == "failed" and params is not None:

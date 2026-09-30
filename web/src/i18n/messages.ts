@@ -71,6 +71,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.run_not_found": "This generation run could not be found. It may have been removed or belong to another account.",
     "generate.run_failed": "The generation run failed on the server.",
     "generate.run_invalid_response": "The server returned an unreadable run status. Please reload the page.",
+    "generate.run_read_unavailable": "Could not read run status. Retrying — your generation keeps going on the server.",
 
     "recovery.saveAndUpdate": "Save Draft & Update",
     "recovery.saving": "Saving…",
@@ -740,6 +741,7 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.run_not_found": "找不到這次生成作業，可能已被移除或屬於其他帳號。",
     "generate.run_failed": "伺服器端的生成作業失敗。",
     "generate.run_invalid_response": "伺服器回傳了無法讀取的作業狀態，請重新整理頁面。",
+    "generate.run_read_unavailable": "無法讀取作業狀態，正在重試——伺服器上的生成仍在繼續。",
 
     "recovery.saveAndUpdate": "儲存草稿並更新",
     "recovery.saving": "儲存中...",

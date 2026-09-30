@@ -1124,3 +1124,32 @@ describe("buildQueryString — per_question_params serialization", () => {
     expect(new URLSearchParams(qs).get("per_question_params")).toBe(perQuestionParams);
   });
 });
+
+describe("useGenerate — pollReadFailed (issue #909)", () => {
+  it("pollReadFailed is false after 1 dropped connection", async () => {
+    const { result } = await startRun();
+    server.dropConnection(true);
+    await flush(RUN_POLL_VISIBLE_MS);
+
+    expect(result.current.pollReadFailed).toBe(false);
+  });
+
+  it("pollReadFailed is false after 2 dropped connections", async () => {
+    const { result } = await startRun();
+    server.dropConnection(true);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+
+    expect(result.current.pollReadFailed).toBe(false);
+  });
+
+  it("pollReadFailed is true after 3 dropped connections", async () => {
+    const { result } = await startRun();
+    server.dropConnection(true);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+
+    expect(result.current.pollReadFailed).toBe(true);
+  });
+});

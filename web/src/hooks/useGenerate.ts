@@ -368,6 +368,8 @@ export interface UseGenerateReturn {
   resultsCompletion?: ResultsCompletion | null;
   terminalEvidence?: boolean;
   generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
+  /** True when three or more consecutive poll attempts failed transiently. */
+  pollReadFailed: boolean;
   /** Reopen a detached run by id and keep polling it. Never cancels anything. */
   resume: (runId: string) => Promise<ResumeOutcome>;
   restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
@@ -617,6 +619,7 @@ export function useGenerate(): UseGenerateReturn {
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
+  const [pollReadFailCount, setPollReadFailCount] = useState(0);
   const activeRef = useRef<ActiveRun | null>(null);
   /** Run whose state is currently on screen, even after its polling ended. */
   const shownRunRef = useRef<string | null>(null);
@@ -786,6 +789,7 @@ export function useGenerate(): UseGenerateReturn {
       if (activeRef.current !== run) return { kind: "stale" };
       const snapshot = parseRunSnapshot(raw);
       if (snapshot === null) return { kind: "fatal", message: localMessage("generate.run_invalid_response") };
+      setPollReadFailCount(0);
       return { kind: "applied", ended: applySnapshot(snapshot, run).ended };
     } catch (err) {
       if (activeRef.current !== run) return { kind: "stale" };
@@ -797,6 +801,7 @@ export function useGenerate(): UseGenerateReturn {
           return { kind: "fatal", message: err.detail };
         }
       }
+      setPollReadFailCount((c) => c + 1);
       return { kind: "transient" };
     }
   }, [applySnapshot]);
@@ -1073,6 +1078,7 @@ export function useGenerate(): UseGenerateReturn {
     subQuestionTotal,
     resultsCompletion,
     terminalEvidence,
+    pollReadFailed: pollReadFailCount >= 3,
     generate,
     resume,
     reset,

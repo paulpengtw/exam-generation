@@ -310,3 +310,42 @@ describe("projections", () => {
     expect(isTerminalRunStatus("queued")).toBe(false);
   });
 });
+
+describe("spec scenarios", () => {
+  it("mixed outcomes — selectEndedCount and selectFinalReceivedCount", () => {
+    // q-1: terminal(1,"normal") + result → complete+terminal → endedCount+1, finalReceivedCount+1
+    // q-2: terminal(null,"failed") + result (has_final=false; result not applied) → endedCount+1
+    // q-3: terminal(null,"failed") no result → endedCount+1
+    // q-4: result but no terminal → neither count
+    // endedCount=3 (q-1,q-2,q-3), finalReceivedCount=1 (only q-1 has has_final=true)
+    const snap = snapshot([
+      endedQuestion("q-1"),
+      { ...question("q-2"), processing: "ended", termination_reason: "failed", terminal: terminal(null, "failed"), result: endedQuestion("q-2").result },
+      { ...question("q-3"), processing: "ended", termination_reason: "failed", terminal: terminal(null, "failed") },
+      { ...question("q-4"), result: endedQuestion("q-4").result },
+    ]);
+    const state = applyRunSnapshot(null, snap);
+    expect(selectEndedCount(state)).toBe(3);
+    expect(selectFinalReceivedCount(state)).toBe(1);
+  });
+
+  it("idempotent: applying same snapshot twice gives same counts", () => {
+    const snap = snapshot([
+      endedQuestion("q-1"),
+      question("q-2", { processing: "running" }),
+    ]);
+    const once = applyRunSnapshot(null, snap);
+    const twice = applyRunSnapshot(once, snap);
+    expect(selectEndedCount(twice)).toBe(selectEndedCount(once));
+    expect(selectFinalReceivedCount(twice)).toBe(selectFinalReceivedCount(once));
+  });
+
+  it("persisted fallback: later snapshot with terminal supersedes earlier running state", () => {
+    const snap1 = snapshot([question("q-1", { processing: "running" })]);
+    const snap2 = snapshot([endedQuestion("q-1")]);
+    const state1 = applyRunSnapshot(null, snap1);
+    const state2 = applyRunSnapshot(state1, snap2);
+    expect(selectEndedCount(state2)).toBe(1);
+    expect(selectFinalReceivedCount(state2)).toBe(1);
+  });
+});

@@ -72,6 +72,7 @@ export interface RunSnapshot {
   completed_at: string | null;
   error: string | null;
   questions: RunSnapshotQuestion[];
+  live_events_available?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +187,7 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
     completed_at: stringOrNull(raw.completed_at),
     error: stringOrNull(raw.error),
     questions,
+    live_events_available: raw.live_events_available === true ? true : undefined,
   };
 }
 
