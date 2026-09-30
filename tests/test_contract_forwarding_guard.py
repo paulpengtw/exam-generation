@@ -510,9 +510,18 @@ CLASSIFICATION: dict[str, dict[str, tuple[str, str]]] = {
     },
     # ── submission_key — server-only idempotency key (issue #912) ──
     "submission_key": {
-        _MA: (INAPPLICABLE, "server-only: idempotency key consumed by accept_run, excluded from subject dispatch"),
-        _SS: (INAPPLICABLE, "server-only: idempotency key consumed by accept_run, excluded from subject dispatch"),
-        _NS: (INAPPLICABLE, "server-only: idempotency key consumed by accept_run, excluded from subject dispatch"),
+        _MA: (
+            INAPPLICABLE,
+            "server-only: idempotency key consumed by accept_run, excluded from subject dispatch",
+        ),
+        _SS: (
+            INAPPLICABLE,
+            "server-only: idempotency key consumed by accept_run, excluded from subject dispatch",
+        ),
+        _NS: (
+            INAPPLICABLE,
+            "server-only: idempotency key consumed by accept_run, excluded from subject dispatch",
+        ),
     },
 }
 
