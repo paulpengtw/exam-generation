@@ -32,7 +32,13 @@ from server.generate.models import (
     ResolveResponse,
 )
 from server.generate.release_authority import check_build_admission
-from server.generate.run import accept_run, is_live_available, read_run, subscribe_live, unsubscribe_live
+from server.generate.run import (
+    accept_run,
+    is_live_available,
+    read_run,
+    subscribe_live,
+    unsubscribe_live,
+)
 from server.generate.service import build_prompt_previews
 from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
