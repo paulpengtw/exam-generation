@@ -1,0 +1,4293 @@
+{
+ "captured": "2026-09-30",
+ "frontend": {
+  "asset": "index-OQCnArhd.js",
+  "build_id": "437136de3b72f55edf8820e8577c370e8e29ada3902e37f9efef167ee772d6c5",
+  "release_revision": 8,
+  "environment": "staging"
+ },
+ "runs": {
+  "ns_case_a": {
+   "http_status": 200,
+   "build_id_header_sent": true,
+   "stream_ms": 607996,
+   "generation_log_id": "230a9ae1-17c8-40e0-8a66-a391f2ddc3f0",
+   "event_counts": {
+    "started": 1,
+    "stage": 25,
+    "pipeline": 4,
+    "trail": 16,
+    "llm_request": 16,
+    "llm_content": 504,
+    "llm_response": 16,
+    "plan": 1,
+    "question_update": 14,
+    "result": 1,
+    "question_terminal": 1,
+    "done": 1
+   },
+   "request": {
+    "subject": "natural_sciences",
+    "grade": 7,
+    "style": [],
+    "content_type": "含圖片",
+    "context": [
+     "Personal"
+    ],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 1,
+    "skip_verify": false,
+    "disable_reference_fewshot": false,
+    "image_generation_mode": "gpt_image",
+    "sub_context": "Maintenance of health",
+    "per_question_params": [
+     {
+      "grade": 7,
+      "style": [],
+      "content_type": "含圖片",
+      "context": [
+       "Personal"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "Complex multiple-choice"
+      ],
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "sub_context": "Maintenance of health",
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "seed": 1904016180,
+      "science_competency": [
+       "能力三：研究、評估和運用科學資訊進行決策與行動",
+       "能力二：建構和評估科學探究之設計，並批判性地詮釋科學資料和證據"
+      ],
+      "learning_content": [
+       "Fb-Ⅳ-3"
+      ],
+      "learning_performance": [
+       "an-Ⅳ-3",
+       "ai-Ⅳ-2"
+      ],
+      "sub_question_count": 5,
+      "subquestion_configs": [
+       {
+        "question_type": "Complex multiple-choice",
+        "reporting_scale": "5",
+        "learning_content": [
+         "Fb-Ⅳ-3"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1c",
+        "learning_content": [
+         "Fb-Ⅳ-3"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Constructed response",
+        "reporting_scale": "3",
+        "learning_content": [
+         "Fb-Ⅳ-3"
+        ],
+        "learning_performance": [
+         "ai-Ⅳ-2",
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1a",
+        "learning_content": [
+         "Fb-Ⅳ-3"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1b",
+        "learning_content": [
+         "Fb-Ⅳ-3"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3",
+         "ai-Ⅳ-2"
+        ]
+       }
+      ]
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].科學能力",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[0].subquestion_configs[0].question_type",
+     "per_question_params[0].subquestion_configs[0].reporting_scale",
+     "per_question_params[0].subquestion_configs[1].question_type",
+     "per_question_params[0].subquestion_configs[1].reporting_scale",
+     "per_question_params[0].subquestion_configs[2].question_type",
+     "per_question_params[0].subquestion_configs[2].reporting_scale",
+     "per_question_params[0].subquestion_configs[3].question_type",
+     "per_question_params[0].subquestion_configs[3].reporting_scale",
+     "per_question_params[0].subquestion_configs[4].question_type",
+     "per_question_params[0].subquestion_configs[4].reporting_scale",
+     "per_question_params[0].subquestion_configs[0].learning_content",
+     "per_question_params[0].subquestion_configs[0].learning_performance",
+     "per_question_params[0].subquestion_configs[1].learning_content",
+     "per_question_params[0].subquestion_configs[1].learning_performance",
+     "per_question_params[0].subquestion_configs[2].learning_content",
+     "per_question_params[0].subquestion_configs[2].learning_performance",
+     "per_question_params[0].subquestion_configs[3].learning_content",
+     "per_question_params[0].subquestion_configs[3].learning_performance",
+     "per_question_params[0].subquestion_configs[4].learning_content",
+     "per_question_params[0].subquestion_configs[4].learning_performance"
+    ],
+    "seed": 1904016180,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "core_question_callback": true,
+    "stream_version": 2
+   },
+   "llm_requests": [
+    {
+     "seq": 9,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 136,
+     "agent": "sub_generator#5",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 137,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 138,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 139,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 140,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 382,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 453,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 511,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 521,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 534,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 544,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 554,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 558,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 562,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 568,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    }
+   ],
+   "questions": [
+    {
+     "question_id": "ns_230a9ae1-17c8-40e0-8a66-a391f2ddc3f0_001",
+     "content_revision": 12,
+     "題目內容類型": "含圖片",
+     "stem_figure": "ns_230a9ae1-17c8-40e0-8a66-a391f2ddc3f0_001.png",
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "Complex multiple-choice",
+       "題目內容類型": "含圖片",
+       "圖片": "ns_230a9ae1-17c8-40e0-8a66-a391f2ddc3f0_001_sq1.png"
+      },
+      {
+       "序號": 2,
+       "題型": "Simple multiple-choice",
+       "題目內容類型": "含圖片",
+       "圖片": "ns_230a9ae1-17c8-40e0-8a66-a391f2ddc3f0_001_sq2.png"
+      },
+      {
+       "序號": 3,
+       "題型": "Constructed response",
+       "題目內容類型": "含圖片",
+       "圖片": "ns_230a9ae1-17c8-40e0-8a66-a391f2ddc3f0_001_sq3.png"
+      },
+      {
+       "序號": 4,
+       "題型": "Simple multiple-choice",
+       "題目內容類型": "純文字",
+       "圖片": null
+      },
+      {
+       "序號": 5,
+       "題型": "Simple multiple-choice",
+       "題目內容類型": "純文字",
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 12,
+      "review": {
+       "status": "passed",
+       "content_revision": 12
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "image",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "image",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "image",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "image",
+        null
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "image",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "image",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "image",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "image",
+        null
+       ]
+      ],
+      "missing": []
+     }
+    }
+   ],
+   "stage_errors": [],
+   "saved_exchanges": {
+    "http_status": 200,
+    "rows": [
+     {
+      "order": 1,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 41378,
+      "completion_tokens": 2863
+     },
+     {
+      "order": 2,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35485,
+      "completion_tokens": 901
+     },
+     {
+      "order": 3,
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35627,
+      "completion_tokens": 954
+     },
+     {
+      "order": 4,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35494,
+      "completion_tokens": 718
+     },
+     {
+      "order": 5,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 36021,
+      "completion_tokens": 1415
+     },
+     {
+      "order": 6,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35609,
+      "completion_tokens": 1579
+     },
+     {
+      "order": 7,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35609,
+      "completion_tokens": 1658
+     },
+     {
+      "order": 8,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 5855,
+      "completion_tokens": 1344
+     },
+     {
+      "order": 9,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 417,
+      "completion_tokens": 122
+     },
+     {
+      "order": 10,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 493,
+      "completion_tokens": 201
+     },
+     {
+      "order": 11,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 390,
+      "completion_tokens": 91
+     },
+     {
+      "order": 12,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 13,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 14,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 15,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 16,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 115347,
+      "completion_tokens": 563
+     }
+    ]
+   }
+  },
+  "ns_case_b": {
+   "http_status": 200,
+   "build_id_header_sent": true,
+   "stream_ms": 585252,
+   "generation_log_id": "3bd26bd1-2b7f-46c7-a0e9-a40ae714f343",
+   "event_counts": {
+    "started": 1,
+    "stage": 29,
+    "pipeline": 4,
+    "trail": 15,
+    "llm_request": 14,
+    "llm_content": 714,
+    "llm_response": 14,
+    "plan": 1,
+    "question_update": 11,
+    "result": 1,
+    "question_terminal": 1,
+    "done": 1
+   },
+   "request": {
+    "subject": "natural_sciences",
+    "grade": 7,
+    "style": [],
+    "content_type": "純文字",
+    "context": [
+     "Personal"
+    ],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 1,
+    "skip_verify": false,
+    "disable_reference_fewshot": false,
+    "image_generation_mode": "gpt_image",
+    "sub_context": "Maintenance of health",
+    "subquestion_configs": [
+     {
+      "content_type": "含圖片"
+     },
+     {
+      "content_type": "graphs/charts/tables"
+     },
+     {
+      "content_type": "純文字"
+     }
+    ],
+    "per_question_params": [
+     {
+      "grade": 7,
+      "style": [],
+      "content_type": "純文字",
+      "context": [
+       "Personal"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "Simple multiple-choice"
+      ],
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "sub_context": "Maintenance of health",
+      "subquestion_configs": [
+       {
+        "content_type": "含圖片",
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1c",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "content_type": "graphs/charts/tables",
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1b",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "content_type": "純文字",
+        "question_type": "Constructed response",
+        "reporting_scale": "4",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Constructed response",
+        "reporting_scale": "5",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Complex multiple-choice",
+        "reporting_scale": "1c",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       }
+      ],
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "seed": 1109661311,
+      "science_competency": [
+       "能力一：以科學的角度解釋現象"
+      ],
+      "learning_content": [
+       "Ib-Ⅳ-1"
+      ],
+      "learning_performance": [
+       "an-Ⅳ-3"
+      ],
+      "sub_question_count": 5
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].科學能力",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[0].subquestion_configs[0].question_type",
+     "per_question_params[0].subquestion_configs[0].reporting_scale",
+     "per_question_params[0].subquestion_configs[1].question_type",
+     "per_question_params[0].subquestion_configs[1].reporting_scale",
+     "per_question_params[0].subquestion_configs[2].question_type",
+     "per_question_params[0].subquestion_configs[2].reporting_scale",
+     "per_question_params[0].subquestion_configs[3].question_type",
+     "per_question_params[0].subquestion_configs[3].reporting_scale",
+     "per_question_params[0].subquestion_configs[4].question_type",
+     "per_question_params[0].subquestion_configs[4].reporting_scale",
+     "per_question_params[0].subquestion_configs[0].learning_content",
+     "per_question_params[0].subquestion_configs[0].learning_performance",
+     "per_question_params[0].subquestion_configs[1].learning_content",
+     "per_question_params[0].subquestion_configs[1].learning_performance",
+     "per_question_params[0].subquestion_configs[2].learning_content",
+     "per_question_params[0].subquestion_configs[2].learning_performance",
+     "per_question_params[0].subquestion_configs[3].learning_content",
+     "per_question_params[0].subquestion_configs[3].learning_performance",
+     "per_question_params[0].subquestion_configs[4].learning_content",
+     "per_question_params[0].subquestion_configs[4].learning_performance"
+    ],
+    "seed": 1109661311,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "core_question_callback": true,
+    "stream_version": 2
+   },
+   "llm_requests": [
+    {
+     "seq": 9,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 80,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 81,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 82,
+     "agent": "sub_generator#5",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 83,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 84,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 283,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 325,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 329,
+     "agent": "image_agent",
+     "purpose": "gpt_image",
+     "model": "gpt-image-2",
+     "params": {
+      "size": "1024x1024",
+      "n": 1
+     }
+    },
+    {
+     "seq": 335,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 359,
+     "agent": "corrector",
+     "purpose": "correct",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 533,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 559,
+     "agent": "corrector",
+     "purpose": "correct",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 778,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    }
+   ],
+   "questions": [
+    {
+     "question_id": "ns_3bd26bd1-2b7f-46c7-a0e9-a40ae714f343_001",
+     "content_revision": 8,
+     "題目內容類型": "純文字",
+     "stem_figure": null,
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "Simple multiple-choice",
+       "題目內容類型": "含圖片",
+       "圖片": "ns_3bd26bd1-2b7f-46c7-a0e9-a40ae714f343_001_sq1.png"
+      },
+      {
+       "序號": 2,
+       "題型": "Simple multiple-choice",
+       "題目內容類型": "graphs/charts/tables",
+       "圖片": "ns_3bd26bd1-2b7f-46c7-a0e9-a40ae714f343_001_sq2.png"
+      },
+      {
+       "序號": 3,
+       "題型": "Constructed response",
+       "題目內容類型": "純文字",
+       "圖片": null
+      },
+      {
+       "序號": 4,
+       "題型": "Constructed response",
+       "題目內容類型": "純文字",
+       "圖片": null
+      },
+      {
+       "序號": 5,
+       "題型": "Complex multiple-choice",
+       "題目內容類型": "純文字",
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 8,
+      "review": {
+       "status": "passed",
+       "content_revision": 8
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "image",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "image",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "image",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "image",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ]
+      ],
+      "missing": []
+     }
+    }
+   ],
+   "stage_errors": [
+    {
+     "agent": "corrector",
+     "stage": "correct",
+     "code": "correction_rejected",
+     "message": "subquestions count changed",
+     "reason": {
+      "code": "subquestions_count",
+      "path": "subquestions",
+      "message": "subquestions count changed"
+     },
+     "retry": 1
+    }
+   ],
+   "saved_exchanges": {
+    "http_status": 200,
+    "rows": [
+     {
+      "order": 1,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 40444,
+      "completion_tokens": 1353
+     },
+     {
+      "order": 2,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35753,
+      "completion_tokens": 913
+     },
+     {
+      "order": 3,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35802,
+      "completion_tokens": 988
+     },
+     {
+      "order": 4,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35850,
+      "completion_tokens": 812
+     },
+     {
+      "order": 5,
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35848,
+      "completion_tokens": 886
+     },
+     {
+      "order": 6,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35792,
+      "completion_tokens": 863
+     },
+     {
+      "order": 7,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 35802,
+      "completion_tokens": 839
+     },
+     {
+      "order": 8,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 9,
+      "agent": "image_agent",
+      "purpose": "gpt_image",
+      "model_used": "gpt-image-2",
+      "params": {
+       "size": "1024x1024",
+       "n": 1
+      },
+      "prompt_tokens": null,
+      "completion_tokens": null
+     },
+     {
+      "order": 10,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 114828,
+      "completion_tokens": 463
+     },
+     {
+      "order": 11,
+      "agent": "corrector",
+      "purpose": "correct",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 119277,
+      "completion_tokens": 4046
+     },
+     {
+      "order": 12,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 113715,
+      "completion_tokens": 504
+     },
+     {
+      "order": 13,
+      "agent": "corrector",
+      "purpose": "correct",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 119337,
+      "completion_tokens": 5094
+     },
+     {
+      "order": 14,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 113885,
+      "completion_tokens": 446
+     }
+    ]
+   }
+  },
+  "math_original": {
+   "http_status": 200,
+   "build_id_header_sent": true,
+   "stream_ms": 147399,
+   "generation_log_id": "a190f825-585f-410c-89d1-97834dbeb34d",
+   "event_counts": {
+    "started": 1,
+    "stage": 30,
+    "pipeline": 6,
+    "llm_request": 14,
+    "llm_content": 300,
+    "llm_response": 14,
+    "plan": 2,
+    "question_update": 14,
+    "trail": 4,
+    "result": 2,
+    "question_terminal": 2,
+    "done": 1
+   },
+   "request": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "個人"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "選擇題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "seed": 753157648,
+      "math_thinking": [
+       "運用"
+      ],
+      "learning_content": [
+       "S-8-5",
+       "N-7-4"
+      ],
+      "learning_performance": [
+       "s-IV-14",
+       "a-IV-1",
+       "g-IV-1"
+      ],
+      "core_competency": [
+       "數-J-B2"
+      ],
+      "sub_question_count": 6
+     },
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "社會時事",
+       "科學"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "開放式建構反應題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "seed": 753157649,
+      "math_thinking": [
+       "運用",
+       "形成",
+       "詮釋評估"
+      ],
+      "learning_content": [
+       "S-8-1",
+       "N-8-1"
+      ],
+      "learning_performance": [
+       "s-IV-12",
+       "a-IV-5"
+      ],
+      "core_competency": [
+       "數-J-A1"
+      ],
+      "sub_question_count": 4
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].情境",
+     "per_question_params[0].題型",
+     "per_question_params[0].數學思考",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].核心素養",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[1].seed",
+     "per_question_params[1].情境",
+     "per_question_params[1].題型",
+     "per_question_params[1].數學思考",
+     "per_question_params[1].學習內容",
+     "per_question_params[1].學習表現",
+     "per_question_params[1].核心素養",
+     "per_question_params[1].sub_question_count"
+    ],
+    "seed": 753157648,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150,
+    "stream_version": 2
+   },
+   "llm_requests": [
+    {
+     "seq": 9,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 10,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 66,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 67,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 68,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 69,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 70,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 71,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 72,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 73,
+     "agent": "sub_generator#5",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 74,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 75,
+     "agent": "sub_generator#6",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 207,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 372,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    }
+   ],
+   "questions": [
+    {
+     "question_id": "q_a190f825-585f-410c-89d1-97834dbeb34d_002",
+     "content_revision": 5,
+     "題目內容類型": "純文字",
+     "stem_figure": null,
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 2,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 3,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 4,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 5,
+      "review": {
+       "status": "passed",
+       "content_revision": 5
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ]
+      ],
+      "missing": []
+     }
+    },
+    {
+     "question_id": "q_a190f825-585f-410c-89d1-97834dbeb34d_001",
+     "content_revision": 7,
+     "題目內容類型": "純文字",
+     "stem_figure": null,
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 2,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 3,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 4,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 5,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 6,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 7,
+      "review": {
+       "status": "passed",
+       "content_revision": 7
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "subquestion",
+        5
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "subquestion",
+        5
+       ]
+      ],
+      "missing": []
+     }
+    }
+   ],
+   "stage_errors": [],
+   "saved_exchanges": {
+    "http_status": 200,
+    "rows": [
+     {
+      "order": 1,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 56843,
+      "completion_tokens": 366
+     },
+     {
+      "order": 2,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 56977,
+      "completion_tokens": 487
+     },
+     {
+      "order": 3,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54927,
+      "completion_tokens": 347
+     },
+     {
+      "order": 4,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54935,
+      "completion_tokens": 524
+     },
+     {
+      "order": 5,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54929,
+      "completion_tokens": 609
+     },
+     {
+      "order": 6,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54929,
+      "completion_tokens": 535
+     },
+     {
+      "order": 7,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55003,
+      "completion_tokens": 464
+     },
+     {
+      "order": 8,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54999,
+      "completion_tokens": 561
+     },
+     {
+      "order": 9,
+      "agent": "sub_generator#6",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55008,
+      "completion_tokens": 580
+     },
+     {
+      "order": 10,
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55004,
+      "completion_tokens": 602
+     },
+     {
+      "order": 11,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55006,
+      "completion_tokens": 976
+     },
+     {
+      "order": 12,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55425,
+      "completion_tokens": 155
+     },
+     {
+      "order": 13,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55001,
+      "completion_tokens": 697
+     },
+     {
+      "order": 14,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55999,
+      "completion_tokens": 196
+     }
+    ]
+   }
+  },
+  "math_replay": {
+   "http_status": 200,
+   "build_id_header_sent": true,
+   "stream_ms": 139059,
+   "generation_log_id": "4858cd6c-b3c3-4f67-bcbc-640a2f5edb07",
+   "event_counts": {
+    "started": 1,
+    "stage": 30,
+    "pipeline": 6,
+    "llm_request": 14,
+    "llm_content": 386,
+    "llm_response": 14,
+    "plan": 2,
+    "question_update": 14,
+    "trail": 4,
+    "result": 2,
+    "question_terminal": 2,
+    "done": 1
+   },
+   "request": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "個人"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "選擇題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "seed": 753157648,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "disable_reference_fewshot": false,
+      "coverage_mode": "balanced",
+      "math_thinking": [
+       "運用"
+      ],
+      "learning_content": [
+       "S-8-5",
+       "N-7-4"
+      ],
+      "learning_performance": [
+       "s-IV-14",
+       "a-IV-1",
+       "g-IV-1"
+      ],
+      "core_competency": [
+       "數-J-B2"
+      ],
+      "sub_question_count": 6
+     },
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "社會時事",
+       "科學"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "開放式建構反應題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "seed": 753157649,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "disable_reference_fewshot": false,
+      "coverage_mode": "balanced",
+      "math_thinking": [
+       "運用",
+       "形成",
+       "詮釋評估"
+      ],
+      "learning_content": [
+       "S-8-1",
+       "N-8-1"
+      ],
+      "learning_performance": [
+       "s-IV-12",
+       "a-IV-5"
+      ],
+      "core_competency": [
+       "數-J-A1"
+      ],
+      "sub_question_count": 4
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].情境",
+     "per_question_params[0].題型",
+     "per_question_params[0].數學思考",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].核心素養",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[1].seed",
+     "per_question_params[1].情境",
+     "per_question_params[1].題型",
+     "per_question_params[1].數學思考",
+     "per_question_params[1].學習內容",
+     "per_question_params[1].學習表現",
+     "per_question_params[1].核心素養",
+     "per_question_params[1].sub_question_count"
+    ],
+    "seed": 753157648,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150,
+    "stream_version": 2
+   },
+   "llm_requests": [
+    {
+     "seq": 9,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 10,
+     "agent": "generator",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 58,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 59,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 60,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 61,
+     "agent": "sub_generator#6",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 62,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 63,
+     "agent": "sub_generator#5",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 71,
+     "agent": "sub_generator#1",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 72,
+     "agent": "sub_generator#3",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 73,
+     "agent": "sub_generator#2",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 74,
+     "agent": "sub_generator#4",
+     "purpose": "generate",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 398,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    },
+    {
+     "seq": 433,
+     "agent": "verifier",
+     "purpose": "verify",
+     "model": "gemini-3.1-pro-preview",
+     "params": {
+      "max_tokens": 8192,
+      "reasoning_effort": "high",
+      "stream": true,
+      "stream_options": {
+       "include_usage": true
+      }
+     }
+    }
+   ],
+   "questions": [
+    {
+     "question_id": "q_4858cd6c-b3c3-4f67-bcbc-640a2f5edb07_001",
+     "content_revision": 7,
+     "題目內容類型": "純文字",
+     "stem_figure": null,
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 2,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 3,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 4,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 5,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 6,
+       "題型": "選擇題",
+       "題目內容類型": null,
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 7,
+      "review": {
+       "status": "passed",
+       "content_revision": 7
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "subquestion",
+        5
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ],
+       [
+        "subquestion",
+        4
+       ],
+       [
+        "subquestion",
+        5
+       ]
+      ],
+      "missing": []
+     }
+    },
+    {
+     "question_id": "q_4858cd6c-b3c3-4f67-bcbc-640a2f5edb07_002",
+     "content_revision": 5,
+     "題目內容類型": "純文字",
+     "stem_figure": null,
+     "subquestions": [
+      {
+       "序號": 1,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 2,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 3,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      },
+      {
+       "序號": 4,
+       "題型": "開放式建構反應題",
+       "題目內容類型": null,
+       "圖片": null
+      }
+     ],
+     "verification": {
+      "passed": true,
+      "answer_match": true
+     },
+     "terminal": {
+      "termination_reason": "normal",
+      "delivery_status": "complete",
+      "has_final": true,
+      "final_revision": 5,
+      "review": {
+       "status": "passed",
+       "content_revision": 5
+      },
+      "expected": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ]
+      ],
+      "delivered": [
+       [
+        "subquestion",
+        0
+       ],
+       [
+        "subquestion",
+        1
+       ],
+       [
+        "subquestion",
+        2
+       ],
+       [
+        "subquestion",
+        3
+       ]
+      ],
+      "missing": []
+     }
+    }
+   ],
+   "stage_errors": [],
+   "saved_exchanges": {
+    "http_status": 200,
+    "rows": [
+     {
+      "order": 1,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 56977,
+      "completion_tokens": 438
+     },
+     {
+      "order": 2,
+      "agent": "generator",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 56843,
+      "completion_tokens": 395
+     },
+     {
+      "order": 3,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54970,
+      "completion_tokens": 591
+     },
+     {
+      "order": 4,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54968,
+      "completion_tokens": 523
+     },
+     {
+      "order": 5,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54945,
+      "completion_tokens": 481
+     },
+     {
+      "order": 6,
+      "agent": "sub_generator#1",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54943,
+      "completion_tokens": 444
+     },
+     {
+      "order": 7,
+      "agent": "sub_generator#5",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54970,
+      "completion_tokens": 1048
+     },
+     {
+      "order": 8,
+      "agent": "sub_generator#3",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54969,
+      "completion_tokens": 859
+     },
+     {
+      "order": 9,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54956,
+      "completion_tokens": 938
+     },
+     {
+      "order": 10,
+      "agent": "sub_generator#2",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54969,
+      "completion_tokens": 634
+     },
+     {
+      "order": 11,
+      "agent": "sub_generator#6",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54972,
+      "completion_tokens": 1132
+     },
+     {
+      "order": 12,
+      "agent": "sub_generator#4",
+      "purpose": "generate",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 54951,
+      "completion_tokens": 1153
+     },
+     {
+      "order": 13,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 56505,
+      "completion_tokens": 198
+     },
+     {
+      "order": 14,
+      "agent": "verifier",
+      "purpose": "verify",
+      "model_used": "gemini-3.1-pro-preview",
+      "params": {
+       "max_tokens": 8192,
+       "reasoning_effort": "high",
+       "stream": true,
+       "stream_options": {
+        "include_usage": true
+       }
+      },
+      "prompt_tokens": 55924,
+      "completion_tokens": 421
+     }
+    ]
+   }
+  }
+ },
+ "resolve": {
+  "ns_case_b": {
+   "partial_request": {
+    "subject": "natural_sciences",
+    "grade": 7,
+    "style": [],
+    "content_type": "純文字",
+    "context": [
+     "Personal"
+    ],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 1,
+    "skip_verify": false,
+    "disable_reference_fewshot": false,
+    "image_generation_mode": "gpt_image",
+    "sub_context": "Maintenance of health",
+    "subquestion_configs": [
+     {
+      "content_type": "含圖片"
+     },
+     {
+      "content_type": "graphs/charts/tables"
+     },
+     {
+      "content_type": "純文字"
+     }
+    ],
+    "per_question_params": [
+     {}
+    ],
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "core_question_callback": true,
+    "redraws": {}
+   },
+   "resolved_payload": {
+    "subject": "natural_sciences",
+    "grade": 7,
+    "style": [],
+    "content_type": "純文字",
+    "context": [
+     "Personal"
+    ],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 1,
+    "skip_verify": false,
+    "disable_reference_fewshot": false,
+    "image_generation_mode": "gpt_image",
+    "sub_context": "Maintenance of health",
+    "subquestion_configs": [
+     {
+      "content_type": "含圖片"
+     },
+     {
+      "content_type": "graphs/charts/tables"
+     },
+     {
+      "content_type": "純文字"
+     }
+    ],
+    "per_question_params": [
+     {
+      "grade": 7,
+      "style": [],
+      "content_type": "純文字",
+      "context": [
+       "Personal"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "Simple multiple-choice"
+      ],
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "image_generation_mode": "gpt_image",
+      "sub_context": "Maintenance of health",
+      "subquestion_configs": [
+       {
+        "content_type": "含圖片",
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1c",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "content_type": "graphs/charts/tables",
+        "question_type": "Simple multiple-choice",
+        "reporting_scale": "1b",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "content_type": "純文字",
+        "question_type": "Constructed response",
+        "reporting_scale": "4",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Constructed response",
+        "reporting_scale": "5",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       },
+       {
+        "question_type": "Complex multiple-choice",
+        "reporting_scale": "1c",
+        "learning_content": [
+         "Ib-Ⅳ-1"
+        ],
+        "learning_performance": [
+         "an-Ⅳ-3"
+        ]
+       }
+      ],
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "seed": 1109661311,
+      "science_competency": [
+       "能力一：以科學的角度解釋現象"
+      ],
+      "learning_content": [
+       "Ib-Ⅳ-1"
+      ],
+      "learning_performance": [
+       "an-Ⅳ-3"
+      ],
+      "sub_question_count": 5
+     }
+    ],
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "core_question_callback": true,
+    "seed": 1109661311
+   },
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].科學能力",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[0].subquestion_configs[0].question_type",
+    "per_question_params[0].subquestion_configs[0].reporting_scale",
+    "per_question_params[0].subquestion_configs[1].question_type",
+    "per_question_params[0].subquestion_configs[1].reporting_scale",
+    "per_question_params[0].subquestion_configs[2].question_type",
+    "per_question_params[0].subquestion_configs[2].reporting_scale",
+    "per_question_params[0].subquestion_configs[3].question_type",
+    "per_question_params[0].subquestion_configs[3].reporting_scale",
+    "per_question_params[0].subquestion_configs[4].question_type",
+    "per_question_params[0].subquestion_configs[4].reporting_scale",
+    "per_question_params[0].subquestion_configs[0].learning_content",
+    "per_question_params[0].subquestion_configs[0].learning_performance",
+    "per_question_params[0].subquestion_configs[1].learning_content",
+    "per_question_params[0].subquestion_configs[1].learning_performance",
+    "per_question_params[0].subquestion_configs[2].learning_content",
+    "per_question_params[0].subquestion_configs[2].learning_performance",
+    "per_question_params[0].subquestion_configs[3].learning_content",
+    "per_question_params[0].subquestion_configs[3].learning_performance",
+    "per_question_params[0].subquestion_configs[4].learning_content",
+    "per_question_params[0].subquestion_configs[4].learning_performance"
+   ],
+   "cleared": []
+  },
+  "math_original": {
+   "partial_request": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {},
+     {}
+    ],
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150,
+    "redraws": {}
+   },
+   "resolved_payload": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "個人"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "選擇題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "seed": 753157648,
+      "math_thinking": [
+       "運用"
+      ],
+      "learning_content": [
+       "S-8-5",
+       "N-7-4"
+      ],
+      "learning_performance": [
+       "s-IV-14",
+       "a-IV-1",
+       "g-IV-1"
+      ],
+      "core_competency": [
+       "數-J-B2"
+      ],
+      "sub_question_count": 6
+     },
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "社會時事",
+       "科學"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "開放式建構反應題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "seed": 753157649,
+      "math_thinking": [
+       "運用",
+       "形成",
+       "詮釋評估"
+      ],
+      "learning_content": [
+       "S-8-1",
+       "N-8-1"
+      ],
+      "learning_performance": [
+       "s-IV-12",
+       "a-IV-5"
+      ],
+      "core_competency": [
+       "數-J-A1"
+      ],
+      "sub_question_count": 4
+     }
+    ],
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150,
+    "seed": 753157648
+   },
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].情境",
+    "per_question_params[0].題型",
+    "per_question_params[0].數學思考",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].核心素養",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[1].seed",
+    "per_question_params[1].情境",
+    "per_question_params[1].題型",
+    "per_question_params[1].數學思考",
+    "per_question_params[1].學習內容",
+    "per_question_params[1].學習表現",
+    "per_question_params[1].核心素養",
+    "per_question_params[1].sub_question_count"
+   ],
+   "cleared": []
+  },
+  "math_replay": {
+   "partial_request": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "context": [
+       "建築與藝術",
+       "個人"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "選擇題"
+      ],
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "seed": 753157648,
+      "image_generation_mode": "gpt_image",
+      "coverage_mode": "balanced",
+      "content_type": "純文字",
+      "text_word_limit": 150,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "math_thinking": [
+       "運用"
+      ],
+      "learning_content": [
+       "S-8-5",
+       "N-7-4"
+      ],
+      "learning_performance": [
+       "s-IV-14",
+       "a-IV-1",
+       "g-IV-1"
+      ],
+      "core_competency": [
+       "數-J-B2"
+      ],
+      "sub_question_count": 6
+     },
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "context": [
+       "建築與藝術",
+       "社會時事",
+       "科學"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "開放式建構反應題"
+      ],
+      "skip_verify": false,
+      "disable_reference_fewshot": false,
+      "seed": 753157649,
+      "image_generation_mode": "gpt_image",
+      "coverage_mode": "balanced",
+      "content_type": "純文字",
+      "text_word_limit": 150,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "math_thinking": [
+       "運用",
+       "形成",
+       "詮釋評估"
+      ],
+      "learning_content": [
+       "S-8-1",
+       "N-8-1"
+      ],
+      "learning_performance": [
+       "s-IV-12",
+       "a-IV-5"
+      ],
+      "core_competency": [
+       "數-J-A1"
+      ],
+      "sub_question_count": 4
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].情境",
+     "per_question_params[0].題型",
+     "per_question_params[0].數學思考",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].核心素養",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[1].seed",
+     "per_question_params[1].情境",
+     "per_question_params[1].題型",
+     "per_question_params[1].數學思考",
+     "per_question_params[1].學習內容",
+     "per_question_params[1].學習表現",
+     "per_question_params[1].核心素養",
+     "per_question_params[1].sub_question_count"
+    ],
+    "seed": 753157648,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150,
+    "redraws": {}
+   },
+   "resolved_payload": {
+    "subject": "math",
+    "grade": 8,
+    "style": [
+     "text_only"
+    ],
+    "content_type": "純文字",
+    "context": [],
+    "set_type": "題組題",
+    "q_type": [],
+    "count": 2,
+    "skip_verify": false,
+    "image_generation_mode": "gpt_image",
+    "per_question_params": [
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "個人"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "選擇題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "seed": 753157648,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "disable_reference_fewshot": false,
+      "coverage_mode": "balanced",
+      "math_thinking": [
+       "運用"
+      ],
+      "learning_content": [
+       "S-8-5",
+       "N-7-4"
+      ],
+      "learning_performance": [
+       "s-IV-14",
+       "a-IV-1",
+       "g-IV-1"
+      ],
+      "core_competency": [
+       "數-J-B2"
+      ],
+      "sub_question_count": 6
+     },
+     {
+      "grade": 8,
+      "style": [
+       "text_only"
+      ],
+      "content_type": "純文字",
+      "context": [
+       "建築與藝術",
+       "社會時事",
+       "科學"
+      ],
+      "set_type": "題組題",
+      "q_type": [
+       "開放式建構反應題"
+      ],
+      "skip_verify": false,
+      "image_generation_mode": "gpt_image",
+      "seed": 753157649,
+      "model_plan": "gemini-3.1-pro-preview",
+      "model_execute": "gemini-3.1-pro-preview",
+      "model_verify": "gemini-3.1-pro-preview",
+      "model_correct": "gemini-3.1-pro-preview",
+      "effort_plan": "high",
+      "effort_execute": "high",
+      "text_word_limit": 150,
+      "disable_reference_fewshot": false,
+      "coverage_mode": "balanced",
+      "math_thinking": [
+       "運用",
+       "形成",
+       "詮釋評估"
+      ],
+      "learning_content": [
+       "S-8-1",
+       "N-8-1"
+      ],
+      "learning_performance": [
+       "s-IV-12",
+       "a-IV-5"
+      ],
+      "core_competency": [
+       "數-J-A1"
+      ],
+      "sub_question_count": 4
+     }
+    ],
+    "drawn": [
+     "seed",
+     "per_question_params[0].seed",
+     "per_question_params[0].情境",
+     "per_question_params[0].題型",
+     "per_question_params[0].數學思考",
+     "per_question_params[0].學習內容",
+     "per_question_params[0].學習表現",
+     "per_question_params[0].核心素養",
+     "per_question_params[0].sub_question_count",
+     "per_question_params[1].seed",
+     "per_question_params[1].情境",
+     "per_question_params[1].題型",
+     "per_question_params[1].數學思考",
+     "per_question_params[1].學習內容",
+     "per_question_params[1].學習表現",
+     "per_question_params[1].核心素養",
+     "per_question_params[1].sub_question_count"
+    ],
+    "seed": 753157648,
+    "model_plan": "gemini-3.1-pro-preview",
+    "model_execute": "gemini-3.1-pro-preview",
+    "model_verify": "gemini-3.1-pro-preview",
+    "model_correct": "gemini-3.1-pro-preview",
+    "effort_plan": "high",
+    "effort_execute": "high",
+    "text_word_limit": 150
+   },
+   "drawn": [],
+   "cleared": []
+  }
+ },
+ "math_saved_params": {
+  "08ca2d94-0395-4bba-ac49-b11833739e45": {
+   "subject": "math",
+   "grade": 8,
+   "style": [
+    "text_only"
+   ],
+   "context": [],
+   "set_type": "題組題",
+   "q_type": [],
+   "count": 2,
+   "skip_verify": false,
+   "disable_reference_fewshot": false,
+   "seed": 753157648,
+   "max_retries": 3,
+   "image_generation_mode": "gpt_image",
+   "difficulty": null,
+   "coverage_mode": "balanced",
+   "core_question_callback": true,
+   "subject_filter": null,
+   "content_type": "純文字",
+   "content_domain": null,
+   "target_surface": null,
+   "passage": null,
+   "options": null,
+   "topic": null,
+   "core_question": null,
+   "text_instruction": null,
+   "sub_context": null,
+   "science_competency": null,
+   "learning_performance": null,
+   "core_competency": null,
+   "math_thinking": null,
+   "learning_content": null,
+   "sub_question_count": null,
+   "question_word_limit": null,
+   "option_word_limit": null,
+   "text_word_limit": 150,
+   "subquestion_configs": null,
+   "allow_duplicate_figure_kinds": false,
+   "per_question_params": [
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "個人"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "選擇題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157648,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用"
+     ],
+     "learning_content": [
+      "S-8-5",
+      "N-7-4"
+     ],
+     "learning_performance": [
+      "s-IV-14",
+      "a-IV-1",
+      "g-IV-1"
+     ],
+     "core_competency": [
+      "數-J-B2"
+     ],
+     "sub_question_count": 6
+    },
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "社會時事",
+      "科學"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "開放式建構反應題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157649,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用",
+      "形成",
+      "詮釋評估"
+     ],
+     "learning_content": [
+      "S-8-1",
+      "N-8-1"
+     ],
+     "learning_performance": [
+      "s-IV-12",
+      "a-IV-5"
+     ],
+     "core_competency": [
+      "數-J-A1"
+     ],
+     "sub_question_count": 4
+    }
+   ],
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].情境",
+    "per_question_params[0].題型",
+    "per_question_params[0].數學思考",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].核心素養",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[1].seed",
+    "per_question_params[1].情境",
+    "per_question_params[1].題型",
+    "per_question_params[1].數學思考",
+    "per_question_params[1].學習內容",
+    "per_question_params[1].學習表現",
+    "per_question_params[1].核心素養",
+    "per_question_params[1].sub_question_count"
+   ],
+   "model_plan": "gemini-3.1-pro-preview",
+   "model_execute": "gemini-3.1-pro-preview",
+   "model_verify": "gemini-3.1-pro-preview",
+   "model_correct": "gemini-3.1-pro-preview",
+   "effort_plan": "high",
+   "effort_execute": "high",
+   "effort_verify": null,
+   "effort_correct": null,
+   "reporting_scale": null,
+   "stream_version": null
+  },
+  "31c6d12c-816c-4b5d-aa09-f03edffa9876": {
+   "subject": "math",
+   "grade": 8,
+   "style": [
+    "text_only"
+   ],
+   "context": [],
+   "set_type": "題組題",
+   "q_type": [],
+   "count": 2,
+   "skip_verify": false,
+   "disable_reference_fewshot": false,
+   "seed": 753157648,
+   "max_retries": 3,
+   "image_generation_mode": "gpt_image",
+   "difficulty": null,
+   "coverage_mode": "balanced",
+   "core_question_callback": true,
+   "subject_filter": null,
+   "content_type": "純文字",
+   "content_domain": null,
+   "target_surface": null,
+   "passage": null,
+   "options": null,
+   "topic": null,
+   "core_question": null,
+   "text_instruction": null,
+   "sub_context": null,
+   "science_competency": null,
+   "learning_performance": null,
+   "core_competency": null,
+   "math_thinking": null,
+   "learning_content": null,
+   "sub_question_count": null,
+   "question_word_limit": null,
+   "option_word_limit": null,
+   "text_word_limit": 150,
+   "subquestion_configs": null,
+   "allow_duplicate_figure_kinds": false,
+   "per_question_params": [
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "個人"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "選擇題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157648,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用"
+     ],
+     "learning_content": [
+      "S-8-5",
+      "N-7-4"
+     ],
+     "learning_performance": [
+      "s-IV-14",
+      "a-IV-1",
+      "g-IV-1"
+     ],
+     "core_competency": [
+      "數-J-B2"
+     ],
+     "sub_question_count": 6
+    },
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "社會時事",
+      "科學"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "開放式建構反應題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157649,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用",
+      "形成",
+      "詮釋評估"
+     ],
+     "learning_content": [
+      "S-8-1",
+      "N-8-1"
+     ],
+     "learning_performance": [
+      "s-IV-12",
+      "a-IV-5"
+     ],
+     "core_competency": [
+      "數-J-A1"
+     ],
+     "sub_question_count": 4
+    }
+   ],
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].情境",
+    "per_question_params[0].題型",
+    "per_question_params[0].數學思考",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].核心素養",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[1].seed",
+    "per_question_params[1].情境",
+    "per_question_params[1].題型",
+    "per_question_params[1].數學思考",
+    "per_question_params[1].學習內容",
+    "per_question_params[1].學習表現",
+    "per_question_params[1].核心素養",
+    "per_question_params[1].sub_question_count"
+   ],
+   "model_plan": "gemini-3.1-pro-preview",
+   "model_execute": "gemini-3.1-pro-preview",
+   "model_verify": "gemini-3.1-pro-preview",
+   "model_correct": "gemini-3.1-pro-preview",
+   "effort_plan": "high",
+   "effort_execute": "high",
+   "effort_verify": null,
+   "effort_correct": null,
+   "reporting_scale": null,
+   "stream_version": null
+  },
+  "d5de29e2-bf4c-4fed-b23a-48cdb0615dc1": {
+   "subject": "math",
+   "grade": 8,
+   "style": [
+    "text_only"
+   ],
+   "context": [],
+   "set_type": "題組題",
+   "q_type": [],
+   "count": 2,
+   "skip_verify": false,
+   "disable_reference_fewshot": false,
+   "seed": 753157648,
+   "max_retries": 3,
+   "image_generation_mode": "gpt_image",
+   "difficulty": null,
+   "coverage_mode": "balanced",
+   "core_question_callback": true,
+   "subject_filter": null,
+   "content_type": "純文字",
+   "content_domain": null,
+   "target_surface": null,
+   "passage": null,
+   "options": null,
+   "topic": null,
+   "core_question": null,
+   "text_instruction": null,
+   "sub_context": null,
+   "science_competency": null,
+   "learning_performance": null,
+   "core_competency": null,
+   "math_thinking": null,
+   "learning_content": null,
+   "sub_question_count": null,
+   "question_word_limit": null,
+   "option_word_limit": null,
+   "text_word_limit": 150,
+   "subquestion_configs": null,
+   "allow_duplicate_figure_kinds": false,
+   "per_question_params": [
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "個人"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "選擇題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157648,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用"
+     ],
+     "learning_content": [
+      "S-8-5",
+      "N-7-4"
+     ],
+     "learning_performance": [
+      "s-IV-14",
+      "a-IV-1",
+      "g-IV-1"
+     ],
+     "core_competency": [
+      "數-J-B2"
+     ],
+     "sub_question_count": 6
+    },
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "社會時事",
+      "科學"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "開放式建構反應題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157649,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用",
+      "形成",
+      "詮釋評估"
+     ],
+     "learning_content": [
+      "S-8-1",
+      "N-8-1"
+     ],
+     "learning_performance": [
+      "s-IV-12",
+      "a-IV-5"
+     ],
+     "core_competency": [
+      "數-J-A1"
+     ],
+     "sub_question_count": 4
+    }
+   ],
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].情境",
+    "per_question_params[0].題型",
+    "per_question_params[0].數學思考",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].核心素養",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[1].seed",
+    "per_question_params[1].情境",
+    "per_question_params[1].題型",
+    "per_question_params[1].數學思考",
+    "per_question_params[1].學習內容",
+    "per_question_params[1].學習表現",
+    "per_question_params[1].核心素養",
+    "per_question_params[1].sub_question_count"
+   ],
+   "model_plan": "gemini-3.1-pro-preview",
+   "model_execute": "gemini-3.1-pro-preview",
+   "model_verify": "gemini-3.1-pro-preview",
+   "model_correct": "gemini-3.1-pro-preview",
+   "effort_plan": "high",
+   "effort_execute": "high",
+   "effort_verify": null,
+   "effort_correct": null,
+   "reporting_scale": null,
+   "stream_version": null
+  },
+  "871d077f-c3d3-4507-bd8d-dfd712b30bf6": {
+   "subject": "math",
+   "grade": 8,
+   "style": [
+    "text_only"
+   ],
+   "context": [],
+   "set_type": "題組題",
+   "q_type": [],
+   "count": 2,
+   "skip_verify": false,
+   "disable_reference_fewshot": false,
+   "seed": 753157648,
+   "max_retries": 3,
+   "image_generation_mode": "gpt_image",
+   "difficulty": null,
+   "coverage_mode": "balanced",
+   "core_question_callback": true,
+   "subject_filter": null,
+   "content_type": "純文字",
+   "content_domain": null,
+   "target_surface": null,
+   "passage": null,
+   "options": null,
+   "topic": null,
+   "core_question": null,
+   "text_instruction": null,
+   "sub_context": null,
+   "science_competency": null,
+   "learning_performance": null,
+   "core_competency": null,
+   "math_thinking": null,
+   "learning_content": null,
+   "sub_question_count": null,
+   "question_word_limit": null,
+   "option_word_limit": null,
+   "text_word_limit": 150,
+   "subquestion_configs": null,
+   "allow_duplicate_figure_kinds": false,
+   "per_question_params": [
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "個人"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "選擇題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157648,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用"
+     ],
+     "learning_content": [
+      "S-8-5",
+      "N-7-4"
+     ],
+     "learning_performance": [
+      "s-IV-14",
+      "a-IV-1",
+      "g-IV-1"
+     ],
+     "core_competency": [
+      "數-J-B2"
+     ],
+     "sub_question_count": 6
+    },
+    {
+     "grade": 8,
+     "style": [
+      "text_only"
+     ],
+     "context": [
+      "建築與藝術",
+      "社會時事",
+      "科學"
+     ],
+     "set_type": "題組題",
+     "q_type": [
+      "開放式建構反應題"
+     ],
+     "skip_verify": false,
+     "disable_reference_fewshot": false,
+     "seed": 753157649,
+     "image_generation_mode": "gpt_image",
+     "coverage_mode": "balanced",
+     "content_type": "純文字",
+     "text_word_limit": 150,
+     "model_plan": "gemini-3.1-pro-preview",
+     "model_execute": "gemini-3.1-pro-preview",
+     "model_verify": "gemini-3.1-pro-preview",
+     "model_correct": "gemini-3.1-pro-preview",
+     "effort_plan": "high",
+     "effort_execute": "high",
+     "math_thinking": [
+      "運用",
+      "形成",
+      "詮釋評估"
+     ],
+     "learning_content": [
+      "S-8-1",
+      "N-8-1"
+     ],
+     "learning_performance": [
+      "s-IV-12",
+      "a-IV-5"
+     ],
+     "core_competency": [
+      "數-J-A1"
+     ],
+     "sub_question_count": 4
+    }
+   ],
+   "drawn": [
+    "seed",
+    "per_question_params[0].seed",
+    "per_question_params[0].情境",
+    "per_question_params[0].題型",
+    "per_question_params[0].數學思考",
+    "per_question_params[0].學習內容",
+    "per_question_params[0].學習表現",
+    "per_question_params[0].核心素養",
+    "per_question_params[0].sub_question_count",
+    "per_question_params[1].seed",
+    "per_question_params[1].情境",
+    "per_question_params[1].題型",
+    "per_question_params[1].數學思考",
+    "per_question_params[1].學習內容",
+    "per_question_params[1].學習表現",
+    "per_question_params[1].核心素養",
+    "per_question_params[1].sub_question_count"
+   ],
+   "model_plan": "gemini-3.1-pro-preview",
+   "model_execute": "gemini-3.1-pro-preview",
+   "model_verify": "gemini-3.1-pro-preview",
+   "model_correct": "gemini-3.1-pro-preview",
+   "effort_plan": "high",
+   "effort_execute": "high",
+   "effort_verify": null,
+   "effort_correct": null,
+   "reporting_scale": null,
+   "stream_version": null
+  }
+ },
+ "history_records": {
+  "ns_case_a": "2a3b98e8-9630-4918-ae8d-bb3a08f79eb3",
+  "ns_case_b": "34011a67-ee03-4728-972a-112ae936d77b",
+  "math_original": [
+   "08ca2d94-0395-4bba-ac49-b11833739e45",
+   "31c6d12c-816c-4b5d-aa09-f03edffa9876"
+  ],
+  "math_replay": [
+   "871d077f-c3d3-4507-bd8d-dfd712b30bf6",
+   "d5de29e2-bf4c-4fed-b23a-48cdb0615dc1"
+  ]
+ }
+}
