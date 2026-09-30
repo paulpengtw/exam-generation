@@ -293,6 +293,56 @@ function applyQuestion(
 
   if (q.termination_reason === null) {
     if (qev.terminal !== null) return state;
+
+    // A persisted result exists for a question that does not yet have a
+    // terminal (e.g. the run is still executing, or the page was opened while
+    // the terminal was in-flight).  Apply it so selectFinalReceivedCount
+    // correctly counts it — "final results received live OR read from
+    // persisted run state" (spec: "Batch counts are unique terminal and
+    // receipt counts").
+    //
+    // We restore the state even when processing === "unknown" (a prior
+    // applyPollReadFailed call), so the question evidence is correct once
+    // the snapshot read succeeds again.
+    if (q.result !== null && qev.content.receipt !== "final") {
+      // Use revision 1 as a nominal sentinel when the terminal has not yet
+      // arrived; the actual final_revision will be established once the
+      // terminal is persisted and applied.
+      const nominalRevision = 1;
+      state = applyV2Event(state, {
+        kind: "v2",
+        event: {
+          name: "result",
+          context: { question_id: id, content_revision: nominalRevision },
+          payload: q.result.question,
+        },
+      });
+      const updated = state.questions[id];
+      if (updated.content.receipt === "final") {
+        state = {
+          ...state,
+          questions: {
+            ...state.questions,
+            [id]: {
+              ...updated,
+              trail: q.result.verification_trail ?? [],
+              figurePolicyTrail: q.result.figure_policy_trail ?? [],
+              referenceExampleRecord: q.result.reference_example_record ?? undefined,
+            },
+          },
+        };
+      }
+    }
+
+    // Restore processing from snapshot when it was previously set to "unknown"
+    // by applyPollReadFailed (persisted state now readable again).
+    if (qev.processing === "unknown" && q.processing !== "unknown") {
+      const restored = q.processing === "running" || q.processing === "waiting"
+        ? q.processing
+        : "waiting";
+      state = { ...state, questions: { ...state.questions, [id]: { ...state.questions[id], processing: restored } } };
+    }
+
     if (qev.processing === "waiting" && (q.processing === "running" || q.current_step !== null)) {
       state = applyV2Event(state, {
         kind: "v2",

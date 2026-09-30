@@ -931,13 +931,23 @@ function reviewForContent(qev: QuestionEvidence): QuestionEvidence["review"] {
 }
 
 export function closeRun(state: RunEvidenceState): RunEvidenceState {
+  /**
+   * Stream loss: the live SSE connection ended. Retain established terminal
+   * facts; keep unresolved questions at their current persisted processing
+   * state (the snapshot poller takes over). Do NOT mark questions unknown
+   * merely because the stream ended — "unknown" is reserved for when
+   * persisted state itself is unreadable (see applyPollReadFailed).
+   *
+   * terminalConflict stays unresolved — a conflict is a data error, not a
+   * stream-loss artifact.  finalPending upgrades to finalMissing when the
+   * live stream closed before delivering the expected final content.
+   */
   const questions: Record<string, QuestionEvidence> = {};
   for (const [qid, qev] of Object.entries(state.questions)) {
-    const noTerminal = qev.terminal === null;
     const hadFinalPending = qev.finalPending;
     questions[qid] = {
       ...qev,
-      processing: noTerminal || qev.terminalConflict ? "unknown" : qev.processing,
+      // Do not change processing; persisted-state polling drives it now.
       finalPending: false,
       finalMissing: hadFinalPending,
       review: hadFinalPending
@@ -951,6 +961,31 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
     };
   }
   return { ...state, questions, closed: true };
+}
+
+/**
+ * Mark every question WITHOUT an established termination reason as "unknown"
+ * when persisted state becomes temporarily unreadable (≥3 consecutive poll
+ * failures, per the pollReadFailCount threshold in useGenerate).
+ *
+ * Already-confirmed terminals and their processing states are preserved.
+ * The unknown state is replaced by persisted truth when the next successful
+ * snapshot is applied through applyRunSnapshot / applyQuestion.
+ */
+export function applyPollReadFailed(state: RunEvidenceState): RunEvidenceState {
+  const questions: Record<string, QuestionEvidence> = {};
+  let changed = false;
+  for (const [qid, qev] of Object.entries(state.questions)) {
+    const shouldMarkUnknown =
+      qev.terminal === null && !qev.terminalConflict && qev.processing !== "unknown";
+    if (shouldMarkUnknown) {
+      changed = true;
+      questions[qid] = { ...qev, processing: "unknown" };
+    } else {
+      questions[qid] = qev;
+    }
+  }
+  return changed ? { ...state, questions } : state;
 }
 
 // ---------------------------------------------------------------------------

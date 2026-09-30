@@ -10,11 +10,13 @@ Tests the ``GET /api/runs/{id}/events`` endpoint at the ASGI level, confirming:
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
@@ -27,7 +29,7 @@ from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.generate.run import _live_observers
+from server.generate.run import _live_observers, _publish_live
 from server.models import Base, User
 from server.rate_limit import limiter
 from tests.server.generate_test_utils import complete_math_query_params
@@ -173,61 +175,120 @@ def test_events_route_404_for_non_owner(harness: _Harness) -> None:
             _live_observers.pop(run_id, None)
 
 
-def test_events_route_opens_sse_stream_for_in_process_run(harness: _Harness) -> None:
-    """With the run slot registered, GET /api/runs/{id}/events returns 200 + SSE content-type.
-
-    We register the run's slot and then send the done sentinel via a background
-    thread so the response body terminates quickly.
-    """
-    import threading
-    import time
-
+def test_live_events_advertised_for_in_process_run(harness: _Harness) -> None:
+    """GET /api/runs/{id} reports live_events_available: true while the slot is registered."""
     with TestClient(harness.app()) as client:
         accepted = client.post(
             "/api/generate", json=_body(), headers=harness.headers(harness.owner)
         )
+        assert accepted.status_code == 202
         run_id = accepted.json()["run_id"]
 
-        # Register the slot directly so is_live_available returns True.
-        # The route will call subscribe_live which adds its own queue to the list.
         _live_observers[run_id] = []
-
-        # Background thread: wait briefly then publish the done sentinel to any
-        # observer queues that appear after subscribe_live is called by the route.
-        sent = threading.Event()
-
-        def _publisher():
-            # Wait until the route has had a chance to call subscribe_live and
-            # register its queue.
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
-                observers = _live_observers.get(run_id, [])
-                if observers:
-                    for q in list(observers):
-                        try:
-                            q.put_nowait({"event": "done", "payload": None})
-                        except Exception:
-                            pass
-                    sent.set()
-                    return
-                time.sleep(0.01)
-            # If no observer appeared, put done into registry directly.
-            _live_observers.setdefault(run_id, [])
-            sent.set()
-
-        t = threading.Thread(target=_publisher, daemon=True)
-        t.start()
         try:
-            # TestClient will buffer the full response; the done event triggers break.
-            response = client.get(
-                f"/api/runs/{run_id}/events",
+            read = client.get(f"/api/runs/{run_id}", headers=harness.headers(harness.owner))
+            assert read.status_code == 200
+            assert read.json().get("live_events_available") is True
+        finally:
+            _live_observers.pop(run_id, None)
+
+
+def test_events_route_streams_sse_for_in_process_run(harness: _Harness) -> None:
+    """SSE stream delivers events and terminates on done; all I/O in ONE event loop.
+
+    Required coverage (issue #909 task brief item 1):
+    (a) live_events_available: true covered by test_live_events_advertised_for_in_process_run.
+    (b) Owner receives 200 + text/event-stream; each SSE frame has ``event:`` and
+        ``data:`` lines whose JSON body contains the ``event`` key; stream ends on done.
+    Uses httpx.AsyncClient + httpx.ASGITransport so the ASGI app runs in the same
+    event loop as the publisher task — no cross-thread queue writes.
+    httpx.ASGITransport buffers the full body, so the stream MUST terminate with done.
+    asyncio.wait_for guards the whole run so a regression fails instead of hanging.
+    """
+    async def _run() -> None:
+        app = harness.app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            # 1. Accept a run via the real API endpoint.
+            post_resp = await client.post(
+                "/api/generate",
+                json=_body(),
                 headers=harness.headers(harness.owner),
             )
-            assert response.status_code == 200
-            assert "text/event-stream" in response.headers.get("content-type", "")
-            # The response body must include a done event line.
-            assert "event: done" in response.text
-        finally:
-            sent.wait(timeout=5.0)
-            t.join(timeout=5.0)
-            _live_observers.pop(run_id, None)
+            assert post_resp.status_code == 202, post_resp.text
+            run_id = post_resp.json()["run_id"]
+
+            # 2. Register the slot as if execute_run just started.
+            _live_observers[run_id] = []
+
+            # 3. Publisher coroutine: wait for the route to call subscribe_live
+            #    (which appends its queue to the slot), then deliver one payload
+            #    event and the done sentinel.  Runs in the SAME event loop via
+            #    create_task, so put_nowait is safe.
+            async def _publisher() -> None:
+                deadline = asyncio.get_event_loop().time() + 8.0
+                while asyncio.get_event_loop().time() < deadline:
+                    observers = list(_live_observers.get(run_id, []))
+                    if observers:
+                        await _publish_live(
+                            run_id,
+                            {
+                                "event": "question_update",
+                                "context": {
+                                    "run_id": run_id,
+                                    "event_seq": 1,
+                                    "question_id": "q-001",
+                                },
+                                "payload": {"phase": "plan", "step": "start"},
+                            },
+                        )
+                        await _publish_live(run_id, {"event": "done", "payload": None})
+                        return
+                    await asyncio.sleep(0.01)
+                # Fallback: no observer appeared; push done so the route unblocks.
+                await _publish_live(run_id, {"event": "done", "payload": None})
+
+            publisher_task = asyncio.create_task(_publisher())
+
+            # 4. GET the SSE stream.  ASGITransport buffers the entire body, so
+            #    this await returns only after the generator yields done + stops.
+            events_resp = await asyncio.wait_for(
+                client.get(
+                    f"/api/runs/{run_id}/events",
+                    headers=harness.headers(harness.owner),
+                ),
+                timeout=10.0,
+            )
+            await publisher_task
+
+        # 5. Assertions on status and content-type.
+        assert events_resp.status_code == 200, events_resp.text
+        assert "text/event-stream" in events_resp.headers.get("content-type", "")
+
+        body = events_resp.text
+        assert "event: done" in body, f"no done event in: {body!r}"
+
+        # 6. Verify SSE frame shape: every frame must have event: + data: lines,
+        #    and the data JSON must contain an 'event' key (envelope check).
+        frames: list[dict[str, Any]] = []
+        for chunk in body.split("\n\n"):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            lines = chunk.splitlines()
+            ev_line = next((ln for ln in lines if ln.startswith("event: ")), None)
+            data_line = next((ln for ln in lines if ln.startswith("data: ")), None)
+            assert ev_line is not None, f"SSE frame missing 'event:' line: {chunk!r}"
+            assert data_line is not None, f"SSE frame missing 'data:' line: {chunk!r}"
+            parsed = json.loads(data_line[len("data: "):])
+            assert "event" in parsed, f"SSE data JSON missing 'event' key: {parsed}"
+            frames.append(parsed)
+
+        done_frames = [f for f in frames if f["event"] == "done"]
+        assert len(done_frames) == 1, f"expected exactly one done frame, got: {done_frames}"
+
+        _live_observers.pop(run_id, None)
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=15.0))

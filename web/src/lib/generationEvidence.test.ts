@@ -442,11 +442,15 @@ describe("closeRun and done event", () => {
     expect(closed.closed).toBe(true);
   });
 
-  it("marks questions without terminal as unknown", () => {
+  it("does not change processing on stream loss (unknown reserved for applyPollReadFailed)", () => {
+    // Per spec: "unknown" is ONLY for persisted-state-unreadable (pollReadFailed).
+    // Stream loss (closeRun) must leave processing unchanged so the UI can
+    // distinguish between the two failure modes.
     const state = freshRun();
     const closed = closeRun(state);
-    expect(closed.questions["q_001"].processing).toBe("unknown");
-    expect(closed.questions["q_002"].processing).toBe("unknown");
+    // Questions were "waiting" before the run closed; they stay "waiting".
+    expect(closed.questions["q_001"].processing).toBe("waiting");
+    expect(closed.questions["q_002"].processing).toBe("waiting");
   });
 
   it("sets finalMissing for questions that had finalPending", () => {
@@ -814,7 +818,9 @@ describe("issue #747 A/B/C/D real-publisher transport fixture", () => {
     expect(c.terminal?.has_final).toBe(false);
     expect(d.content.receipt).toBe("final");
     expect(d.terminal).toBeNull();
-    expect(d.processing).toBe("unknown");
+    // D received a final result but no question_terminal yet — processing stays
+    // "running" (not "unknown"; that is reserved for applyPollReadFailed).
+    expect(d.processing).toBe("running");
     expect(selectEndedCount(state)).toBe(3);
     expect(selectFinalReceivedCount(state)).toBe(3);
   });

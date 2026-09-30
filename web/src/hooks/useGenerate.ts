@@ -20,7 +20,7 @@ import {
   DETACHED_RUN_PROTOCOL_VERSION,
   type RunSnapshot,
 } from "../lib/runSnapshot";
-import { closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
+import { applyPollReadFailed, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
 import { ApiError, getRun } from "../api/client";
 import {
   formatResolverFieldErrors,
@@ -659,6 +659,20 @@ export function useGenerate(): UseGenerateReturn {
       stopWatching();
     };
   }, [endOperation, stopWatching]);
+
+  // When three or more consecutive poll attempts fail, mark questions that have
+  // no terminal as "unknown" (persisted state unavailable).  This is the only
+  // place where processing becomes "unknown"; stream loss (closeRun) does not.
+  useEffect(() => {
+    if (pollReadFailCount < 3) return;
+    const prev = evidenceRef.current;
+    if (prev === null) return;
+    const next = applyPollReadFailed(prev);
+    if (next !== prev) {
+      evidenceRef.current = next;
+      setEvidence(next);
+    }
+  }, [pollReadFailCount]);
 
   const clearRunState = useCallback(() => {
     setProgressLines([]);
