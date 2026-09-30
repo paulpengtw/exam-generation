@@ -166,45 +166,60 @@ def test_dispatch_model_leaves_non_fable_unchanged(model_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. Config.dispatch_effort
+# 3. Config.dispatch_effort — signature: (requested_model, effort)
+#
+# Rules:
+#   - fable_downgrade=True + requested_model contains "fable" + effort NOT in
+#     EFFORT_LEVELS[FABLE_DOWNGRADE_TARGET] → return "high"
+#   - fable_downgrade=True + requested_model contains "fable" + effort IN
+#     EFFORT_LEVELS[FABLE_DOWNGRADE_TARGET] → return effort unchanged
+#   - fable_downgrade=True + requested_model does NOT contain "fable" → no clamp
+#   - fable_downgrade=False → no clamp regardless of model
+#   - effort is None → None returned
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("effort,expected", [
-    ("xhigh", "high"),
-    ("low", "low"),
-    ("medium", "medium"),
-    ("high", "high"),
-    ("max", "max"),
-])
-def test_dispatch_effort_clamps_xhigh_for_target(effort: str, expected: str) -> None:
+
+def test_dispatch_effort_clamps_xhigh_when_fable_requested_downgrade_on() -> None:
+    """xhigh is clamped to high when fable model is requested with switch on."""
     cfg = Config(api_key="x", fable_downgrade=True)
-    result = cfg.dispatch_effort(effort, FABLE_DOWNGRADE_TARGET)
-    assert result == expected
+    assert cfg.dispatch_effort("claude-fable-5", "xhigh") == "high"
 
 
-def test_dispatch_effort_leaves_xhigh_unchanged_for_non_target() -> None:
-    """xhigh is only clamped when dispatched model is the target."""
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "max"])
+def test_dispatch_effort_leaves_target_roster_efforts_unchanged_on_substitution(
+    effort: str,
+) -> None:
+    """Efforts that ARE in the target's roster are not clamped on substitution."""
     cfg = Config(api_key="x", fable_downgrade=True)
-    # Non-target dispatched model: xhigh unchanged
-    result = cfg.dispatch_effort("xhigh", "claude-fable-5")
+    assert cfg.dispatch_effort("claude-fable-5", effort) == effort
+
+
+def test_dispatch_effort_leaves_xhigh_unchanged_for_direct_opus_call() -> None:
+    """A direct claude-opus-4-6 call with xhigh must NOT be clamped.
+
+    Clamping is only for substituted (fable → opus) calls.
+    """
+    cfg = Config(api_key="x", fable_downgrade=True)
+    result = cfg.dispatch_effort(FABLE_DOWNGRADE_TARGET, "xhigh")
     assert result == "xhigh"
+
+
+def test_dispatch_effort_leaves_xhigh_unchanged_when_switch_off() -> None:
+    """With switch off, no clamping even if model contains 'fable'."""
+    cfg = Config(api_key="x", fable_downgrade=False)
+    assert cfg.dispatch_effort("claude-fable-5", "xhigh") == "xhigh"
+
+
+def test_dispatch_effort_leaves_xhigh_unchanged_for_non_fable_model() -> None:
+    """Non-fable model with xhigh is never clamped."""
+    cfg = Config(api_key="x", fable_downgrade=True)
+    assert cfg.dispatch_effort("claude-opus-5", "xhigh") == "xhigh"
 
 
 def test_dispatch_effort_none_effort_unchanged() -> None:
     cfg = Config(api_key="x", fable_downgrade=True)
-    result = cfg.dispatch_effort(None, FABLE_DOWNGRADE_TARGET)
+    result = cfg.dispatch_effort("claude-fable-5", None)
     assert result is None
-
-
-def test_dispatch_effort_when_switch_off() -> None:
-    cfg = Config(api_key="x", fable_downgrade=False)
-    result = cfg.dispatch_effort("xhigh", FABLE_DOWNGRADE_TARGET)
-    # Even if dispatched_model happens to match TARGET, effort is only clamped
-    # when it's because of a substitution; but dispatch_effort itself doesn't
-    # know about fable_downgrade — it clamps whenever model matches TARGET.
-    # This is fine: with switch off, dispatch_model returns original model,
-    # so this method is only ever called with target when substitution happened.
-    assert result == "high"
 
 
 # ---------------------------------------------------------------------------

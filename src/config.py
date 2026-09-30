@@ -150,17 +150,25 @@ class Config:
             return FABLE_DOWNGRADE_TARGET
         return model
 
-    def dispatch_effort(self, effort: str | None, dispatched_model: str) -> str | None:
-        """Clamp effort for the dispatched model.
+    def dispatch_effort(self, requested_model: str, effort: str | None) -> str | None:
+        """Clamp effort when the fable-downgrade switch substituted the model.
 
-        When ``dispatched_model`` is ``FABLE_DOWNGRADE_TARGET`` and ``effort``
-        is ``"xhigh"`` (not accepted by that model), returns ``"high"`` instead.
-        All other effort values and non-target dispatched models are returned
-        unchanged.  This is called *after* ``dispatch_model`` so the caller
-        already holds the effective model id.
+        When ``fable_downgrade`` is True and ``requested_model`` contains
+        ``"fable"`` (i.e. ``dispatch_model`` would substitute it), returns
+        ``"high"`` when ``effort`` is not in ``EFFORT_LEVELS[FABLE_DOWNGRADE_TARGET]``;
+        otherwise returns ``effort`` unchanged.
+
+        A direct call to ``FABLE_DOWNGRADE_TARGET`` (e.g. ``claude-opus-4-6``)
+        with an unsupported effort is **not** clamped — clamping applies only
+        when the substitution actually happened.  With the switch off, this
+        method is a no-op.
         """
-        if dispatched_model == FABLE_DOWNGRADE_TARGET and effort == "xhigh":
-            return "high"
+        if effort is None:
+            return None
+        if self.fable_downgrade and "fable" in requested_model.lower():
+            target_levels = EFFORT_LEVELS.get(FABLE_DOWNGRADE_TARGET, FOUR_EFFORT_LEVELS)
+            if effort not in target_levels:
+                return "high"
         return effort
 
     def validate(self) -> None:
