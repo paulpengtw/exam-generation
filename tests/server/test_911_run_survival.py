@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -374,7 +373,6 @@ def test_resume_skips_already_ended_questions(tmp_path: Path) -> None:
     run. The ended question must not receive a new generation_record, while
     the unfinished question does get processed.
     """
-    from server.generate.persistence import persist_generation_record  # noqa: PLC0415
 
     env = _Env(tmp_path)
 
@@ -932,7 +930,9 @@ def test_attempt_number_tagged_in_trail_entries(tmp_path: Path) -> None:
     # Collect trail entries emitted during generation.
     trail_entries: list[dict] = []
 
-    def _patched_make_recorder(*, generation_log_id, loop, session_factory, attempt=1, prior_entries=None):  # noqa: ANN001, ANN202
+    def _patched_make_recorder(  # noqa: ANN001, ANN202
+        *, generation_log_id, loop, session_factory, attempt=1, prior_entries=None
+    ):
         recorder = FigurePolicyTrailRecorder(
             generation_log_id, loop, session_factory, attempt=attempt,
             prior_entries=prior_entries,

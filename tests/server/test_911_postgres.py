@@ -9,21 +9,17 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from server.config import ServerConfig
 from server.generate.run import (
-    MAX_ATTEMPTS,
     STALE_THRESHOLD_S,
-    ClaimedRun,
     accept_run,
     claim_next_run,
 )
