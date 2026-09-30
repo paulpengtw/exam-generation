@@ -55,6 +55,9 @@ logger = logging.getLogger(__name__)
 RUN_PROTOCOL_VERSION = 3
 HEARTBEAT_INTERVAL_S = 30.0
 IDLE_INTERVAL_S = 2.0
+STALE_THRESHOLD_S = 180.0   # 3× heartbeat interval — stale after 3 minutes
+MAX_ATTEMPTS = 3             # maximum host-loop retries before giving up
+TIME_LIMIT_S = 7200.0        # 2-hour wall-clock limit per run (from started_at)
 
 # Statuses a 生成執行 moves through; 人工審題修正 logs stay "started" and never
 # enter this set, so the claim cannot pick them up.
@@ -137,6 +140,13 @@ Clock = Callable[[], datetime]
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _utc_aware(dt: datetime) -> datetime:
+    """Return *dt* with UTC tzinfo, adding it when the datetime is naive (SQLite stores naive)."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def default_host_id() -> str:
@@ -504,20 +514,31 @@ async def claim_next_run(
     *,
     host_id: str,
     now: datetime | None = None,
+    stale_threshold_s: float = STALE_THRESHOLD_S,
 ) -> ClaimedRun | None:
-    """Claim the oldest queued run whose owner has no run executing.
+    """Claim the oldest eligible run: queued runs whose owner has no live run,
+    or stale ``running`` runs whose heartbeat has not been updated in at least
+    ``stale_threshold_s`` seconds (i.e. the original host crashed).
 
     ``FOR UPDATE SKIP LOCKED`` lets concurrent hosts claim different runs
     without blocking each other; SQLite ignores the clause.
     """
+    from datetime import timedelta  # noqa: PLC0415 – local import to keep top-level clean
     claimed_at = now if now is not None else _utcnow()
+    stale_cutoff = claimed_at - timedelta(seconds=stale_threshold_s)
+
     running = aliased(GenerationLog)
     owner_is_running = (
         select(running.id)
         .where(running.user_id == GenerationLog.user_id, running.status == "running")
         .exists()
     )
+    # A stale run is "running" but its heartbeat_at is too old.  Its *own*
+    # teacher record still has a "running" entry (this run itself), so we must
+    # not apply the owner_is_running filter to stale runs — they are their own
+    # "running" entry.  We limit stale reclaims to runs with attempts < MAX_ATTEMPTS.
     async with session_factory() as session:
+        # 1. Try a fresh queued run first.
         log = (
             await session.execute(
                 select(GenerationLog)
@@ -527,6 +548,23 @@ async def claim_next_run(
                 .with_for_update(skip_locked=True)
             )
         ).scalar_one_or_none()
+
+        if log is None:
+            # 2. Fall back to a stale running run.
+            log = (
+                await session.execute(
+                    select(GenerationLog)
+                    .where(
+                        GenerationLog.status == "running",
+                        GenerationLog.heartbeat_at <= stale_cutoff,
+                        GenerationLog.attempts < MAX_ATTEMPTS,
+                    )
+                    .order_by(GenerationLog.started_at, GenerationLog.id)
+                    .limit(1)
+                    .with_for_update(skip_locked=True)
+                )
+            ).scalar_one_or_none()
+
         if log is None:
             await session.rollback()
             return None
@@ -822,6 +860,10 @@ class _QuestionStateRecorder:
 # ---------------------------------------------------------------------------
 
 
+class _TimeLimitExceededError(Exception):
+    """Internal sentinel: 2-hour wall-clock limit reached for a generation run."""
+
+
 async def _heartbeat(
     run_id: uuid.UUID,
     host_id: str,
@@ -830,26 +872,41 @@ async def _heartbeat(
     interval: float,
     clock: Clock,
     confirmed_cancel_event: threading.Event | None = None,
+    time_limit_exceeded_event: threading.Event | None = None,
+    time_limit_s: float = TIME_LIMIT_S,
 ) -> None:
     while True:
         await asyncio.sleep(interval)
         try:
             async with session_factory() as session:
+                now = clock()
                 await session.execute(
                     update(GenerationLog)
                     .where(GenerationLog.id == run_id, GenerationLog.claimed_by == host_id)
-                    .values(heartbeat_at=clock())
+                    .values(heartbeat_at=now)
                 )
                 await session.commit()
                 # Check cancel_requested on every heartbeat (issue #910).
                 if confirmed_cancel_event is not None and not confirmed_cancel_event.is_set():
-                    flag = (
+                    row = (
                         await session.execute(
-                            select(GenerationLog.cancel_requested).where(GenerationLog.id == run_id)
+                            select(GenerationLog.cancel_requested, GenerationLog.started_at)
+                            .where(GenerationLog.id == run_id)
                         )
-                    ).scalar_one_or_none()
-                    if flag:
-                        confirmed_cancel_event.set()
+                    ).one_or_none()
+                    if row is not None:
+                        flag, started_at = row
+                        if flag:
+                            confirmed_cancel_event.set()
+                        # Issue #911: check per-heartbeat time limit.
+                        if (
+                            time_limit_exceeded_event is not None
+                            and not time_limit_exceeded_event.is_set()
+                            and started_at is not None
+                        ):
+                            elapsed = (now - _utc_aware(started_at)).total_seconds()
+                            if elapsed >= time_limit_s:
+                                time_limit_exceeded_event.set()
         except Exception as exc:  # noqa: BLE001 — a missed beat must not stop the run
             logger.warning("run heartbeat failed for %s: %s", run_id, type(exc).__name__)
 
@@ -865,20 +922,44 @@ async def execute_run(
     subjects: Mapping[str, SubjectSpec] | None = None,
     heartbeat_interval: float = HEARTBEAT_INTERVAL_S,
     clock: Clock = _utcnow,
+    time_limit_s: float = TIME_LIMIT_S,
 ) -> None:
     """Execute one claimed run to the end and persist its outcome."""
+    run_str_id = str(claimed.run_id)
+
+    # Issue #911: enforce attempt limit before spending any resources.
+    if claimed.attempt > MAX_ATTEMPTS:
+        recorder_pre = _QuestionStateRecorder(claimed.run_id, session_factory)
+        await recorder_pre.fail_unfinished("recovery_exhausted")
+        async with session_factory() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == claimed.run_id)
+                .values(status="failed", error="recovery_exhausted", completed_at=clock())
+            )
+            await session.commit()
+        logger.warning(
+            "run %s exceeded MAX_ATTEMPTS (%d); marked failed", claimed.run_id, MAX_ATTEMPTS
+        )
+        return
+
     # issue #910: a shared event signals the generation pipeline to cancel.
     confirmed_cancel_event = threading.Event()
+    # Issue #911: time-limit exceeded event (set by heartbeat or pre-check).
+    time_limit_exceeded_event = threading.Event()
     recorder = _QuestionStateRecorder(
         claimed.run_id, session_factory, confirmed_cancel_event=confirmed_cancel_event
     )
     heartbeat = asyncio.create_task(
         _heartbeat(
-            claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock,
+            claimed.run_id, host_id, session_factory,
+            interval=heartbeat_interval,
+            clock=clock,
             confirmed_cancel_event=confirmed_cancel_event,
+            time_limit_exceeded_event=time_limit_exceeded_event,
+            time_limit_s=time_limit_s,
         )
     )
-    run_str_id = str(claimed.run_id)
     # Initialise the live observer slot so is_live_available() returns True
     # for this run as soon as execution begins.
     async with _get_lock():
@@ -888,16 +969,41 @@ async def execute_run(
     params: GenerateParams | None = None
     try:
         params = GenerateParams.model_validate(claimed.params_json)
-        # Check cancel_requested at the start of execution — covers the race where a
-        # queued run is cancelled between being claimed and execution starting (issue #910).
+        # Check cancel_requested and time limit at the start of execution.
         async with session_factory() as _check_session:
-            _flag = (
+            _row = (
                 await _check_session.execute(
-                    select(GenerationLog.cancel_requested).where(GenerationLog.id == claimed.run_id)
+                    select(GenerationLog.cancel_requested, GenerationLog.started_at)
+                    .where(GenerationLog.id == claimed.run_id)
                 )
-            ).scalar_one_or_none()
-            if _flag:
-                confirmed_cancel_event.set()
+            ).one_or_none()
+            if _row is not None:
+                _flag, _started_at = _row
+                if _flag:
+                    confirmed_cancel_event.set()
+                # Issue #911: check 2h limit at execution start too.
+                if _started_at is not None:
+                    if (clock() - _utc_aware(_started_at)).total_seconds() >= time_limit_s:
+                        time_limit_exceeded_event.set()
+
+        # Issue #911: if time limit already exceeded, skip generation.
+        if time_limit_exceeded_event.is_set():
+            raise _TimeLimitExceededError("time_limit exceeded before generation started")
+
+        # Issue #911: load already-ended question IDs for resume support.
+        skip_question_ids: frozenset[str] = frozenset()
+        async with session_factory() as _resume_session:
+            _ended_rows = (
+                await _resume_session.execute(
+                    select(GenerationQuestionState.question_id)
+                    .where(
+                        GenerationQuestionState.generation_log_id == claimed.run_id,
+                        GenerationQuestionState.termination_reason.is_not(None),
+                    )
+                )
+            ).scalars().all()
+            skip_question_ids = frozenset(_ended_rows)
+
         async for event in generate_question_stream(
             params,
             config,
@@ -908,7 +1014,11 @@ async def execute_run(
             session_factory=session_factory,
             client_factory=client_factory,
             confirmed_cancel_event=confirmed_cancel_event,
+            skip_question_ids=skip_question_ids,
         ):
+            # Issue #911: abort stream on time limit.
+            if time_limit_exceeded_event.is_set():
+                raise _TimeLimitExceededError("time_limit exceeded during generation")
             if event.get("event") == SSEEventName.ERROR:
                 status = "failed"
                 payload = event.get("payload")
@@ -919,6 +1029,10 @@ async def execute_run(
                 )
             await recorder.observe(event)
             await _publish_live(run_str_id, event)
+    except _TimeLimitExceededError:
+        status = "failed"
+        error = "time_limit"
+        logger.info("run %s reached 2h time limit; terminating", claimed.run_id)
     except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
         status = "failed"
         error = f"Run execution failed ({type(exc).__name__})"
@@ -936,7 +1050,9 @@ async def execute_run(
     # Cancellation overrides any intermediate "completed"/"failed" status (issue #910).
     if confirmed_cancel_event.is_set() and status != "failed":
         status = "cancelled"
-    await recorder.fail_unfinished(error or "question ended without a terminal")
+    # Issue #911: time-limit and recovery_exhausted use a specific terminal reason.
+    unfinished_reason = error or "question ended without a terminal"
+    await recorder.fail_unfinished(unfinished_reason)
     if status == "failed" and params is not None:
         await persist_failed_generation_record(
             user_id=claimed.user_id,

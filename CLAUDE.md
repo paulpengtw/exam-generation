@@ -187,6 +187,18 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 **Removed behaviors (intentional).** Observer-disconnect-cancels-run is gone: a client disconnect never affects an in-progress run. SSE wire framing is removed from the v3 generate path; live event access is in-process only.
 
+### Runs survive host failure — stale detection and resume (issue #911)
+
+**Stale requeue.** A `running` run whose `heartbeat_at` is more than 3 minutes old (invariant: stale ≥ 3× heartbeat interval of 30 s) is treated as abandoned. `claim_next_run` uses a two-phase query: first a fresh `queued` run (same `~owner_is_running` filter), then a stale `running` run. The stale query does NOT apply `owner_is_running` (the stale run itself is the owner's "running" entry). Constants: `STALE_THRESHOLD_S = 180.0`, `MAX_ATTEMPTS = 3`.
+
+**Attempt limit.** `GenerationLog.attempts` is incremented on each claim. When `claimed.attempt > MAX_ATTEMPTS`, `execute_run` skips generation, calls `recorder.fail_unfinished("recovery_exhausted")` on all still-unfinished questions, and marks the run `status="failed", error="recovery_exhausted"`.
+
+**2-hour time limit.** Each heartbeat checks `(now - started_at).total_seconds() >= TIME_LIMIT_S (7200)` and sets `time_limit_exceeded_event`. `execute_run` also checks at start and polls after each event. When exceeded, `_TimeLimitExceededError` is raised, unfinished questions get `fail_unfinished("time_limit")`, and the run is marked `status="failed", error="time_limit"`. Cancellation reuses the cancel flag and `termination_reason="failed"` (not `"cancelled"`).
+
+**Resume (skip already-ended questions).** At the start of each attempt, `execute_run` loads all `question_id` values from `GenerationQuestionState` where `termination_reason IS NOT NULL`. These are passed as `skip_question_ids: frozenset[str]` to `generate_question_stream` → `_build_run_context` → `_RunContext.skip_question_ids`. The worker-futures loop skips manifest slots whose `question_id` is in the set. No duplicate `generation_records` are created because the `(generation_log_id, question_id)` unique constraint (issue #907) prevents re-insert. `read_run` always returns the latest persisted state.
+
+**Termination reason codes.** `recovery_exhausted` and `time_limit` are `unknown_reason` strings on a `termination_reason="failed"` terminal (produced by `_unfinished_terminal(reason)`). The frontend QuestionCard renders `card.termination_recovery_exhausted` and `card.termination_time_limit` i18n keys by inspecting `terminal.unknown_reason`.
+
 ### Generation stream protocol v2 (issue #742)
 
 **Removed on this branch** — `SUPPORTED_STREAM_VERSIONS` now contains only `3`. The description below is retained for historical reference; the v2 SSE path no longer exists on `wip/908-detached-runs`.
