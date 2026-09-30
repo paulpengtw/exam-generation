@@ -73,6 +73,12 @@ export interface RunSnapshot {
   error: string | null;
   /** True when the owner has requested cancellation but not all questions have ended yet. */
   cancel_requested?: boolean;
+  /**
+   * Number of the teacher's own runs (running + queued earlier) that are ahead
+   * of this one in the FIFO queue.  Non-null only when status === "queued".
+   * 0 means this run is next.
+   */
+  queue_position?: number;
   questions: RunSnapshotQuestion[];
   live_events_available?: boolean;
 }
@@ -190,6 +196,9 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
     error: stringOrNull(raw.error),
     questions,
     cancel_requested: raw.cancel_requested === true ? true : undefined,
+    queue_position: typeof raw.queue_position === "number" && Number.isInteger(raw.queue_position) && raw.queue_position >= 0
+      ? raw.queue_position
+      : undefined,
     live_events_available: raw.live_events_available === true ? true : undefined,
   };
 }

@@ -142,10 +142,17 @@ it.each(batches)("submits a large complete $subject batch once and reads its res
   await waitFor(() => expect(result.current.status).toBe("idle"), { timeout: 8000 });
   expect(result.current.errorMessage).toBeNull();
   expect(result.current.results).toEqual([{ id: "transport-result", 題目: ["完整題目"] }]);
-  expect(received.filter((r) => r.method === "POST")).toEqual([{
-    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 3 },
+  const postRequests = received.filter((r) => r.method === "POST");
+  expect(postRequests).toHaveLength(1);
+  const sentBody = postRequests[0].body as Record<string, unknown>;
+  // issue #912: submission_key is generated per-press and sent in the body.
+  expect(typeof sentBody.submission_key).toBe("string");
+  expect(sentBody.submission_key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(postRequests[0]).toEqual({
+    url: "/api/generate", method: "POST",
+    body: { ...payload, stream_version: 3, submission_key: sentBody.submission_key },
     authorization: "Bearer test-token",
-  }]);
+  });
   // Everything after the submission is a read of the run, never a write.
   expect(received.slice(1).every((r) => r.method === "GET" && r.url === "/api/runs/transport-run")).toBe(true);
   expect(received.slice(1).every((r) => r.authorization === "Bearer test-token")).toBe(true);
@@ -213,8 +220,13 @@ it("shows the nested field and validation message when a malformed POST is rejec
   expect(`${error.message} ${JSON.stringify(error)} ${JSON.stringify(context)}`).not.toContain("PRIVATE_");
   // A rejected submission is final: it is not retried.
   await new Promise((resolve) => setTimeout(resolve, 1100));
-  expect(received).toEqual([{
-    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 3 },
+  expect(received).toHaveLength(1);
+  const rejBody = received[0].body as Record<string, unknown>;
+  // issue #912: submission_key is sent on every POST.
+  expect(typeof rejBody.submission_key).toBe("string");
+  expect(received[0]).toEqual({
+    url: "/api/generate", method: "POST",
+    body: { ...payload, stream_version: 3, submission_key: rejBody.submission_key },
     authorization: "Bearer test-token",
-  }]);
+  });
 });

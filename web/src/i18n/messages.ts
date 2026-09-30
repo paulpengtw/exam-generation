@@ -157,6 +157,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_cancel": "Cancel",
     "generate.btn_cancel_pending": "Cancelling…",
     "generate.cancel_error": "Failed to cancel generation. Please try again.",
+    "generate.queue_position": "Queued · {k} ahead",
+    "generate.queue_limit": "You already have the maximum number of queued generation runs. Please wait for one to complete before submitting a new one.",
 
     "history.title": "Generation history",
     "history.nav_link": "History",
@@ -830,6 +832,8 @@ export const MESSAGES: Record<Lang, Record<string, string>> = {
     "generate.btn_cancel": "取消",
     "generate.btn_cancel_pending": "取消中…",
     "generate.cancel_error": "取消出題失敗，請再試一次。",
+    "generate.queue_position": "排隊中 · 前面還有 {k} 個",
+    "generate.queue_limit": "你目前已有最多數量的排隊出題任務，請等待其中一個完成後再送出新任務。",
 
     "history.title": "產生紀錄",
     "history.nav_link": "紀錄",

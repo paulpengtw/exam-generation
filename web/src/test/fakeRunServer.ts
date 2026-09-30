@@ -34,6 +34,12 @@ export interface FakeRunServer {
   setAcceptance(accepted: AcceptedRun): void;
   /** Make every poll reject like a dropped connection until cleared. */
   dropConnection(dropped: boolean): void;
+  /**
+   * Make POST /api/generate throw TypeError (network error) until cleared.
+   * Unlike failSubmit (which returns an HTTP error), this simulates a
+   * connection-level failure so useGenerate keeps the submission key for retry.
+   */
+  dropSubmitConnection(dropped: boolean): void;
   /** Next cancel request answers with this status/body instead of a 200. */
   failCancel(status: number, body: unknown): void;
   restore(): void;
@@ -63,6 +69,7 @@ export function installFakeRunServer(): FakeRunServer {
   let cancelFailure: { status: number; body: unknown } | null = null;
   let acceptance: AcceptedRun | null = null;
   let dropped = false;
+  let submitDropped = false;
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
@@ -74,6 +81,7 @@ export function installFakeRunServer(): FakeRunServer {
     requests.push({ method, url, headers: headersOf(init), body });
 
     if (method === "POST" && url === "/api/generate") {
+      if (submitDropped) throw new TypeError("Failed to fetch");
       if (submitFailure) {
         const failure = submitFailure;
         submitFailure = null;
@@ -118,6 +126,7 @@ export function installFakeRunServer(): FakeRunServer {
     failCancel: (status, body) => { cancelFailure = { status, body }; },
     setAcceptance: (accepted) => { acceptance = accepted; },
     dropConnection: (value) => { dropped = value; },
+    dropSubmitConnection: (value) => { submitDropped = value; },
     restore: () => { vi.stubGlobal("fetch", originalFetch); },
   };
 }

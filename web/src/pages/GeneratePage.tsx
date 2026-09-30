@@ -143,6 +143,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     resume,
     pollReadFailed,
     cancelRequested,
+    queuePosition,
     cancelRun,
   } = useGenerate();
   // A detached run is addressed by `?run=<id>` (issue #908): closing the page
@@ -752,6 +753,16 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             />
             {pollReadFailed && (
               <div role="status">{t("generate.run_read_unavailable")}</div>
+            )}
+            {/* issue #912: queue position — shown while the run is queued */}
+            {status === "generating" && queuePosition != null && (
+              <div
+                role="status"
+                data-testid="queue-position-notice"
+                className="mt-2 text-sm text-amber-700"
+              >
+                {t("generate.queue_position").replace("{k}", String(queuePosition))}
+              </div>
             )}
             {/* issue #910: cancel button — shown while the run is active */}
             {status === "generating" && (

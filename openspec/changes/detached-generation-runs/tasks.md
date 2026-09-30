@@ -16,12 +16,12 @@
 
 ## 3. 生成執行 module (slice 3, backend)
 
-- [ ] 3.1 Implement `accept_run(params, user, submission_key)`. It writes the log (`queued`) and the waiting question states in one transaction, returns the run ID and manifest, returns the existing run for a repeated key, and rejects a sixth queued run. Verify: tests for the atomic write, the duplicate key and the queue limit pass.
+- [x] 3.1 Implement `accept_run(params, user, submission_key)`. It writes the log (`queued`) and the waiting question states in one transaction, returns the run ID and manifest, returns the existing run for a repeated key, and rejects a sixth queued run. Verify: tests for the atomic write, the duplicate key and the queue limit pass.
 - [ ] 3.2 Implement claiming with `SELECT … FOR UPDATE SKIP LOCKED`. It must enforce one running run per teacher, per-host limit N, stale-run requeue after 3 min, and 3 attempts followed by `recovery_exhausted` failure. Verify: Postgres-marked tests show two concurrent claimers never claim the same run, and stale requeue and attempt exhaustion work with a fake clock.
 - [ ] 3.3 Implement run execution. It reuses `_build_run_context` and the 子題產生器 pipeline, skips questions already ended, and writes `current_step` at each 生成步驟. It records `termination_reason` and `terminal_json` exactly once, and runs a heartbeat task that enforces the 2 h ceiling (`time_limit`). Verify: tests for resume skipping ended questions, the first-recorded-wins outcome and the time limit (fake clock) pass.
 - [x] 3.4 Implement `cancel_run`. It sets `cancel_requested`, which the host checks on each heartbeat and at each 生成步驟 boundary, then sets `confirmed_cancel_event`. It is owner-only, and a no-op once every question has ended. Verify: tests for the cancel mid-run, cancel-versus-completion and non-owner rejection cases pass.
 - [ ] 3.5 Implement `run_host_loop(stop_event, …)` and start it in the `server/app.py` lifespan behind `GENERATION_HOST_ENABLED`. Add a `server/worker.py` `__main__` entry point that runs the same loop. Verify: a test starts the loop, runs a stub run to completion and stops cleanly, and `python -m server.worker` starts locally.
-- [ ] 3.6 Add the routes:
+- [x] 3.6 Add the routes:
   - `POST /api/generate` returns 202 with `stream_version=3`; versions 2 or absent get 426; a limit breach gets 429.
   - `GET /api/runs`
   - `GET /api/runs/{id}`
@@ -32,12 +32,12 @@
 
 ## 4. Frontend (slice 3)
 
-- [ ] 4.1 Make `useGenerate` generate a submission key per 確定發送, submit, then poll `GET /api/runs/{id}` (about 3 s while visible, slower when hidden). Remove the abort on unmount and reset. Verify: `useGenerate.test.ts` covers the key reuse on retry, polling, and unmount not cancelling.
+- [x] 4.1 Make `useGenerate` generate a submission key per 確定發送, submit, then poll `GET /api/runs/{id}` (about 3 s while visible, slower when hidden). Remove the abort on unmount and reset. Verify: `useGenerate.test.ts` covers the key reuse on retry, polling, and unmount not cancelling.
 - [x] 4.2 Add a persisted-state adapter feeding `generationEvidence`, so cards, the 生成進度列 and 已結束 X/N / 收到最終結果 Y counts combine live and persisted evidence without double counting. Verify: vitest cases from the modified `per-question-live-progress` scenarios pass, including counts after returning and connection loss.
 - [x] 4.3 Add the Cancel control with an immediate 取消中 state. Verify: a component test shows 取消中, then the cancelled 終止原因 from polled state.
 - [ ] 4.4 Add the 「尚未結束」 section to `HistoryPage` with 「排隊中 · 前面還有 k 個」, and move ended runs into the normal list. Verify: `HistoryPage` tests for queued, executing and ended runs pass.
 - [ ] 4.5 Add the navigation badge for newly ended runs, with a per-browser last-seen marker wrapped in try/catch. Verify: a component test shows the badge appears after a run ends and clears once viewed.
-- [ ] 4.6 Add the i18n strings (尚未結束, 排隊中, 取消中, the queue-limit message, the recovery-exhausted and time-limit reasons) for every locale. Verify: the i18n completeness test passes.
+- [x] 4.6 Add the i18n strings (尚未結束, 排隊中, 取消中, the queue-limit message, the recovery-exhausted and time-limit reasons) for every locale. Verify: the i18n completeness test passes.
 
 ## 5. Cutover and operations (slice 3 release)
 

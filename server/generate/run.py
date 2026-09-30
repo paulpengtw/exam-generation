@@ -34,7 +34,8 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -147,6 +148,17 @@ def default_host_id() -> str:
 # 受理
 # ---------------------------------------------------------------------------
 
+QUEUE_LIMIT = 5
+"""Maximum number of queued (not yet executing) runs allowed per teacher."""
+
+
+class QueueLimitError(Exception):
+    """Raised by ``accept_run`` when a teacher already has ``QUEUE_LIMIT`` queued runs.
+
+    The ``run_id`` attribute is always ``None``; callers must turn this into an
+    HTTP 429 response with a stable ``code`` and a localizable ``detail``.
+    """
+
 
 @dataclasses.dataclass(frozen=True)
 class AcceptedRun:
@@ -163,28 +175,96 @@ class AcceptedRun:
         }
 
 
+async def _build_accepted_run_from_log(
+    log: GenerationLog,
+    session: AsyncSession,
+) -> AcceptedRun:
+    """Reconstruct an ``AcceptedRun`` from an existing ``GenerationLog``."""
+    states = (
+        await session.execute(
+            select(GenerationQuestionState)
+            .where(GenerationQuestionState.generation_log_id == log.id)
+            .order_by(GenerationQuestionState.index)
+        )
+    ).scalars().all()
+    return AcceptedRun(
+        run_id=str(log.id),
+        total=len(states),
+        questions=[
+            {"index": s.index, "question_id": s.question_id}
+            for s in states
+        ],
+    )
+
+
 async def accept_run(
     params: GenerateParams,
     user_id: uuid.UUID,
     *,
     session: AsyncSession,
 ) -> AcceptedRun:
-    """Record a queued run and its waiting questions in one transaction."""
+    """Record a queued run and its waiting questions in one transaction.
+
+    Deduplication: when *params.submission_key* is provided and a run already
+    exists for ``(user_id, submission_key)``, the original ``AcceptedRun`` is
+    returned without creating anything new (idempotent retry after a network
+    error).  The duplicate-key retry bypasses the queue-limit check so the
+    teacher always gets their run back.
+
+    Queue limit: if the teacher already has ``QUEUE_LIMIT`` queued runs *and*
+    this is not a dedup retry, ``QueueLimitError`` is raised and nothing is
+    created.  A race where two concurrent requests both pass the limit check is
+    resolved by whichever ``INSERT`` wins; the loser catches ``IntegrityError``
+    (from the ``(user_id, submission_key)`` unique constraint) and returns the
+    winner's run.
+
+    Missing submission_key: accepted without dedup (conservative).
+    """
+    submission_key: str | None = params.submission_key
+
+    # --- Dedup check (key present) -------------------------------------------
+    if submission_key is not None:
+        existing_log = (
+            await session.execute(
+                select(GenerationLog).where(
+                    GenerationLog.user_id == user_id,
+                    GenerationLog.submission_key == submission_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_log is not None:
+            return await _build_accepted_run_from_log(existing_log, session)
+
+    # --- Queue limit check ---------------------------------------------------
+    queued_count: int = (
+        await session.execute(
+            select(func.count()).select_from(GenerationLog).where(
+                GenerationLog.user_id == user_id,
+                GenerationLog.status == "queued",
+            )
+        )
+    ).scalar_one()
+    if queued_count >= QUEUE_LIMIT:
+        raise QueueLimitError(
+            f"teacher already has {queued_count} queued runs (limit {QUEUE_LIMIT})"
+        )
+
+    # --- Create the run ------------------------------------------------------
     log_id = uuid.uuid4()
     manifest = allocate_manifest(
         SUBJECTS[params.subject].question_id_prefix, str(log_id), max(1, params.count)
     )
-    session.add(
-        GenerationLog(
-            id=log_id,
-            user_id=user_id,
-            params_json=params.model_dump(mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)),
-            status="queued",
-            # Queue order while queued; the first claim restamps it as the
-            # execution start that the time limit is measured from.
-            started_at=_utcnow(),
-        )
+    new_log = GenerationLog(
+        id=log_id,
+        user_id=user_id,
+        params_json=params.model_dump(mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)),
+        status="queued",
+        # Queue order while queued; the first claim restamps it as the
+        # execution start that the time limit is measured from.
+        started_at=_utcnow(),
+        submission_key=submission_key,
     )
+    session.add(new_log)
     session.add_all(
         GenerationQuestionState(
             generation_log_id=log_id,
@@ -194,7 +274,26 @@ async def accept_run(
         )
         for question in manifest
     )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Race: another concurrent request with the same submission_key committed
+        # first.  Roll back, look up the winner and return it.
+        await session.rollback()
+        if submission_key is not None:
+            winner = (
+                await session.execute(
+                    select(GenerationLog).where(
+                        GenerationLog.user_id == user_id,
+                        GenerationLog.submission_key == submission_key,
+                    )
+                )
+            ).scalar_one_or_none()
+            if winner is not None:
+                return await _build_accepted_run_from_log(winner, session)
+        # No submission_key or race resolved in an unexpected way: re-raise.
+        raise
+
     return AcceptedRun(
         run_id=str(log_id),
         total=len(manifest),
@@ -279,6 +378,30 @@ async def read_run(
             "error": state.error,
             "result": result,
         })
+    # --- Queue position (per-teacher; only meaningful when queued) -----------
+    # Count the teacher's own runs that are ahead of this one:
+    # running runs (exactly one possible) plus queued runs that were queued
+    # earlier (smaller started_at, or same started_at but smaller id).
+    queue_position: int | None = None
+    if log.status == "queued":
+        running_log = aliased(GenerationLog)
+        ahead_count: int = (
+            await session.execute(
+                select(func.count()).select_from(running_log).where(
+                    running_log.user_id == user_id,
+                    running_log.status.in_(["running", "queued"]),
+                    running_log.id != log_id,
+                    (running_log.status == "running")
+                    | (running_log.started_at < log.started_at)
+                    | (
+                        (running_log.started_at == log.started_at)
+                        & (running_log.id < log_id)
+                    ),
+                )
+            )
+        ).scalar_one()
+        queue_position = ahead_count
+
     return {
         "run_id": str(log.id),
         "status": log.status,
@@ -288,9 +411,70 @@ async def read_run(
         "completed_at": _iso(log.completed_at),
         "error": log.error,
         "cancel_requested": log.cancel_requested,
+        "queue_position": queue_position,
         "questions": questions,
         "live_events_available": is_live_available(str(log.id)),
     }
+
+
+async def list_runs(
+    user_id: uuid.UUID,
+    *,
+    session: AsyncSession,
+) -> list[dict[str, Any]]:
+    """Return summary rows for all of the owner's runs, newest first.
+
+    Each row includes ``queue_position`` (non-null only when the run is
+    ``queued``).  The result is ordered by ``started_at DESC, id DESC`` so
+    newly accepted runs appear at the top.
+    """
+    logs = (
+        await session.execute(
+            select(GenerationLog)
+            .where(GenerationLog.user_id == user_id)
+            .order_by(GenerationLog.started_at.desc(), GenerationLog.id.desc())
+        )
+    ).scalars().all()
+
+    if not logs:
+        return []
+
+    # Compute queue_position for each queued run in a single pass.
+    # Order the full set by (started_at, id) ascending; a run's position is the
+    # count of running/queued runs that come before it in that ordering.
+    running_or_queued = [
+        (log.started_at, log.id, log.status)
+        for log in logs
+        if log.status in ("running", "queued")
+    ]
+    # Sort by (started_at, id) ascending — same order as the claim loop.
+    running_or_queued.sort(key=lambda t: (t[0], t[1]))
+    # Build a map: run_id → queue_position (0-based count of runs ahead).
+    ahead_count_map: dict[uuid.UUID, int] = {}
+    running_seen = 0
+    queued_seen = 0
+    for started_at, rid, st in running_or_queued:
+        if st == "running":
+            ahead_count_map[rid] = running_seen + queued_seen
+            running_seen += 1
+        else:  # "queued"
+            ahead_count_map[rid] = running_seen + queued_seen
+            queued_seen += 1
+
+    rows = []
+    for log in logs:
+        queue_position: int | None = (
+            ahead_count_map.get(log.id) if log.status == "queued" else None
+        )
+        rows.append({
+            "run_id": str(log.id),
+            "status": log.status,
+            "subject": log.params_json.get("subject"),
+            "started_at": _iso(log.started_at),
+            "completed_at": _iso(log.completed_at),
+            "queue_position": queue_position,
+        })
+    return rows
 
 
 # ---------------------------------------------------------------------------

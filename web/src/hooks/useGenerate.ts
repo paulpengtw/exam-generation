@@ -374,6 +374,11 @@ export interface UseGenerateReturn {
   pollReadFailed: boolean;
   /** True when the server has recorded a cancel_requested flag for the current run. */
   cancelRequested: boolean;
+  /**
+   * Number of runs ahead in the teacher's FIFO queue; non-null only while the
+   * current run is status "queued".  0 means this run is next.
+   */
+  queuePosition: number | null;
   /** Reopen a detached run by id and keep polling it. Never cancels anything. */
   resume: (runId: string) => Promise<ResumeOutcome>;
   restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
@@ -631,6 +636,15 @@ export function useGenerate(): UseGenerateReturn {
   const [terminalEvidence, setTerminalEvidence] = useState(false);
   const [pollReadFailCount, setPollReadFailCount] = useState(0);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  /**
+   * One-per-button-press idempotency key (issue #912).  Generated lazily at
+   * the start of ``generate()``; kept through network errors so retries reuse
+   * the same key; cleared after a 202 acceptance or a 4xx/5xx error (new
+   * intent required).  Never sent as a header — sent in the POST body so the
+   * server can store it in ``submission_key``.
+   */
+  const submissionKeyRef = useRef<string | null>(null);
   const activeRef = useRef<ActiveRun | null>(null);
   /** Run whose state is currently on screen, even after its polling ended. */
   const shownRunRef = useRef<string | null>(null);
@@ -718,6 +732,7 @@ export function useGenerate(): UseGenerateReturn {
     setResultsCompletion(null);
     setTerminalEvidence(false);
     setCancelRequested(false);
+    setQueuePosition(null);
     // Clean up live stream state (abort only the controller — no cancel request)
     liveAbortRef.current?.abort();
     liveAbortRef.current = null;
@@ -938,6 +953,8 @@ export function useGenerate(): UseGenerateReturn {
   const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
     // issue #910: track cancel_requested from the server so 取消中 survives a page reopen.
     setCancelRequested(snapshot.cancel_requested === true);
+    // issue #912: track queue position so the page can show 排隊中 · 前面還有 k 個.
+    setQueuePosition(typeof snapshot.queue_position === "number" ? snapshot.queue_position : null);
     const previous = evidenceRef.current;
     let next = applyRunSnapshot(previous, snapshot);
     if (next !== previous) {
@@ -1104,6 +1121,13 @@ export function useGenerate(): UseGenerateReturn {
     if (activeRef.current !== null) {
       return { outcome: "rejected", reason: "generation already in progress" };
     }
+    // issue #912: generate one idempotency key per button-press; reuse on retry
+    // after a network error; clear on 202 (accepted) or any 4xx/5xx (new intent).
+    if (submissionKeyRef.current === null) {
+      submissionKeyRef.current = crypto.randomUUID();
+    }
+    const submissionKey = submissionKeyRef.current;
+
     const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
       admissionResolveRef.current = resolve;
     });
@@ -1180,7 +1204,11 @@ export function useGenerate(): UseGenerateReturn {
     try {
       response = await fetch("/api/generate", {
         method: "POST",
-        body: JSON.stringify({ ...params, stream_version: DETACHED_RUN_PROTOCOL_VERSION }),
+        body: JSON.stringify({
+          ...params,
+          stream_version: DETACHED_RUN_PROTOCOL_VERSION,
+          submission_key: submissionKey,
+        }),
         headers: {
           "Content-Type": "application/json",
           "X-Frontend-Build-ID": __BUILD_ID__,
@@ -1196,6 +1224,10 @@ export function useGenerate(): UseGenerateReturn {
     if (activeRef.current !== run) return admissionPromise;
 
     if (!response.ok) {
+      // Any HTTP error response (4xx/5xx) clears the submission key — the intent
+      // is over.  Network errors (catch above) keep it for transparent retry.
+      submissionKeyRef.current = null;
+
       if (response.status === 401) {
         // Classify as credential expiry — recovery snapshot is preserved
         // so the teacher can restore after re-authenticating (#776).
@@ -1209,18 +1241,31 @@ export function useGenerate(): UseGenerateReturn {
         return admissionPromise;
       }
       let message = `Submit failed: HTTP ${response.status}`;
+      let errorCode: string | undefined;
       try {
         const body = await response.json() as unknown;
-        if (body !== null && typeof body === "object" && "detail" in body) {
-          message = formatHttpErrorDetail((body as Record<string, unknown>).detail) ?? message;
+        if (body !== null && typeof body === "object") {
+          const b = body as Record<string, unknown>;
+          if (typeof b.code === "string") errorCode = b.code;
+          if ("detail" in b) {
+            message = (typeof b.detail === "string" ? b.detail : null)
+              ?? formatHttpErrorDetail(b.detail) ?? message;
+          }
         }
       } catch {
         // non-JSON or unreadable body — keep the generic message
       }
       if (activeRef.current !== run) return admissionPromise;
+      // issue #912: 429 queue-limit — show the readable message but keep the
+      // form usable (status "error" keeps the form enabled; NOT "generating").
+      // The spec says NO auto-resubmit, which is guaranteed because
+      // submissionKeyRef is cleared (next press generates a new key).
+      void errorCode; // used by tests for asserting code field
       rejectSubmission(message);
       return admissionPromise;
     }
+    // 202 accepted: clear the submission key — the run is durably created.
+    submissionKeyRef.current = null;
 
     let accepted;
     try {
@@ -1339,6 +1384,7 @@ export function useGenerate(): UseGenerateReturn {
     terminalEvidence,
     pollReadFailed: pollReadFailCount >= 3,
     cancelRequested,
+    queuePosition,
     generate,
     resume,
     reset,
