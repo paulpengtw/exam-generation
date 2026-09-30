@@ -778,7 +778,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
                 <button
                   type="button"
                   data-testid="cancel-run-btn"
-                  disabled={isCancelling || cancelFeedback.state === "pending"}
+                  disabled={isCancelling}
                   onClick={() => cancelFeedback.run()}
                   className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >

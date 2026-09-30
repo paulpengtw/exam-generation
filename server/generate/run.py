@@ -212,16 +212,18 @@ async def accept_run(
     user_id: uuid.UUID,
     *,
     session: AsyncSession,
+    submission_key: str | None = None,
+    queue_limit: int = QUEUE_LIMIT,
 ) -> AcceptedRun:
     """Record a queued run and its waiting questions in one transaction.
 
-    Deduplication: when *params.submission_key* is provided and a run already
-    exists for ``(user_id, submission_key)``, the original ``AcceptedRun`` is
-    returned without creating anything new (idempotent retry after a network
-    error).  The duplicate-key retry bypasses the queue-limit check so the
-    teacher always gets their run back.
+    Deduplication: when *submission_key* is provided and a run already exists
+    for ``(user_id, submission_key)``, the original ``AcceptedRun`` is returned
+    without creating anything new (idempotent retry after a network error).
+    The duplicate-key retry bypasses the queue-limit check so the teacher
+    always gets their run back.
 
-    Queue limit: if the teacher already has ``QUEUE_LIMIT`` queued runs *and*
+    Queue limit: if the teacher already has ``queue_limit`` queued runs *and*
     this is not a dedup retry, ``QueueLimitError`` is raised and nothing is
     created.  A race where two concurrent requests both pass the limit check is
     resolved by whichever ``INSERT`` wins; the loser catches ``IntegrityError``
@@ -230,7 +232,10 @@ async def accept_run(
 
     Missing submission_key: accepted without dedup (conservative).
     """
-    submission_key: str | None = params.submission_key
+    # If not supplied as an explicit kwarg, fall back to params.submission_key
+    # so callers that embed the key in the params object still work.
+    if submission_key is None:
+        submission_key = getattr(params, "submission_key", None)
 
     # --- Dedup check (key present) -------------------------------------------
     if submission_key is not None:
@@ -263,9 +268,9 @@ async def accept_run(
             )
         )
     ).scalar_one()
-    if queued_count >= QUEUE_LIMIT:
+    if queued_count >= queue_limit:
         raise QueueLimitError(
-            f"teacher already has {queued_count} queued runs (limit {QUEUE_LIMIT})"
+            f"teacher already has {queued_count} queued runs (limit {queue_limit})"
         )
 
     # --- Create the run ------------------------------------------------------
@@ -436,24 +441,57 @@ async def read_run(
     }
 
 
+_LIST_RUNS_ENDED_LIMIT = 20
+"""Maximum number of ended (completed/failed/cancelled) runs returned by list_runs."""
+
+
 async def list_runs(
     user_id: uuid.UUID,
     *,
     session: AsyncSession,
 ) -> list[dict[str, Any]]:
-    """Return summary rows for all of the owner's runs, newest first.
+    """Return summary rows for the owner's runs, newest first.
+
+    All unfinished (queued/running) runs are always included.  Ended
+    (completed/failed/cancelled) runs are capped at
+    ``_LIST_RUNS_ENDED_LIMIT`` (currently 20) to keep the response size
+    bounded as history grows.
 
     Each row includes ``queue_position`` (non-null only when the run is
     ``queued``).  The result is ordered by ``started_at DESC, id DESC`` so
     newly accepted runs appear at the top.
     """
-    logs = (
+    _UNFINISHED = ("queued", "running")
+    _ENDED_STATUSES = ("completed", "failed", "cancelled")
+
+    # All unfinished runs
+    unfinished_logs = (
         await session.execute(
             select(GenerationLog)
-            .where(GenerationLog.user_id == user_id)
+            .where(
+                GenerationLog.user_id == user_id,
+                GenerationLog.status.in_(_UNFINISHED),
+            )
             .order_by(GenerationLog.started_at.desc(), GenerationLog.id.desc())
         )
     ).scalars().all()
+
+    # Most recent N ended runs
+    ended_logs = (
+        await session.execute(
+            select(GenerationLog)
+            .where(
+                GenerationLog.user_id == user_id,
+                GenerationLog.status.in_(_ENDED_STATUSES),
+            )
+            .order_by(GenerationLog.started_at.desc(), GenerationLog.id.desc())
+            .limit(_LIST_RUNS_ENDED_LIMIT)
+        )
+    ).scalars().all()
+
+    logs = list(unfinished_logs) + list(ended_logs)
+    # Re-sort combined list newest first
+    logs.sort(key=lambda lg: (lg.started_at, lg.id), reverse=True)
 
     if not logs:
         return []
@@ -539,95 +577,130 @@ async def claim_next_run(
     # not apply the owner_is_running filter to stale runs — they are their own
     # "running" entry.  We limit stale reclaims to runs with attempts < MAX_ATTEMPTS.
     async with session_factory() as session:
-        # 1. Try a fresh queued run first.
-        log = (
+        # 1. Try a stale running run first (higher priority — issue #911 fix).
+        # No attempt-limit filter here: a run that has exhausted its attempts
+        # must be *finalised* below, not silently skipped (that was the
+        # stuck-forever bug — issue #911).
+        stale_log = (
             await session.execute(
                 select(GenerationLog)
-                .where(GenerationLog.status == "queued", ~owner_is_running)
+                .where(
+                    GenerationLog.status == "running",
+                    GenerationLog.heartbeat_at <= stale_cutoff,
+                )
                 .order_by(GenerationLog.started_at, GenerationLog.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
         ).scalar_one_or_none()
 
-        if log is None:
-            # 2. Fall back to a stale running run.  No attempt-limit filter here:
-            # a run that has exhausted its attempts must be *finalised* below, not
-            # silently skipped (that was the stuck-forever bug — issue #911).
-            stale_log = (
+        log = None
+        _stale_to_persist: tuple | None = None  # (user_id, id, params_json, reason)
+        if stale_log is not None:
+            # Issue #911: check if this stale run must be finalised instead of
+            # reclaimed.  Two conditions require finalization:
+            # 1. attempts >= MAX_ATTEMPTS  → recovery_exhausted
+            # 2. wall-clock past TIME_LIMIT_S → time_limit
+            # Both checks run inside the same FOR UPDATE SKIP LOCKED transaction
+            # so two racing hosts cannot both finalize the same run.
+            exhausted = stale_log.attempts >= MAX_ATTEMPTS
+            time_exceeded = (
+                stale_log.started_at is not None
+                and (
+                    claimed_at - _utc_aware(stale_log.started_at)
+                ).total_seconds() >= TIME_LIMIT_S
+            )
+            if exhausted or time_exceeded:
+                reason = "time_limit" if time_exceeded else "recovery_exhausted"
+                await session.execute(
+                    update(GenerationQuestionState)
+                    .where(
+                        GenerationQuestionState.generation_log_id == stale_log.id,
+                        GenerationQuestionState.termination_reason.is_(None),
+                    )
+                    .values(
+                        processing="ended",
+                        current_step=None,
+                        termination_reason="failed",
+                        terminal_json=_unfinished_terminal(reason),
+                        updated_at=claimed_at,
+                    )
+                )
+                await session.execute(
+                    update(GenerationLog)
+                    .where(GenerationLog.id == stale_log.id)
+                    .values(status="failed", error=reason, completed_at=claimed_at)
+                )
+                await session.commit()
+                logger.info(
+                    "run %s finalized during claim (%s); attempts=%d",
+                    stale_log.id, reason, stale_log.attempts,
+                )
+                # Persist a failed-run tombstone (best-effort, outside the
+                # FOR UPDATE SKIP LOCKED transaction that just committed).
+                _stale_to_persist = (
+                    stale_log.user_id,
+                    stale_log.id,
+                    dict(stale_log.params_json),
+                    reason,
+                )
+            else:
+                log = stale_log
+
+        if log is None and _stale_to_persist is None:
+            # 2. Fall back to a fresh queued run.
+            log = (
                 await session.execute(
                     select(GenerationLog)
-                    .where(
-                        GenerationLog.status == "running",
-                        GenerationLog.heartbeat_at <= stale_cutoff,
-                    )
+                    .where(GenerationLog.status == "queued", ~owner_is_running)
                     .order_by(GenerationLog.started_at, GenerationLog.id)
                     .limit(1)
                     .with_for_update(skip_locked=True)
                 )
             ).scalar_one_or_none()
 
-            if stale_log is not None:
-                # Issue #911: check if this stale run must be finalised instead of
-                # reclaimed.  Two conditions require finalization:
-                # 1. attempts >= MAX_ATTEMPTS  → recovery_exhausted
-                # 2. wall-clock past TIME_LIMIT_S → time_limit
-                # Both checks run inside the same FOR UPDATE SKIP LOCKED transaction
-                # so two racing hosts cannot both finalize the same run.
-                exhausted = stale_log.attempts >= MAX_ATTEMPTS
-                time_exceeded = (
-                    stale_log.started_at is not None
-                    and (
-                        claimed_at - _utc_aware(stale_log.started_at)
-                    ).total_seconds() >= TIME_LIMIT_S
-                )
-                if exhausted or time_exceeded:
-                    reason = "time_limit" if time_exceeded else "recovery_exhausted"
-                    await session.execute(
-                        update(GenerationQuestionState)
-                        .where(
-                            GenerationQuestionState.generation_log_id == stale_log.id,
-                            GenerationQuestionState.termination_reason.is_(None),
-                        )
-                        .values(
-                            processing="ended",
-                            current_step=None,
-                            termination_reason="failed",
-                            terminal_json=_unfinished_terminal(reason),
-                            updated_at=claimed_at,
-                        )
-                    )
-                    await session.execute(
-                        update(GenerationLog)
-                        .where(GenerationLog.id == stale_log.id)
-                        .values(status="failed", error=reason, completed_at=claimed_at)
-                    )
-                    await session.commit()
-                    logger.info(
-                        "run %s finalized during claim (%s); attempts=%d",
-                        stale_log.id, reason, stale_log.attempts,
-                    )
-                    return None
-                else:
-                    log = stale_log
+        if _stale_to_persist is not None:
+            # A stale run was finalised above (already committed).  Return None
+            # so the host loop can move on, but first persist the tombstone.
+            pass  # will fall through to the persistence + return None below
 
-        if log is None:
+        elif log is None:
             await session.rollback()
-            return None
-        if log.attempts == 0:
-            log.started_at = claimed_at
-        log.attempts += 1
-        log.status = "running"
-        log.claimed_by = host_id
-        log.heartbeat_at = claimed_at
-        claimed = ClaimedRun(
-            run_id=log.id,
-            user_id=log.user_id,
-            params_json=dict(log.params_json),
-            attempt=log.attempts,
-        )
-        await session.commit()
-    return claimed
+
+        if log is not None and _stale_to_persist is None:
+            if log.attempts == 0:
+                log.started_at = claimed_at
+            log.attempts += 1
+            log.status = "running"
+            log.claimed_by = host_id
+            log.heartbeat_at = claimed_at
+            claimed = ClaimedRun(
+                run_id=log.id,
+                user_id=log.user_id,
+                params_json=dict(log.params_json),
+                attempt=log.attempts,
+            )
+            await session.commit()
+            return claimed
+
+    # Either log is None (nothing to claim) or a stale was finalised.
+    if _stale_to_persist is not None:
+        uid, gid, params_json, reason = _stale_to_persist
+        try:
+            stale_params = GenerateParams.model_validate(params_json)
+            await persist_failed_generation_record(
+                user_id=uid,
+                generation_log_id=gid,
+                subject=params_json.get("subject", ""),
+                params=stale_params,
+                error=reason,
+                session_factory=session_factory,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "claim-time finalize: failed to persist failed record for %s", gid
+            )
+    return None
 
 
 # ---------------------------------------------------------------------------

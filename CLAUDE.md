@@ -181,6 +181,8 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 **Backend addition.** `server/generate/run.py` `list_runs` return rows now include `cancel_requested: bool(log.cancel_requested)` so the frontend can show "取消中".
 
+**list_runs cap (code-review finding #8).** `list_runs` returns all unfinished (queued/running) runs but caps ended (completed/failed/cancelled) runs at `_LIST_RUNS_ENDED_LIMIT = 20` to keep the response size bounded. Two queries are issued (unfinished + most-recent-20-ended) and the results are merged and re-sorted newest-first. Tests: `test_list_runs_caps_ended_at_20`, `test_list_runs_always_includes_unfinished` in `tests/server/test_912_admission.py`.
+
 **i18n.** 6 new keys in both locales: `history.unfinished_title`, `history.run_running`, `history.run_cancelling`, `history.run_queued` (with `{k}` placeholder), `history.unfinished_error`, `history.badge_label`.
 
 **Tests.** `web/src/pages/HistoryPage.unfinished.test.tsx` (5 tests: queued position, running, cancelling, hidden-section, link, transition refetch); `web/src/lib/useHistoryBadge.test.ts` (6 tests: false/true result, no userId, storage error, poll interval, tab-hidden slower interval); `web/src/i18n/messages.913-unfinished-badge.test.ts` (i18n completeness, 14 assertions). `web/src/test/fakeRunServer.ts` extended with `setRunList`, `failRunList`, `listPolls`.

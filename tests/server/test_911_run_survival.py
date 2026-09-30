@@ -205,8 +205,8 @@ def test_stale_run_is_reclaimed(tmp_path: Path) -> None:
     asyncio.run(_run())
 
 
-def test_fresh_run_claimed_before_stale(tmp_path: Path) -> None:
-    """A fresh queued run is preferred over a stale running run."""
+def test_stale_run_claimed_before_fresh(tmp_path: Path) -> None:
+    """A stale running run is preferred over a fresh queued run (stale-first policy)."""
 
     env = _Env(tmp_path)
 
@@ -214,7 +214,7 @@ def test_fresh_run_claimed_before_stale(tmp_path: Path) -> None:
         owner = await env.setup()
         params = resolved_generate_params({**_MATH, "count": 1})
 
-        # Create a stale run.
+        # Create a stale run for owner.
         accepted_stale = await env.accept(params, owner)
         run_id_stale = uuid.UUID(accepted_stale.run_id)
         stale_time = datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_S + 60)
@@ -232,8 +232,7 @@ def test_fresh_run_claimed_before_stale(tmp_path: Path) -> None:
             )
             await session.commit()
 
-        # Create a second user to own a fresh queued run
-        # (first user's run would be blocked by owner_is_running constraint).
+        # Create a second user to own a fresh queued run.
         import uuid as _uuid
         other = _uuid.uuid4()
         async with env.sessions() as session:
@@ -242,9 +241,19 @@ def test_fresh_run_claimed_before_stale(tmp_path: Path) -> None:
         accepted_fresh = await env.accept(params, other)
         run_id_fresh = uuid.UUID(accepted_fresh.run_id)
 
+        # Stale-first policy: stale run must be claimed before the fresh queued run.
         claimed = await claim_next_run(env.sessions, host_id="live-host")
         assert claimed is not None
-        assert claimed.run_id == run_id_fresh
+        assert claimed.run_id == run_id_stale, (
+            f"Expected stale run {run_id_stale} to be claimed first; "
+            f"got {claimed.run_id} (fresh run {run_id_fresh})"
+        )
+        assert claimed.attempt == 2
+
+        # Second claim should get the fresh run.
+        claimed2 = await claim_next_run(env.sessions, host_id="live-host")
+        assert claimed2 is not None
+        assert claimed2.run_id == run_id_fresh
 
     asyncio.run(_run())
 
@@ -987,3 +996,58 @@ def test_max_attempts_is_three() -> None:
 
 def test_time_limit_is_two_hours() -> None:
     assert TIME_LIMIT_S == 7200.0
+
+
+# ---------------------------------------------------------------------------
+# Finding 1 — persist_failed_generation_record called at claim-time finalization
+# ---------------------------------------------------------------------------
+
+def test_claim_time_finalization_persists_failed_record(tmp_path: Path) -> None:
+    """claim_next_run calls persist_failed_generation_record after finalizing a stale run."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    env = _Env(tmp_path)
+
+    async def _run() -> None:
+        owner = await env.setup()
+        params = resolved_generate_params({**_MATH, "count": 1})
+        accepted = await env.accept(params, owner)
+        run_id = uuid.UUID(accepted.run_id)
+
+        # Make the run stale with attempts == MAX_ATTEMPTS (will be finalized).
+        stale_time = datetime.now(timezone.utc) - timedelta(seconds=STALE_THRESHOLD_S + 60)
+        async with env.sessions() as session:
+            await session.execute(
+                update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(
+                    status="running",
+                    attempts=MAX_ATTEMPTS,
+                    claimed_by="dead-host",
+                    heartbeat_at=stale_time,
+                    started_at=stale_time,
+                )
+            )
+            await session.commit()
+
+        persist_calls: list[dict] = []
+
+        async def _mock_persist(**kwargs: object) -> None:
+            persist_calls.append(dict(kwargs))
+
+        with patch(
+            "server.generate.run.persist_failed_generation_record",
+            side_effect=_mock_persist,
+        ):
+            result = await claim_next_run(env.sessions, host_id="live-host")
+
+        assert result is None, "exhausted stale run must be finalized, not returned"
+        assert len(persist_calls) == 1, (
+            f"persist_failed_generation_record must be called once; got {len(persist_calls)}"
+        )
+        call = persist_calls[0]
+        assert call["user_id"] == owner
+        assert call["generation_log_id"] == run_id
+        assert call["error"] == "recovery_exhausted"
+
+    asyncio.run(_run())

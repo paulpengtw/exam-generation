@@ -320,6 +320,7 @@ async def generate_endpoint(
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
     stream_version: int | None = Query(default=None),  # submission protocol version gate
+    submission_key: str | None = Query(default=None),  # idempotency key (server-only)
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -398,7 +399,7 @@ async def generate_endpoint(
             [str(e["loc"]) for e in exc.errors()],
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return await _accept(params, user, session)
+    return await _accept(params, user, session, submission_key=submission_key, config=config)
 
 
 @router.post("/generate", status_code=202)
@@ -424,30 +425,37 @@ async def generate_body_endpoint(
     ):
         return resp
     _check_generation_admission(params, config)
-    return await _accept(params, user, session)
-
-
-async def _accept(params: GenerateParams, user: User, session: AsyncSession) -> JSONResponse:
-    # Preserve submission_key before _require_complete_generate_params strips it
-    # (the resolver excludes SERVER_ONLY_GENERATE_FIELDS and the returned params
-    # object has submission_key=None; we restore it so accept_run can use it).
     submission_key = params.submission_key
+    return await _accept(params, user, session, submission_key=submission_key, config=config)
+
+
+async def _accept(
+    params: GenerateParams,
+    user: User,
+    session: AsyncSession,
+    *,
+    submission_key: str | None = None,
+    config: ServerConfig | None = None,
+) -> JSONResponse:
     params = _require_complete_generate_params(params)
-    if submission_key is not None:
-        params = params.model_copy(update={"submission_key": submission_key})
     logger.info("generate request params=%s", params.model_dump(mode="json"))
+    queue_limit = config.queue_limit if config is not None else QUEUE_LIMIT
     try:
-        accepted = await accept_run(params, user.id, session=session)
+        accepted = await accept_run(
+            params,
+            user.id,
+            session=session,
+            submission_key=submission_key,
+            queue_limit=queue_limit,
+        )
     except QueueLimitError:
         return JSONResponse(
             status_code=429,
             content={
                 "code": "queue_limit_reached",
                 "detail": (
-                    f"你目前已有 {QUEUE_LIMIT} 個排隊中的出題任務，"
-                    "請等待其中一個完成後再試。"
-                    " (You already have the maximum number of queued generation runs. "
-                    "Please wait for one to complete.)"
+                    "You already have the maximum number of queued generation runs. "
+                    "Please wait for one to complete."
                 ),
             },
         )

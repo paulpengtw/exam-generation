@@ -76,6 +76,7 @@ class ServerConfig(Config):
     llm_exchange_retention_days: int = 30
     drain_telemetry_token: str = ""  # DRAIN_TELEMETRY_TOKEN; empty = endpoint disabled
     creative_planning: bool = True
+    queue_limit: int = 5  # QUEUE_LIMIT: max queued runs per teacher
     # 生成執行 host (ADR 0034): whether this process runs run_host_loop, and how
     # many runs it executes at once.
     generation_host_enabled: bool = True
@@ -187,6 +188,7 @@ class ServerConfig(Config):
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
             effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
             effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
+            queue_limit=int(os.environ.get("QUEUE_LIMIT", "5")),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).

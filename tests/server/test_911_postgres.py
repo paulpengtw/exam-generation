@@ -147,3 +147,50 @@ def test_concurrent_stale_reclaim_exactly_one_wins(pg_engine: Any) -> None:
         assert non_none[0].attempt == 2
 
     asyncio.run(_run())
+
+
+@pytest.mark.postgres
+def test_claim_runs_one_run_per_teacher_at_a_time_postgres(pg_engine: Any) -> None:
+    """Postgres twin of the SQLite test_claim_runs_one_run_per_teacher_at_a_time.
+
+    Verifies that FOR UPDATE SKIP LOCKED prevents a teacher's second queued run
+    from being claimed while their first is still running, even on Postgres.
+    """
+    from tests.server.generate_test_utils import resolved_generate_params  # noqa: PLC0415
+
+    sf = async_sessionmaker(pg_engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def _run() -> None:
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            for tbl in reversed(Base.metadata.sorted_tables):
+                await conn.execute(tbl.delete())
+
+        owner = uuid.uuid4()
+        other = uuid.uuid4()
+        async with sf() as session:
+            session.add(User(id=owner, email=f"{owner}@example.com"))
+            session.add(User(id=other, email=f"{other}@example.com"))
+            await session.commit()
+
+        params = resolved_generate_params({**_MATH, "count": 1})
+
+        async with sf() as session:
+            first = await accept_run(params, owner, session=session)
+        async with sf() as session:
+            await accept_run(params, owner, session=session)  # second queued run for owner
+        async with sf() as session:
+            others = await accept_run(params, other, session=session)
+
+        # First claim: owner's first run (oldest queued/running across all owners).
+        claimed = await claim_next_run(sf, host_id="host-a")
+        assert claimed is not None and str(claimed.run_id) == first.run_id
+
+        # Second claim: owner is running, so skip to other's run.
+        claimed = await claim_next_run(sf, host_id="host-a")
+        assert claimed is not None and str(claimed.run_id) == others.run_id
+
+        # Third claim: nothing left (owner's second run blocked while first is running).
+        assert await claim_next_run(sf, host_id="host-a") is None
+
+    asyncio.run(_run())

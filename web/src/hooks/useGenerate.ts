@@ -1261,7 +1261,10 @@ export function useGenerate(): UseGenerateReturn {
       // The spec says NO auto-resubmit, which is guaranteed because
       // submissionKeyRef is cleared (next press generates a new key).
       void errorCode; // used by tests for asserting code field
-      rejectSubmission(message);
+      const displayMessage = errorCode === "queue_limit_reached"
+        ? localMessage("generate.queue_limit")
+        : message;
+      rejectSubmission(displayMessage);
       return admissionPromise;
     }
     // 202 accepted: clear the submission key — the run is durably created.

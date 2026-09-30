@@ -380,6 +380,90 @@ def test_list_runs_includes_subject_field(harness: _Harness) -> None:
 
 
 # ---------------------------------------------------------------------------
+# list_runs cap (Finding 8)
+# ---------------------------------------------------------------------------
+
+
+def _create_n_completed_runs(
+    harness: "_Harness",
+    sessions: Any,
+    user_id: uuid.UUID,
+    n: int,
+    *,
+    prefix: str = "cap",
+) -> list[str]:
+    """Create *n* completed runs, working around the queue limit by completing
+    each batch before creating the next.
+    """
+    from sqlalchemy import update as _upd
+
+    from server.generate.run import QUEUE_LIMIT as _QL
+    from server.models import GenerationLog as _GL
+
+    all_ids: list[str] = []
+    batch_size = _QL  # at most QUEUE_LIMIT queued at a time
+    for batch_start in range(0, n, batch_size):
+        this_batch = min(batch_size, n - batch_start)
+        batch_ids = asyncio.run(harness._submit_n_queued(sessions, user_id, this_batch))
+        all_ids.extend(batch_ids)
+
+        async def _complete(ids: list[str]) -> None:
+            async with sessions() as session:
+                await session.execute(
+                    _upd(_GL)
+                    .where(_GL.id.in_([uuid.UUID(rid) for rid in ids]))
+                    .values(status="completed")
+                )
+                await session.commit()
+
+        asyncio.run(_complete(batch_ids))
+    return all_ids
+
+
+def test_list_runs_caps_ended_at_20(harness: _Harness) -> None:
+    """GET /api/runs caps ended runs at _LIST_RUNS_ENDED_LIMIT (20); total response
+    must not exceed that limit when all runs are completed.
+    """
+    from server.generate.run import _LIST_RUNS_ENDED_LIMIT  # noqa: PLC0415
+
+    sessions = harness._session_factory()
+    total_ended = _LIST_RUNS_ENDED_LIMIT + 5  # create more than the cap
+
+    _create_n_completed_runs(harness, sessions, harness.owner, total_ended, prefix="cap")
+
+    with TestClient(harness.app()) as client:
+        rows = client.get("/api/runs", headers=harness.headers()).json()
+
+    ended_rows = [r for r in rows if r["status"] == "completed"]
+    assert len(ended_rows) <= _LIST_RUNS_ENDED_LIMIT, (
+        f"Expected at most {_LIST_RUNS_ENDED_LIMIT} ended runs; got {len(ended_rows)}"
+    )
+
+
+def test_list_runs_always_includes_unfinished(harness: _Harness) -> None:
+    """Unfinished (queued) runs are never capped even when the ended-run cap is full."""
+    from server.generate.run import _LIST_RUNS_ENDED_LIMIT  # noqa: PLC0415
+
+    sessions = harness._session_factory()
+    total_ended = _LIST_RUNS_ENDED_LIMIT + 5
+
+    # Fill with ended runs for harness.other.
+    _create_n_completed_runs(harness, sessions, harness.other, total_ended, prefix="unf")
+
+    # Add 3 fresh queued runs for harness.other.
+    queued_ids = asyncio.run(harness._submit_n_queued(sessions, harness.other, 3))
+
+    with TestClient(harness.app()) as client:
+        rows = client.get("/api/runs", headers=harness.headers(harness.other)).json()
+
+    row_ids = {r["run_id"] for r in rows}
+    for qid in queued_ids:
+        assert qid in row_ids, (
+            f"Queued run {qid} must appear in list even when ended cap is full"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Unit-level accept_run tests (no HTTP)
 # ---------------------------------------------------------------------------
 
