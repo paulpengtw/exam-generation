@@ -137,6 +137,16 @@ class GenerationQuestionState(Base):
 
 class GenerationRecord(Base):
     __tablename__ = "generation_records"
+    __table_args__ = (
+        # At most one saved result per run and question (issue #907).
+        # NULL generation_log_id values are distinct under SQL NULL semantics, so
+        # rows without a generation log never conflict with each other.
+        UniqueConstraint(
+            "generation_log_id",
+            "question_id",
+            name="uq_generation_records_log_question",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
