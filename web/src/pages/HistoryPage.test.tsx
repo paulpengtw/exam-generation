@@ -30,6 +30,8 @@ vi.mock("../api/client", () => ({
 vi.mock("../lib/historyBadge", () => ({
   initLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
   setLastSeenAt: vi.fn(),
+  getLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
+  findNewestCompletedAt: vi.fn().mockReturnValue(null),
 }));
 
 import HistoryPage from "./HistoryPage";

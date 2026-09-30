@@ -7,9 +7,13 @@ import { renderHook, act } from "@testing-library/react";
 // Mock historyBadge module
 const initLastSeenAtMock = vi.hoisted(() => vi.fn());
 const computeBadgeMock = vi.hoisted(() => vi.fn());
+const getLastSeenAtMock = vi.hoisted(() => vi.fn());
+const findNewestCompletedAtMock = vi.hoisted(() => vi.fn());
 vi.mock("./historyBadge", () => ({
   initLastSeenAt: initLastSeenAtMock,
   computeBadge: computeBadgeMock,
+  getLastSeenAt: getLastSeenAtMock,
+  findNewestCompletedAt: findNewestCompletedAtMock,
 }));
 
 // Mock listRuns from api/client
@@ -24,6 +28,7 @@ describe("useHistoryBadge", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     initLastSeenAtMock.mockReturnValue("2026-10-01T00:00:00Z");
+    getLastSeenAtMock.mockReturnValue("2026-10-01T00:00:00Z");
     computeBadgeMock.mockReturnValue(false);
     listRunsMock.mockResolvedValue([]);
     // Default visibilityState
@@ -94,6 +99,17 @@ describe("useHistoryBadge", () => {
 
     expect(listRunsMock.mock.calls.length).toBeGreaterThan(callsBefore);
     expect(result.current).toBe(false);
+  });
+
+  it("disabled=true: returns false and does not poll", async () => {
+    computeBadgeMock.mockReturnValue(true);
+    const { result } = renderHook(() => useHistoryBadge("user-1", true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current).toBe(false);
+    expect(listRunsMock).not.toHaveBeenCalled();
   });
 
   it("pauses polling when tab is hidden (uses longer interval)", async () => {

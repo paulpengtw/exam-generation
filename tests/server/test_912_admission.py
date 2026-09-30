@@ -361,6 +361,24 @@ def test_list_runs_is_owner_only(harness: _Harness) -> None:
     assert other_rows == []
 
 
+def test_list_runs_includes_subject_field(harness: _Harness) -> None:
+    """GET /api/runs rows must include ``subject`` so the frontend can build
+    correct resume links (/generate/<subject>?run=<id>).  Refs #913."""
+    with TestClient(harness.app()) as client:
+        client.post(
+            "/api/generate",
+            json=_body(stream_version=3),
+            headers=harness.headers(),
+        )
+        rows = client.get("/api/runs", headers=harness.headers()).json()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert "subject" in row, "list_runs row missing 'subject' field"
+    # The submitted params use subject="math" via complete_math_query_params
+    assert row["subject"] == "math"
+
+
 # ---------------------------------------------------------------------------
 # Unit-level accept_run tests (no HTTP)
 # ---------------------------------------------------------------------------

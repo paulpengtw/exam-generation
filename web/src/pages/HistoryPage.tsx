@@ -19,7 +19,12 @@ import {
 import { useAuthStore } from "../store/authStore";
 import HistoryDetail from "./HistoryDetail";
 import { useSurfaceParticipation } from "../lib/workspace/useSurfaceParticipation";
-import { initLastSeenAt, setLastSeenAt } from "../lib/historyBadge";
+import {
+  findNewestCompletedAt,
+  getLastSeenAt,
+  initLastSeenAt,
+  setLastSeenAt,
+} from "../lib/historyBadge";
 
 const PAGE_SIZE = 20;
 
@@ -69,15 +74,8 @@ function HistoryList() {
     hasReceivedResults: false,
   });
 
-  // Mark history as viewed: update the last-seen badge marker.
-  useEffect(() => {
-    if (!user) return;
-    const now = new Date().toISOString();
-    // initLastSeenAt ensures first-visit doesn't light up the badge.
-    initLastSeenAt(user.id, now);
-    // Always update to now when visiting History, which clears the badge.
-    setLastSeenAt(user.id, now);
-  }, [user]);
+  // Badge marker is updated inside pollOnce (see below) using the server's
+  // newest completed_at rather than the client clock (fix(913) issue #2).
 
   const loadInitial = useCallback(async () => {
     setError(null);
@@ -125,6 +123,24 @@ function HistoryList() {
           }
         }
         prevActiveIdsRef.current = new Set(active.map((r) => r.run_id));
+
+        // Update the badge last-seen marker with the server's newest
+        // completed_at so HistoryPage clears the badge using server time,
+        // not the potentially-skewed client clock (fix(913) issue #2).
+        if (user) {
+          const newest = findNewestCompletedAt(runs);
+          if (newest !== null) {
+            const current = getLastSeenAt(user.id);
+            if (current === null || Date.parse(newest) > Date.parse(current)) {
+              setLastSeenAt(user.id, newest);
+            }
+          } else if (getLastSeenAt(user.id) === null) {
+            // No completed runs yet — initialize to avoid retroactive badge
+            // when first run completes.  initLastSeenAt with null is a no-op
+            // here; badge will be false until a run completes regardless.
+            initLastSeenAt(user.id, null);
+          }
+        }
       } catch {
         if (!aborted) {
           setUnfinishedError("error");
@@ -153,7 +169,8 @@ function HistoryList() {
         pollTimerRef.current = null;
       }
     };
-  }, [loadInitial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (primitive) is the stable dependency; the full `user` object reference changes on every render from the zustand selector
+  }, [loadInitial, user?.id]);
 
   const previousFeedback = useActionFeedback<HistoryListResponse>({
     action: (signal) => listHistory({
@@ -258,10 +275,16 @@ function HistoryList() {
                         String(run.queue_position ?? 0),
                       )
                     : t("history.run_running");
+                const VALID_SUBJECTS = ["math", "social_studies", "natural_sciences"] as const;
+                const subjectPath =
+                  run.subject != null &&
+                  (VALID_SUBJECTS as readonly string[]).includes(run.subject)
+                    ? `/generate/${run.subject}?run=${run.run_id}`
+                    : "/generate";
                 return (
                   <li key={run.run_id}>
                     <Link
-                      to={`/generate?run=${run.run_id}`}
+                      to={subjectPath}
                       className="flex items-center gap-2 rounded px-2 py-1 text-sm text-blue-700 hover:bg-blue-50"
                     >
                       <span className="truncate font-medium">

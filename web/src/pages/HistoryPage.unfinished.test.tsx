@@ -33,6 +33,8 @@ vi.mock("../api/client", () => ({
 vi.mock("../lib/historyBadge", () => ({
   initLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
   setLastSeenAt: vi.fn(),
+  getLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
+  findNewestCompletedAt: vi.fn().mockReturnValue(null),
 }));
 
 import HistoryPage from "./HistoryPage";
@@ -131,7 +133,7 @@ describe("HistoryPage – 尚未結束 section", () => {
     expect(screen.queryByText("尚未結束")).not.toBeInTheDocument();
   });
 
-  it("links to /generate?run=<id>", async () => {
+  it("links to /generate/<subject>?run=<id> for known subjects", async () => {
     listRunsMock.mockResolvedValue([
       {
         run_id: "abc123",
@@ -148,7 +150,27 @@ describe("HistoryPage – 尚未結束 section", () => {
       expect(screen.getByText("生成中")).toBeInTheDocument(),
     );
     const link = screen.getByRole("link", { name: /abc123|math/ });
-    expect(link).toHaveAttribute("href", "/generate?run=abc123");
+    expect(link).toHaveAttribute("href", "/generate/math?run=abc123");
+  });
+
+  it("falls back to /generate when subject is null", async () => {
+    listRunsMock.mockResolvedValue([
+      {
+        run_id: "run-no-subject",
+        status: "running",
+        subject: null,
+        started_at: null,
+        completed_at: null,
+        queue_position: null,
+        cancel_requested: false,
+      },
+    ]);
+    renderHistory();
+    await waitFor(() =>
+      expect(screen.getByText("生成中")).toBeInTheDocument(),
+    );
+    const link = screen.getByRole("link", { name: /run-no-subject/ });
+    expect(link).toHaveAttribute("href", "/generate");
   });
 
   it("refetches history list when run transitions from active to ended", async () => {
