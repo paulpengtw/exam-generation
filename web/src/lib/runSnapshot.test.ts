@@ -12,7 +12,7 @@ import {
   type RunSnapshot,
   type RunSnapshotQuestion,
 } from "./runSnapshot";
-import { applyPollReadFailed, applyV2Event, closeRun, selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
+import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, selectFinalReceivedCount, selectGenerationSteps } from "./generationEvidence";
 import { createGenerationStreamDecoder } from "./generationStream";
 
 function terminal(revision: number | null = 1, reason: "normal" | "failed" = "normal") {
@@ -318,7 +318,7 @@ describe("spec scenarios", () => {
     // A (q-1): complete passed final + terminal → endedCount+1, finalReceivedCount+1
     // B (q-2): PARTIAL failed-review final + terminal (delivery_status "partial", non-empty missing)
     //          → endedCount+1, finalReceivedCount+1 (has_final=true)
-    // C (q-3): failed no-final terminal + draft (has_final=false, no result in snapshot)
+    // C (q-3): failed no-final terminal + draft (has_final=false, persisted draft result)
     //          → endedCount+1, C's draft does NOT increase finalReceivedCount
     // D (q-4): final WITHOUT terminal (result in snapshot, no terminal yet)
     //          → NOT counted as ended; persisted result counts toward finalReceivedCount
@@ -326,6 +326,20 @@ describe("spec scenarios", () => {
     // Expected: ended=3 (A,B,C) and finalReceived=3 (A,B,D)
     // D stays processing-unknown until persisted state establishes its outcome.
     const imageSlot = { kind: "image" as const, question_id: "q-2", subquestion_id: null };
+    const draftResult = {
+      record_id: "rec-q-3-draft",
+      question: {
+        id: "q-3",
+        情境: [],
+        題型種類: "single",
+        題型: "multiple_choice",
+        題目: ["draft text q-3"],
+        正確解題分析: ["a"],
+      },
+      verification_trail: [],
+      figure_policy_trail: [],
+      reference_example_record: { disabled: false, entries: [] },
+    };
     const snap = snapshot([
       // A: complete passed final and terminal
       endedQuestion("q-1"),
@@ -346,8 +360,14 @@ describe("spec scenarios", () => {
         },
         result: endedQuestion("q-2").result,
       },
-      // C: failed no-final terminal (has_final=false), no persisted result
-      { ...question("q-3"), processing: "ended", termination_reason: "failed", terminal: terminal(null, "failed") },
+      // C: failed no-final terminal (has_final=false) + a draft result
+      {
+        ...question("q-3"),
+        processing: "ended",
+        termination_reason: "failed",
+        terminal: terminal(null, "failed"),
+        result: draftResult,
+      },
       // D: persisted result but no terminal yet
       { ...question("q-4"), result: endedQuestion("q-4").result },
     ]);
@@ -355,12 +375,80 @@ describe("spec scenarios", () => {
     // X=3: A, B, C each have a terminal; D has no terminal → not ended
     expect(selectEndedCount(state)).toBe(3);
     // Y=3: A, B (has_final=true via terminal), D (persisted result read from state)
-    // C's no-final terminal means C does NOT count toward Y
+    // C's no-final terminal means C does NOT count toward Y despite having a draft
     expect(selectFinalReceivedCount(state)).toBe(3);
+    // C has a failed no-final terminal; has_final=false so the result is NOT
+    // promoted to a final receipt.  The draft exists in the DB but the
+    // terminal declares "no final" so the frontend leaves the receipt at "none".
+    // This is what prevents C from raising Y.
+    expect(state.questions["q-3"].content.receipt).toBe("none");
     // D is not ended (no terminal)
     expect(state.questions["q-4"].terminal).toBeNull();
+    expect(state.questions["q-4"].processing).not.toBe("ended");
     // D has a receipt of "final" from the persisted result
     expect(state.questions["q-4"].content.receipt).toBe("final");
+  });
+
+  it("D persisted final applied; later snapshot delivers D terminal with same final_revision — no conflict, counts unchanged", () => {
+    // D receives a persisted final result from the initial snapshot (no terminal yet).
+    // A subsequent poll snapshot then delivers D's terminal with final_revision 1.
+    // applyRunSnapshot uses nominalRevision=1 for the initial result, so final_revision=1
+    // matches — no conflict.  selectEndedCount rises, selectFinalReceivedCount stays.
+    const dFinalResult = {
+      record_id: "rec-q-4-final",
+      question: {
+        id: "q-4",
+        情境: [],
+        題型種類: "single",
+        題型: "multiple_choice",
+        題目: ["final text q-4"],
+        正確解題分析: ["a"],
+      },
+      verification_trail: [],
+      figure_policy_trail: [],
+      reference_example_record: { disabled: false, entries: [] },
+    };
+    // Initial snapshot: D has a persisted result but no terminal yet.
+    const snap1 = snapshot([
+      endedQuestion("q-1"),
+      { ...question("q-4"), result: { ...dFinalResult } },
+    ]);
+    const state1 = applyRunSnapshot(null, snap1);
+    expect(selectEndedCount(state1)).toBe(1); // only A (q-1) ended
+    expect(selectFinalReceivedCount(state1)).toBe(2); // A + D (persisted final)
+    expect(state1.questions["q-4"].processing).not.toBe("ended");
+    expect(state1.questions["q-4"].terminal).toBeNull();
+
+    // Second snapshot: D now has a terminal with final_revision 1.
+    // The nominalRevision used by snap1 is also 1 → no revision conflict.
+    const dTerminal = {
+      termination_reason: "normal",
+      has_final: true,
+      final_revision: 1,          // matches nominalRevision=1 from snap1
+      delivery_status: "complete",
+      expected: [],
+      delivered: [],
+      missing: [],
+      review: { status: "passed", content_revision: 1 },
+    };
+    const snap2 = snapshot([
+      endedQuestion("q-1"),
+      {
+        ...question("q-4"),
+        processing: "ended",
+        termination_reason: "normal",
+        terminal: dTerminal,
+        result: { ...dFinalResult },
+      },
+    ]);
+    const state2 = applyRunSnapshot(state1, snap2);
+    // D is now ended — X increases by 1
+    expect(selectEndedCount(state2)).toBe(2);
+    // Y is unchanged: D was already counted toward finalReceived in snap1
+    expect(selectFinalReceivedCount(state2)).toBe(2);
+    expect(state2.questions["q-4"].processing).toBe("ended");
+    // No terminal conflict: final_revision 1 matches nominalRevision 1
+    expect(state2.questions["q-4"].terminalConflict).toBeFalsy();
   });
 
   it("idempotent: applying same snapshot twice gives same counts", () => {
@@ -402,14 +490,20 @@ describe("spec scenarios", () => {
 
   it("connection ends during generation", () => {
     // Spec scenario "Connection ends during generation":
-    // WHEN A has a terminal and B only has a draft when the connection is lost
-    // THEN A retains its conclusion, B continues to be shown from persisted state
-    //   as running at its current 生成步驟, and no unsupported running animation continues
-    // AND the interface does not claim cancellation
+    // A receives a terminal via live stream; B receives a draft via live stream
+    // and is running at its current_step. The stream connection is LOST
+    // (applyStreamLost, NOT closeRun — the run is still executing on the server).
     //
-    // B is NOT "unknown" merely because the stream ended — unknown is reserved
-    // for when persisted state is unreadable (see applyPollReadFailed test).
-    let state = applyRunSnapshot(null, snapshot([question("q-1"), question("q-2")]));
+    // After stream loss: A retains its "ended" conclusion; B stays "running" at
+    // its current processing state (NOT "unknown"). Unknown is reserved for
+    // applyPollReadFailed (persisted-state unreadable). Live-only activity
+    // indicators are cleared. The run is NOT closed (polling continues).
+    let state = applyRunSnapshot(null, snapshot([
+      question("q-1"),
+      question("q-2", { processing: "running", current_step: "subquestions" }),
+    ]));
+
+    // A: terminal via live stream
     state = applyV2Event(state, {
       kind: "v2",
       event: {
@@ -418,15 +512,30 @@ describe("spec scenarios", () => {
         payload: terminal(1),
       },
     });
-    state = closeRun(state);
+
+    // B: draft via live stream (question_update)
+    state = applyV2Event(state, {
+      kind: "v2",
+      event: {
+        name: "question_update",
+        context: { question_id: "q-2", content_revision: 1 },
+        payload: { index: 1, phase: "draft", question: { id: "q-2" } },
+      },
+    });
+    expect(state.questions["q-2"].content.receipt).toBe("draft");
+
+    // Stream connection lost — NOT closeRun
+    state = applyStreamLost(state);
+
     // A: terminal established → retains "ended"
     expect(state.questions["q-1"].processing).toBe("ended");
-    // B: no terminal, stream closed → keeps current persisted state ("waiting"),
-    // NOT "unknown" (stream loss is not persisted-state failure)
-    expect(state.questions["q-2"].processing).toBe("waiting");
+    // B: stream lost → stays "running" (NOT "unknown"; unknown = applyPollReadFailed)
+    expect(state.questions["q-2"].processing).toBe("running");
     expect(selectEndedCount(state)).toBe(1);
-    // run is closed (live stream ended)
-    expect(state.closed).toBe(true);
+    // Stream loss does NOT mark the run as closed (run still executing on server)
+    expect(state.closed).toBe(false);
+    // Live-only activity indicators are cleared
+    expect(state.questions["q-2"].activity).toEqual({ operations: {}, calls: {} });
   });
 
   it("stale started event rejected — decoder ignores started with wrong run id", () => {

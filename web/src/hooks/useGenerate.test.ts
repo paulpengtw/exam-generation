@@ -1152,4 +1152,37 @@ describe("useGenerate — pollReadFailed (issue #909)", () => {
 
     expect(result.current.pollReadFailed).toBe(true);
   });
+
+  it("after 3 failed polls, no-terminal questions are unknown; exactly one POST was sent", async () => {
+    const { result } = await startRun();
+    server.dropConnection(true);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+
+    expect(result.current.pollReadFailed).toBe(true);
+    // Questions with no terminal → processing becomes unknown
+    expect(result.current.evidence?.questions["q-1"].processing).toBe("unknown");
+    // No re-submit on poll failure — generation keeps running on server
+    expect(server.submits()).toHaveLength(1);
+  });
+
+  it("subsequent successful poll clears pollReadFailed and restores processing from snapshot", async () => {
+    const { result } = await startRun();
+    server.dropConnection(true);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+    await flush(RUN_POLL_VISIBLE_MS);
+    expect(result.current.pollReadFailed).toBe(true);
+    expect(result.current.evidence?.questions["q-1"].processing).toBe("unknown");
+
+    // Restore server with running snapshot
+    server.dropConnection(false);
+    server.setSnapshot("run-1", runSnapshot([runningQuestion("q-1", "text")]));
+    await flush(RUN_POLL_VISIBLE_MS);
+
+    // Flag cleared; processing restored to "running" from snapshot
+    expect(result.current.pollReadFailed).toBe(false);
+    expect(result.current.evidence?.questions["q-1"].processing).toBe("running");
+  });
 });

@@ -292,3 +292,97 @@ def test_events_route_streams_sse_for_in_process_run(harness: _Harness) -> None:
         _live_observers.pop(run_id, None)
 
     asyncio.run(asyncio.wait_for(_run(), timeout=15.0))
+
+
+def test_events_route_full_envelope_for_generation_event(harness: _Harness) -> None:
+    """SSE data JSON carries the full {event, context, payload} envelope for a real event.
+
+    Item 3 (issue #909 review): confirms the wire format contains all three envelope
+    fields — not just ``event`` — for a published non-done generation event.
+    ``context`` must carry at least ``run_id``, ``event_seq`` and ``question_id``.
+    ``payload`` must be a dict (not None) for a generation event.
+    """
+    async def _run() -> None:
+        app = harness.app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            post_resp = await client.post(
+                "/api/generate",
+                json=_body(),
+                headers=harness.headers(harness.owner),
+            )
+            assert post_resp.status_code == 202, post_resp.text
+            run_id = post_resp.json()["run_id"]
+
+            _live_observers[run_id] = []
+
+            question_event = {
+                "event": "question_update",
+                "context": {
+                    "run_id": run_id,
+                    "event_seq": 1,
+                    "question_id": "q-001",
+                },
+                "payload": {"phase": "draft", "index": 0, "question": {"id": "q-001"}},
+            }
+
+            async def _publisher() -> None:
+                deadline = asyncio.get_event_loop().time() + 8.0
+                while asyncio.get_event_loop().time() < deadline:
+                    if list(_live_observers.get(run_id, [])):
+                        await _publish_live(run_id, question_event)
+                        await _publish_live(run_id, {"event": "done", "payload": None})
+                        return
+                    await asyncio.sleep(0.01)
+                await _publish_live(run_id, {"event": "done", "payload": None})
+
+            publisher_task = asyncio.create_task(_publisher())
+
+            events_resp = await asyncio.wait_for(
+                client.get(
+                    f"/api/runs/{run_id}/events",
+                    headers=harness.headers(harness.owner),
+                ),
+                timeout=10.0,
+            )
+            await publisher_task
+
+        assert events_resp.status_code == 200, events_resp.text
+        body = events_resp.text
+
+        # Collect all non-done SSE frames.
+        generation_frames: list[dict[str, Any]] = []
+        for chunk in body.split("\n\n"):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            lines = chunk.splitlines()
+            data_line = next((ln for ln in lines if ln.startswith("data: ")), None)
+            if data_line is None:
+                continue
+            parsed = json.loads(data_line[len("data: "):])
+            if parsed.get("event") != "done":
+                generation_frames.append(parsed)
+
+        assert generation_frames, "expected at least one non-done generation frame"
+        frame = generation_frames[0]
+
+        # Full envelope: all three top-level keys must be present.
+        assert "event" in frame, f"missing 'event' in frame: {frame}"
+        assert "context" in frame, f"missing 'context' in frame: {frame}"
+        assert "payload" in frame, f"missing 'payload' in frame: {frame}"
+
+        # context must carry the three identity fields.
+        ctx = frame["context"]
+        assert ctx.get("run_id") == run_id, f"context.run_id mismatch: {ctx}"
+        assert isinstance(ctx.get("event_seq"), int), f"context.event_seq not int: {ctx}"
+        assert ctx.get("question_id") == "q-001", f"context.question_id mismatch: {ctx}"
+
+        # payload must be a dict for a generation event (not None like done).
+        assert isinstance(frame["payload"], dict), f"payload not a dict: {frame['payload']}"
+
+        _live_observers.pop(run_id, None)
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=15.0))

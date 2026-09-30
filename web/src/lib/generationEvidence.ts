@@ -932,22 +932,24 @@ function reviewForContent(qev: QuestionEvidence): QuestionEvidence["review"] {
 
 export function closeRun(state: RunEvidenceState): RunEvidenceState {
   /**
-   * Stream loss: the live SSE connection ended. Retain established terminal
-   * facts; keep unresolved questions at their current persisted processing
-   * state (the snapshot poller takes over). Do NOT mark questions unknown
-   * merely because the stream ended — "unknown" is reserved for when
-   * persisted state itself is unreadable (see applyPollReadFailed).
+   * The v2 stream has definitively ended (done event or terminal run status).
+   * Questions with no established terminal become "unknown" — the run is over
+   * and the server will not deliver any more evidence via this channel.
    *
    * terminalConflict stays unresolved — a conflict is a data error, not a
-   * stream-loss artifact.  finalPending upgrades to finalMissing when the
-   * live stream closed before delivering the expected final content.
+   * stream-end artifact.  finalPending upgrades to finalMissing when the
+   * stream closed before delivering the expected final content.
+   *
+   * Stream CONNECTION LOSS is handled separately by applyStreamLost.
+   * Poll-failure is handled by applyPollReadFailed.
    */
   const questions: Record<string, QuestionEvidence> = {};
   for (const [qid, qev] of Object.entries(state.questions)) {
     const hadFinalPending = qev.finalPending;
+    const noTerminal = qev.terminal === null && !qev.terminalConflict;
     questions[qid] = {
       ...qev,
-      // Do not change processing; persisted-state polling drives it now.
+      processing: noTerminal || qev.terminalConflict ? "unknown" : qev.processing,
       finalPending: false,
       finalMissing: hadFinalPending,
       review: hadFinalPending
@@ -961,6 +963,32 @@ export function closeRun(state: RunEvidenceState): RunEvidenceState {
     };
   }
   return { ...state, questions, closed: true };
+}
+
+/**
+ * The live SSE connection was lost (network error, timeout, server-side
+ * disconnect). The run is still executing on the server; only the in-process
+ * SSE channel dropped.
+ *
+ * Retains all established processing states, content, and terminals.
+ * Clears live-only activity indicators so no spinning animations continue
+ * after the stream is gone. Polling snapshots become the sole source of
+ * truth going forward.
+ *
+ * Does NOT mark questions unknown — that is reserved for:
+ * - closeRun: run is definitively over (done event / terminal status)
+ * - applyPollReadFailed: persisted state is unreadable (≥3 poll failures)
+ */
+export function applyStreamLost(state: RunEvidenceState): RunEvidenceState {
+  const questions: Record<string, QuestionEvidence> = {};
+  for (const [qid, qev] of Object.entries(state.questions)) {
+    questions[qid] = {
+      ...qev,
+      // Clear live-only activity indicators; processing and content remain as-is.
+      activity: qev.activity ? { operations: {}, calls: {} } : qev.activity,
+    };
+  }
+  return { ...state, questions };
 }
 
 /**
