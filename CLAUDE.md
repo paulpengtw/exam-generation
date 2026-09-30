@@ -484,11 +484,15 @@ endpoint rejection, malformed JSON, or exhausted iterations — fails open:
 
 Two guarded entry points in `LLMClient`:
 - `_call()` — covers `generate`, `generate_json`, `generate_with_image`, and all Anthropic streaming paths.
-- `generate_with_tools()` — covers the Anthropic web-search fact-check path.
+- `generate_with_tools()` — covers the Anthropic web-search fact-check path (issue #941).
 
 `generate_with_google_search()` is unreachable with a Fable model (the provider gate blocks it at `resolve_provider`), so no guard is needed there. `generate_image()` uses `IMAGE_MODEL` (`gpt-image2`), never a Claude model — no guard needed.
 
 The dispatch applies at call time through `Config.dispatch_model(model)` and `Config.dispatch_effort(effort, dispatched_model)`. Events and records continue to carry the original requested id; recording the substitution in `llm_request`/`llm_response` events and `model_substitutions` in `params_json` is a separate ticket (#942–#944). Switch off → SDK args, events, and records are byte-identical to before.
+
+**Fact-check guard (issue #941):** `src/social_studies/fact_check.py::fact_check_question` calls `client.generate_with_tools()`, which already applies the `generate_with_tools()` guard above. End-to-end tests in `tests/test_941_fact_check_fable_guard.py` drive `fact_check_question` with a real `LLMClient` (fake SDK) and assert that a Fable verify model with `xhigh` effort yields `model=claude-opus-4-6`, `effort=high`, adaptive thinking, and one WARNING per call. The provider gate (`resolve_provider(effective_verify_model) == provider`) continues to use the *requested* model's provider — `claude-fable-5` is still `anthropic`, so the gate passes unchanged.
+
+**Guard-coverage test (issue #941):** `tests/test_941_dispatch_coverage.py` contains an AST-based checker that scans `src/llm_client.py` for all SDK dispatch calls (`messages.create`, `messages.stream`, `chat.completions.create`, `images.generate`) and verifies each is in a guarded function (one that calls `dispatch_model`) or in the explicit `EXEMPT` dict with a documented reason. A negative test removes the guard from `generate_with_tools` on a scratch copy and asserts the checker reports a violation, confirming the checker itself works. Add a new entry to `EXEMPT` whenever a new SDK dispatch method is introduced that genuinely does not need Fable substitution.
 
 ### Web-ready design
 All core modules (`sampler`, `context_builder`, `llm_client`, `verifier`, `renderer`) are standalone importable components. The CLI (`cli.py`) is a thin wrapper. Config comes from env vars. This allows future integration with FastAPI/Flask without refactoring.
