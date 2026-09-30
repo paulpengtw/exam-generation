@@ -273,6 +273,7 @@ def _build_run_context(
     user_id: uuid.UUID | None = None,
     save_backoff_fn: Callable[[int], Awaitable[Any]] | None = None,
     skip_question_ids: frozenset | None = None,
+    attempt: int = 1,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -304,12 +305,14 @@ def _build_run_context(
         generation_log_id=generation_log_id,
         loop=loop,
         session_factory=session_factory,
+        attempt=attempt,
     )
     reference_example_recorder = make_reference_example_record_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
         session_factory=session_factory,
         disabled=bool(params.disable_reference_fewshot),
+        attempt=attempt,
     )
 
     def _next_order() -> int:
@@ -966,6 +969,7 @@ async def generate_question_stream(
     client_factory: Callable[..., LLMClient] | None = None,
     confirmed_cancel_event: threading.Event | None = None,
     skip_question_ids: frozenset | None = None,
+    attempt: int = 1,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -1032,6 +1036,7 @@ async def generate_question_stream(
         run_id=_run_id,
         user_id=user_id,
         skip_question_ids=skip_question_ids,
+        attempt=attempt,
     )
 
     _started_payload: dict[str, Any] = {

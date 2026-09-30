@@ -550,20 +550,65 @@ async def claim_next_run(
         ).scalar_one_or_none()
 
         if log is None:
-            # 2. Fall back to a stale running run.
-            log = (
+            # 2. Fall back to a stale running run.  No attempt-limit filter here:
+            # a run that has exhausted its attempts must be *finalised* below, not
+            # silently skipped (that was the stuck-forever bug — issue #911).
+            stale_log = (
                 await session.execute(
                     select(GenerationLog)
                     .where(
                         GenerationLog.status == "running",
                         GenerationLog.heartbeat_at <= stale_cutoff,
-                        GenerationLog.attempts < MAX_ATTEMPTS,
                     )
                     .order_by(GenerationLog.started_at, GenerationLog.id)
                     .limit(1)
                     .with_for_update(skip_locked=True)
                 )
             ).scalar_one_or_none()
+
+            if stale_log is not None:
+                # Issue #911: check if this stale run must be finalised instead of
+                # reclaimed.  Two conditions require finalization:
+                # 1. attempts >= MAX_ATTEMPTS  → recovery_exhausted
+                # 2. wall-clock past TIME_LIMIT_S → time_limit
+                # Both checks run inside the same FOR UPDATE SKIP LOCKED transaction
+                # so two racing hosts cannot both finalize the same run.
+                exhausted = stale_log.attempts >= MAX_ATTEMPTS
+                time_exceeded = (
+                    stale_log.started_at is not None
+                    and (
+                        claimed_at - _utc_aware(stale_log.started_at)
+                    ).total_seconds() >= TIME_LIMIT_S
+                )
+                if exhausted or time_exceeded:
+                    reason = "time_limit" if time_exceeded else "recovery_exhausted"
+                    await session.execute(
+                        update(GenerationQuestionState)
+                        .where(
+                            GenerationQuestionState.generation_log_id == stale_log.id,
+                            GenerationQuestionState.termination_reason.is_(None),
+                        )
+                        .values(
+                            processing="ended",
+                            current_step=None,
+                            termination_reason="failed",
+                            terminal_json=_unfinished_terminal(reason),
+                            updated_at=claimed_at,
+                        )
+                    )
+                    await session.execute(
+                        update(GenerationLog)
+                        .where(GenerationLog.id == stale_log.id)
+                        .values(status="failed", error=reason, completed_at=claimed_at)
+                    )
+                    await session.commit()
+                    logger.info(
+                        "run %s finalized during claim (%s); attempts=%d",
+                        stale_log.id, reason, stale_log.attempts,
+                    )
+                    return None
+                else:
+                    log = stale_log
 
         if log is None:
             await session.rollback()
@@ -1015,6 +1060,7 @@ async def execute_run(
             client_factory=client_factory,
             confirmed_cancel_event=confirmed_cancel_event,
             skip_question_ids=skip_question_ids,
+            attempt=claimed.attempt,
         ):
             # Issue #911: abort stream on time limit.
             if time_limit_exceeded_event.is_set():
