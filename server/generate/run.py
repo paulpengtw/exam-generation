@@ -425,34 +425,37 @@ async def cancel_run(
     if all(s.termination_reason is not None for s in states):
         return {"cancelled": False, "reason": "already_ended"}
 
-    now = _utcnow()
-
     # Queued run: cancel immediately without waiting for a host to claim it.
     if log.status == "queued":
+        now = _utcnow()
         terminal = _cancelled_terminal("cancelled before execution")
-        await session.execute(
-            update(GenerationQuestionState)
-            .where(
-                GenerationQuestionState.generation_log_id == log_id,
-                GenerationQuestionState.termination_reason.is_(None),
-            )
-            .values(
-                processing="ended",
-                current_step=None,
-                termination_reason="cancelled",
-                terminal_json=terminal,
-                updated_at=now,
-            )
-        )
-        await session.execute(
+        # Guard: only update GenerationLog when status is still "queued" (race protection).
+        log_res = await session.execute(
             update(GenerationLog)
-            .where(GenerationLog.id == log_id)
+            .where(GenerationLog.id == log_id, GenerationLog.status == "queued")
             .values(status="cancelled", completed_at=now, cancel_requested=True)
         )
-        await session.commit()
-        return {"cancelled": True, "reason": "queued_run_cancelled"}
+        if log_res.rowcount > 0:
+            # Log update succeeded: mark all pending questions as cancelled.
+            await session.execute(
+                update(GenerationQuestionState)
+                .where(
+                    GenerationQuestionState.generation_log_id == log_id,
+                    GenerationQuestionState.termination_reason.is_(None),
+                )
+                .values(
+                    processing="ended",
+                    current_step=None,
+                    termination_reason="cancelled",
+                    terminal_json=terminal,
+                    updated_at=now,
+                )
+            )
+            await session.commit()
+            return {"cancelled": True, "reason": "queued_run_cancelled"}
+        # Race: run was claimed between SELECT and UPDATE; fall through to flag-only path.
 
-    # Running run: set the flag; the executing host picks it up on the next heartbeat.
+    # Running run (or race-claimed run): set the flag only.
     if not log.cancel_requested:
         await session.execute(
             update(GenerationLog)
@@ -505,10 +508,17 @@ def _unfinished_terminal(reason: str) -> dict[str, Any]:
 class _QuestionStateRecorder:
     """Translate bus events into persisted 處理狀態, 生成步驟 and 終止原因."""
 
-    def __init__(self, run_id: uuid.UUID, session_factory: Any) -> None:
+    def __init__(
+        self,
+        run_id: uuid.UUID,
+        session_factory: Any,
+        *,
+        confirmed_cancel_event: threading.Event | None = None,
+    ) -> None:
         self._run_id = run_id
         self._sessions = session_factory
         self._steps: dict[str, str] = {}
+        self._confirmed_cancel_event = confirmed_cancel_event
 
     async def observe(self, event: Mapping[str, Any]) -> None:
         name = event.get("event")
@@ -544,6 +554,20 @@ class _QuestionStateRecorder:
                 .values(**values, updated_at=_utcnow())
             )
             await session.commit()
+            # Step-boundary cancel check (issue #910): poll DB for cancel_requested.
+            if (
+                self._confirmed_cancel_event is not None
+                and not self._confirmed_cancel_event.is_set()
+            ):
+                flag = (
+                    await session.execute(
+                        select(GenerationLog.cancel_requested).where(
+                            GenerationLog.id == self._run_id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if flag:
+                    self._confirmed_cancel_event.set()
 
     async def _record_terminal(self, question_id: str, terminal: Mapping[str, Any]) -> None:
         """Write the 終止原因 once: the first recorded outcome stands."""
@@ -652,7 +676,9 @@ async def execute_run(
     """Execute one claimed run to the end and persist its outcome."""
     # issue #910: a shared event signals the generation pipeline to cancel.
     confirmed_cancel_event = threading.Event()
-    recorder = _QuestionStateRecorder(claimed.run_id, session_factory)
+    recorder = _QuestionStateRecorder(
+        claimed.run_id, session_factory, confirmed_cancel_event=confirmed_cancel_event
+    )
     heartbeat = asyncio.create_task(
         _heartbeat(
             claimed.run_id, host_id, session_factory, interval=heartbeat_interval, clock=clock,

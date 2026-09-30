@@ -1307,14 +1307,16 @@ export function useGenerate(): UseGenerateReturn {
   const cancelRun = useCallback(async (): Promise<boolean> => {
     const currentRunId = runId ?? activeRef.current?.runId;
     if (!currentRunId) return false;
+    setCancelRequested(true);  // optimistic: show 取消中 immediately
     try {
       await apiCancelRun(currentRunId);
-      return true;
+      return true;  // keep cancelRequested=true (sticky)
     } catch (err) {
+      setCancelRequested(false);  // revert on error
       if (err instanceof ApiError && err.status === 404) return false;
       throw err;
     }
-  }, [runId]);
+  }, [runId, setCancelRequested]);
 
   return {
     admission,

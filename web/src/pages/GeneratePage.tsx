@@ -431,7 +431,10 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   // 取消中 is shown while the request is pending OR while the server reports cancel_requested
   // (so it survives a page reopen while the server still processes cancellation).
   const cancelFeedback = useActionFeedback<void>({
-    action: async () => { await cancelRun(); },
+    action: async () => {
+      const ok = await cancelRun();
+      if (!ok) throw new Error("cancel_404");
+    },
     genericError: t("generate.cancel_error"),
     successState: "idle",
   });

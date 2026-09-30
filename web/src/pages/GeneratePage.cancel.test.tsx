@@ -13,7 +13,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useGenerateMock = vi.hoisted(() => vi.fn());
-const installFakeRunServerMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/odt", () => ({
   buildOdtFromSnapshots: vi.fn().mockResolvedValue(new Blob()),
@@ -171,6 +170,14 @@ describe("GeneratePage cancel button (issue #910)", () => {
     // An alert with error text should appear
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
   });
-});
 
-void installFakeRunServerMock;
+  it("c6: shows error when cancelRun returns false (run not found)", async () => {
+    const cancelRun = vi.fn().mockResolvedValue(false);
+    useGenerateMock.mockReturnValue(generatingReturn({ cancelRun }));
+
+    renderPage();
+    fireEvent.click(screen.getByTestId("cancel-run-btn"));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+  });
+});

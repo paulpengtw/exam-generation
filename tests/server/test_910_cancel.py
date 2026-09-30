@@ -488,3 +488,126 @@ def test_executing_host_detects_cancel_and_ends_run_as_cancelled(env: _Env) -> N
     assert snapshot["status"] == "cancelled"
     for q in snapshot["questions"]:
         assert q["termination_reason"] in ("normal", "cancelled")
+
+
+# ---------------------------------------------------------------------------
+# Issue 4: queued-cancel race guard — flag-only path when run is claimed
+# ---------------------------------------------------------------------------
+
+def test_cancel_running_run_sets_flag_only(env: _Env) -> None:
+    """Cancelling a running run sets flag only; questions unchanged, status stays running."""
+
+    async def _run() -> dict[str, Any]:
+        accepted = await env.accept(env.owner)
+        run_id = uuid.UUID(accepted.run_id)
+        # Claim the run (status → "running")
+        claimed = await claim_next_run(env.sessions, host_id="test-host-4")
+        assert claimed is not None
+
+        result = await env.cancel(str(run_id), env.owner)
+
+        async with env.sessions() as session:
+            log = (await session.execute(
+                select(GenerationLog).where(GenerationLog.id == run_id)
+            )).scalar_one()
+            states = (await session.execute(
+                select(GenerationQuestionState).where(
+                    GenerationQuestionState.generation_log_id == run_id
+                )
+            )).scalars().all()
+
+        return {
+            "result": result,
+            "status": log.status,
+            "cancel_requested": log.cancel_requested,
+            "reasons": [s.termination_reason for s in states],
+        }
+
+    info = asyncio.run(_run())
+    assert info["result"] == {"cancelled": True}
+    assert info["status"] == "running"
+    assert info["cancel_requested"] is True
+    assert all(r is None for r in info["reasons"])
+
+
+# ---------------------------------------------------------------------------
+# Issue 5: step-boundary cancel check in _update_unfinished
+# ---------------------------------------------------------------------------
+
+def test_step_boundary_check_honours_cancel_flag(env: _Env) -> None:
+    """_update_unfinished sets confirmed_cancel_event when cancel_requested is True."""
+
+    async def _run() -> bool:
+        accepted = await env.accept(env.owner)
+        run_id = uuid.UUID(accepted.run_id)
+        qid = f"q_{run_id}_001"
+
+        cancel_event = threading.Event()
+        recorder = _QuestionStateRecorder(run_id, env.sessions, confirmed_cancel_event=cancel_event)
+
+        # Manually set cancel_requested on the log
+        async with env.sessions() as session:
+            await session.execute(
+                sa_update(GenerationLog)
+                .where(GenerationLog.id == run_id)
+                .values(cancel_requested=True)
+            )
+            await session.commit()
+
+        # Trigger a step write — this should detect the flag and set the event.
+        await recorder._update_unfinished(qid, processing="running", current_step="text")
+        return cancel_event.is_set()
+
+    assert asyncio.run(_run()) is True
+
+
+# ---------------------------------------------------------------------------
+# Issue 6: completed question terminal unchanged after cancel
+# ---------------------------------------------------------------------------
+
+def test_cancel_does_not_affect_completed_question_terminal(env: _Env) -> None:
+    """A completed question's terminal is not overwritten when the run is cancelled."""
+
+    async def _run() -> dict[str, Any]:
+        accepted = await env.accept(env.owner)
+        run_id = uuid.UUID(accepted.run_id)
+        qid_001 = f"q_{run_id}_001"
+        qid_002 = f"q_{run_id}_002"
+
+        recorder = _QuestionStateRecorder(run_id, env.sessions)
+        normal_terminal = {
+            "termination_reason": "normal",
+            "has_final": True,
+            "final_revision": 1,
+            "delivery_status": "complete",
+            "expected": [],
+            "delivered": [],
+            "missing": [],
+            "review": {"status": "passed", "content_revision": 1},
+        }
+        # Record a normal terminal for the first question (it's "done").
+        await recorder._record_terminal(qid_001, normal_terminal)
+
+        # Now cancel the run (still "queued")
+        result = await env.cancel(str(run_id), env.owner)
+        assert result is not None
+
+        # Read question states
+        async with env.sessions() as session:
+            states = {
+                s.question_id: s
+                for s in (await session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == run_id
+                    )
+                )).scalars().all()
+            }
+
+        return {
+            "q001_reason": states[qid_001].termination_reason,
+            "q002_reason": states[qid_002].termination_reason,
+        }
+
+    info = asyncio.run(_run())
+    assert info["q001_reason"] == "normal"   # unchanged: already had termination_reason
+    assert info["q002_reason"] == "cancelled"  # pending → cancelled by the cancel
