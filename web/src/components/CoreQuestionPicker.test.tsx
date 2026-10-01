@@ -127,3 +127,77 @@ describe("CoreQuestionPicker — use my core question button", () => {
     }
   });
 });
+
+describe("CoreQuestionPicker — #933: sends form's model_plan and effort_plan", () => {
+  it("sends model_plan when modelPlan prop is provided", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockResolvedValueOnce({ candidates: ["Q1"] });
+    const user = userEvent.setup();
+    render(
+      <CoreQuestionPicker
+        {...defaultProps}
+        modelPlan="gemini-3.1-pro-preview"
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+    await screen.findByText("Q1");
+    expect(vi.mocked(planCoreQuestions)).toHaveBeenCalledWith(
+      expect.objectContaining({ model_plan: "gemini-3.1-pro-preview" }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("sends effort_plan when effortPlan prop is provided", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockResolvedValueOnce({ candidates: ["Q1"] });
+    const user = userEvent.setup();
+    render(
+      <CoreQuestionPicker
+        {...defaultProps}
+        modelPlan="claude-opus-4-6"
+        effortPlan="high"
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+    await screen.findByText("Q1");
+    expect(vi.mocked(planCoreQuestions)).toHaveBeenCalledWith(
+      expect.objectContaining({ model_plan: "claude-opus-4-6", effort_plan: "high" }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("omits model_plan and effort_plan when both props are absent (defaults — request unchanged from staging)", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockResolvedValueOnce({ candidates: ["Q1"] });
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+    await screen.findByText("Q1");
+    const call = vi.mocked(planCoreQuestions).mock.calls[0][0];
+    expect(call.model_plan).toBeUndefined();
+    expect(call.effort_plan).toBeUndefined();
+  });
+
+  it("omits model_plan and effort_plan when both props are empty strings", async () => {
+    const { planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockResolvedValueOnce({ candidates: ["Q1"] });
+    const user = userEvent.setup();
+    render(
+      <CoreQuestionPicker
+        {...defaultProps}
+        modelPlan=""
+        effortPlan=""
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+    await screen.findByText("Q1");
+    const call = vi.mocked(planCoreQuestions).mock.calls[0][0];
+    expect(call.model_plan).toBeUndefined();
+    expect(call.effort_plan).toBeUndefined();
+  });
+
+  it("does not show a model or effort dropdown (picker-only selectors removed)", () => {
+    render(<CoreQuestionPicker {...defaultProps} modelPlan="gemini-3.1-pro-preview" />);
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+});

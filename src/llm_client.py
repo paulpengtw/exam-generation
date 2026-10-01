@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import logging
 import re
@@ -25,6 +26,223 @@ from src.common.generation_events import (
 from src.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Provider error extraction — normalises the three body shapes into a record.
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class ProviderErrorDetail:
+    """Normalised description of a provider API error.
+
+    All fields may be ``None`` when not available (e.g. timeout/connection
+    errors that never receive an HTTP response).  ``raw_body_truncated`` is
+    capped at 4 096 bytes.  Never contains API keys or prompt text.
+    """
+
+    provider: str
+    model: str
+    http_status: int | None
+    provider_error_type: str | None
+    provider_error_code: str | None
+    provider_error_status: str | None
+    provider_message: str | None
+    request_id: str | None
+    retry_after_seconds: int | None
+    raw_body_truncated: str | None
+
+
+_RAW_BODY_LIMIT = 4096
+
+
+def _truncate_body(body: object) -> str | None:
+    """Convert *body* to a string truncated to ``_RAW_BODY_LIMIT`` bytes."""
+    if body is None:
+        return None
+    text = str(body)
+    if len(text) > _RAW_BODY_LIMIT:
+        return text[:_RAW_BODY_LIMIT]
+    return text
+
+
+def _parse_retry_after(value: str | None, *, is_ms: bool = False) -> int | None:
+    """Parse a ``retry-after`` header value into integer seconds.
+
+    When *is_ms* is ``True`` (header was ``retry-after-ms``), the value is in
+    milliseconds and is converted to seconds (rounding up).
+    Returns ``None`` when *value* is absent or unparseable.
+    """
+    if value is None:
+        return None
+    try:
+        n = int(float(value))
+        if is_ms:
+            return (n + 999) // 1_000
+        return n
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_google_details(details: list | None) -> dict:
+    """Extract ``retry_after`` and ``quota_id`` from Google gRPC *details* list."""
+    result: dict = {}
+    if not isinstance(details, list):
+        return result
+    for entry in details:
+        if not isinstance(entry, dict):
+            continue
+        at_type = entry.get("@type", "")
+        if "RetryInfo" in at_type:
+            delay = entry.get("retryDelay")
+            if isinstance(delay, str) and delay.endswith("s"):
+                try:
+                    result["retry_after"] = str(int(float(delay[:-1])))
+                except (ValueError, TypeError):
+                    pass
+        if "QuotaFailure" in at_type:
+            violations = entry.get("violations", [])
+            if violations and isinstance(violations, list):
+                first = violations[0]
+                if isinstance(first, dict) and "quotaId" in first:
+                    result["quota_id"] = first["quotaId"]
+    return result
+
+
+def _parse_anthropic_details(details: dict | list | None) -> dict:
+    """Extract ``error_code`` from Anthropic body ``error.details`` field."""
+    result: dict = {}
+    if isinstance(details, dict):
+        if "error_code" in details:
+            result["error_code"] = details["error_code"]
+    elif isinstance(details, list):
+        # Some Anthropic bodies embed RetryInfo in a details list
+        for entry in details:
+            if not isinstance(entry, dict):
+                continue
+            at_type = entry.get("@type", "")
+            if "RetryInfo" in at_type:
+                delay = entry.get("retryDelay")
+                if isinstance(delay, str) and delay.endswith("s"):
+                    try:
+                        result["retry_after"] = str(int(float(delay[:-1])))
+                    except (ValueError, TypeError):
+                        pass
+            if "error_code" in entry:
+                result["error_code"] = entry["error_code"]
+    return result
+
+
+def extract_provider_error(
+    exc: Exception,
+    *,
+    provider: str,
+    model: str,
+) -> ProviderErrorDetail:
+    """Extract a normalised :class:`ProviderErrorDetail` from any provider exception.
+
+    Covers three body shapes:
+    - Anthropic: ``{"type":"error","error":{"type":"...","message":"...",
+      "details":{...}}}``
+    - OpenAI:    ``{"error":{"type":"...","code":"...","message":"..."}}``
+    - Google:    ``[{"error":{"code":<int>,"message":"...","status":"<gRPC>"}}]``
+
+    Never raises; on any parse failure returns a detail with ``None`` provider
+    fields.  Never exposes API keys or prompt text.
+    """
+    status: int | None = getattr(exc, "status_code", None)
+    body: object = getattr(exc, "body", None)
+    response = getattr(exc, "response", None)
+    headers: dict = {}
+    if response is not None:
+        raw_headers = getattr(response, "headers", {})
+        if isinstance(raw_headers, dict):
+            headers = raw_headers
+        else:
+            try:
+                headers = dict(raw_headers)
+            except Exception:
+                headers = {}
+
+    error_type: str | None = None
+    error_code: str | None = None
+    error_status: str | None = None
+    message: str | None = None
+    retry_after_str: str | None = None
+    retry_after_is_ms: bool = False
+
+    try:
+        if isinstance(body, list) and body:
+            # Google list-wrapped body
+            inner = body[0].get("error", {}) if isinstance(body[0], dict) else {}
+            # SDK sets exc.code = None and exc.type = None for list bodies
+            error_type = None
+            error_code = None
+            error_status = inner.get("status")
+            message = inner.get("message")
+            details_parsed = _parse_google_details(inner.get("details"))
+            retry_after_str = details_parsed.get("retry_after")
+
+        elif isinstance(body, dict):
+            # Anthropic or OpenAI dict body
+            err = body.get("error", body)
+            if not isinstance(err, dict):
+                err = {}
+            error_type = err.get("type") or getattr(exc, "type", None)
+            error_code = err.get("code") or getattr(exc, "code", None)
+            error_status = None
+            message = err.get("message") or getattr(exc, "message", None)
+
+            # Anthropic may embed details as a dict or list
+            details_raw = err.get("details")
+            details_parsed = _parse_anthropic_details(details_raw)
+            if "error_code" in details_parsed:
+                error_code = details_parsed["error_code"]
+            if "retry_after" in details_parsed:
+                retry_after_str = details_parsed["retry_after"]
+
+        else:
+            # Non-HTTP or unparseable body
+            error_type = error_code = error_status = message = None
+
+    except Exception:
+        # Parse failure: return null provider fields
+        error_type = error_code = error_status = message = None
+
+    # Check response headers for retry-after (seconds or ms)
+    if retry_after_str is None:
+        sec_val = headers.get("retry-after") or headers.get("Retry-After")
+        if sec_val is not None:
+            retry_after_str = sec_val
+            retry_after_is_ms = False
+        else:
+            ms_val = headers.get("retry-after-ms") or headers.get("Retry-After-Ms")
+            if ms_val is not None:
+                retry_after_str = ms_val
+                retry_after_is_ms = True
+
+    request_id: str | None = (
+        headers.get("request-id")
+        or headers.get("Request-Id")
+        or headers.get("x-request-id")
+        or headers.get("X-Request-Id")
+    )
+
+    return ProviderErrorDetail(
+        provider=provider,
+        model=model,
+        http_status=status,
+        provider_error_type=error_type,
+        provider_error_code=error_code,
+        provider_error_status=error_status,
+        provider_message=message,
+        request_id=request_id,
+        retry_after_seconds=_parse_retry_after(retry_after_str, is_ms=retry_after_is_ms),
+        raw_body_truncated=_truncate_body(body),
+    )
+
+
+# ---------------------------------------------------------------------------
 
 # Observer ids that have already emitted a failure warning (once-per-observer
 # suppression — avoids log spam on repeated observer failures).
@@ -576,10 +794,18 @@ class LLMClient:
             return self.config.effort_correct or self.config.effort_execute
         return self.config.effort_execute
 
-    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
+    def _effort_kwargs(
+        self,
+        purpose: str,
+        provider: str = "anthropic",
+        requested_model: str | None = None,
+    ) -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
         Delegates tier selection to ``_effort_for_purpose`` (plan/verify/correct/execute).
+
+        When ``requested_model`` is provided, applies the fable-downgrade effort clamp
+        so that a substituted Fable call never sends ``xhigh`` to ``claude-opus-4-6``.
 
         Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
         gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
@@ -592,6 +818,10 @@ class LLMClient:
         are caught upstream rather than being silently dropped here.
         """
         effort = self._effort_for_purpose(purpose)
+        if requested_model is not None:
+            clamped = self.config.dispatch_effort(requested_model, effort)
+            if clamped is not None:
+                effort = clamped
 
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
@@ -609,15 +839,25 @@ class LLMClient:
             )
         return {}
 
-    def _provider_options(self, model: str, purpose: str, provider: str) -> dict:
-        """Resolve the provider options shared by dispatch and observation."""
+    def _provider_options(
+        self,
+        model: str,
+        purpose: str,
+        provider: str,
+        requested_model: str | None = None,
+    ) -> dict:
+        """Resolve the provider options shared by dispatch and observation.
+
+        When ``requested_model`` is provided, the fable-downgrade effort clamp is
+        applied inside ``_effort_kwargs`` (issue #940).
+        """
         options = (
             _anthropic_output_kwargs(model)
             if provider == "anthropic"
             else _max_tokens_kwargs(provider)
         )
         options.update(self._temperature_kwargs(model))
-        options.update(self._effort_kwargs(purpose, provider))
+        options.update(self._effort_kwargs(purpose, provider, requested_model=requested_model))
         return options
 
     def _openai_compat_client(self, provider: str) -> OpenAI:
@@ -737,6 +977,52 @@ class LLMClient:
             })
         return content
 
+    def _report_provider_failure(
+        self,
+        exc: Exception,
+        *,
+        provider: str,
+        model: str,
+        call_scope: "CallScope | None",
+        purpose: str,
+        agent: str,
+    ) -> None:
+        """Extract, log, and optionally emit llm_failure detail. Never raises.
+
+        WARNING is emitted unconditionally (so CLI runs without an observer
+        still forward errors to Sentry via LoggingIntegration). The observer
+        event is emitted only when an observer is attached.
+        Any internal exception is swallowed so the original caller exception
+        always propagates.
+        """
+        try:
+            detail = extract_provider_error(exc, provider=provider, model=model)
+            logger.warning(
+                "llm_failure provider=%s model=%s http_status=%s "
+                "error_type=%s error_code=%s request_id=%s retry_after_seconds=%s",
+                detail.provider,
+                detail.model,
+                detail.http_status,
+                detail.provider_error_type,
+                detail.provider_error_code,
+                detail.request_id,
+                detail.retry_after_seconds,
+            )
+            if self._observer:
+                detail_dict = dataclasses.asdict(detail)
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    error_type=type(exc).__name__,
+                    **detail_dict,
+                )
+        except Exception as inner:  # noqa: BLE001
+            logger.debug(
+                "llm_failure diagnostic step failed: %s", type(inner).__name__
+            )
+
     def _call(
         self,
         messages: list[dict],
@@ -766,8 +1052,18 @@ class LLMClient:
         if _call_scope_sink is not None and call_scope is not None:
             _call_scope_sink.append(call_scope)
 
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_model = model
+        model = self.config.dispatch_model(model)
+        if model != _requested_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_model,
+                model,
+            )
+
         provider = resolve_provider(model)
-        options = self._provider_options(model, purpose, provider)
+        options = self._provider_options(model, purpose, provider, requested_model=_requested_model)
         if provider != "anthropic" and self._observer and self.config.llm_stream:
             options.update({
                 "stream": True,
@@ -793,15 +1089,14 @@ class LLMClient:
                 provider, messages, model, purpose, options, agent, call_scope
             )
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider=provider,
+                model=model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
     def _anthropic_call(
@@ -1216,15 +1511,14 @@ class LLMClient:
             )
             return str(output)
         except Exception as exc:
-            if call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=_PURPOSE_TO_AGENT[purpose],
-                    model=self.config.image_model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="openai",
+                model=self.config.image_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=_PURPOSE_TO_AGENT[purpose],
+            )
             raise
 
     def generate_with_tools(
@@ -1249,10 +1543,23 @@ class LLMClient:
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
+
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_call_model = call_model
+        call_model = self.config.dispatch_model(call_model)
+        if call_model != _requested_call_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_call_model,
+                call_model,
+            )
+
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
         operation_scope = self._operation_scope(scope, kind=purpose)
         call_scope: CallScope | None = None
-        options = self._provider_options(call_model, purpose, "anthropic")
+        options = self._provider_options(
+            call_model, purpose, "anthropic", requested_model=_requested_call_model
+        )
         options["tools"] = tools
 
         system_param = (
@@ -1360,15 +1667,14 @@ class LLMClient:
                 })
             return final_text, collected_citations
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=call_model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="anthropic",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
     def generate_with_google_search(
@@ -1436,15 +1742,14 @@ class LLMClient:
                 )
             return content, citations
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=call_model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="gemini",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
 

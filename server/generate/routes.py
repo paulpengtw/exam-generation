@@ -645,6 +645,9 @@ async def plan_core_questions_endpoint(
         from src.common.planner import CandidateValidationError
 
         diagnostic = {PLANNER_DIAGNOSTIC_MARKER: True}
+        is_provider_failure = (
+            isinstance(exc, CandidateValidationError) and exc.stage == "provider_call"
+        )
         if isinstance(exc, CandidateValidationError):
             diagnostic.update(
                 stage=exc.stage,
@@ -653,11 +656,27 @@ async def plan_core_questions_endpoint(
                 actual_count=exc.actual_count,
                 received_count=exc.received_count,
             )
-        logger.warning("Planner returned malformed candidates: %s", exc, extra=diagnostic)
-        raise HTTPException(
+        if is_provider_failure:
+            logger.warning("Planner provider call failed: %s", exc, extra=diagnostic)
+        else:
+            logger.warning("Planner returned malformed candidates: %s", exc, extra=diagnostic)
+        import sentry_sdk as _sentry
+        _sentry.capture_exception(exc)
+        if is_provider_failure:
+            return JSONResponse(
+                status_code=502,
+                content={
+                    "detail": "Planner provider call failed",
+                    "code": "PLANNER_PROVIDER_ERROR",
+                },
+            )
+        return JSONResponse(
             status_code=502,
-            detail="Planner upstream returned malformed candidates",
-        ) from exc
+            content={
+                "detail": "Planner upstream returned malformed candidates",
+                "code": "PLANNER_MALFORMED_OUTPUT",
+            },
+        )
     return PlanCoreQuestionsResponse(candidates=candidates)
 
 
