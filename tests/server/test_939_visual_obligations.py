@@ -2,8 +2,10 @@
 
 Six-slot NS scenario:
   slots 1, 2, 4, 6  – chart_spec set, 圖片 set, valid PNG on disk → delivered
-  slot 3             – chart_spec set, render failed (圖片=None, no file) → missing reason="render_failed"
-  slot 5             – chart_spec set, render returned path but file is 0 bytes → missing reason="empty_image"
+  slot 3             – chart_spec set, render failed (圖片=None, no file)
+                       → missing reason="render_failed"
+  slot 5             – chart_spec set, render returned path but file is 0 bytes
+                       → missing reason="empty_image"
 
 Acceptance criteria verified:
   A1. Every requested visual slot is represented in expected.
@@ -26,7 +28,6 @@ from server.generate.question_terminal import (
     _compute_expected_delivered_missing,
     _QuestionPositionResolution,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -363,7 +364,9 @@ class TestVisualObligations:
             resolved_subquestion_count=1,
             has_per_question_resolution=True,
         )
-        params = SimpleNamespace(skip_verify=False, sub_question_count=1, subquestion_configs=[config])
+        params = SimpleNamespace(
+            skip_verify=False, sub_question_count=1, subquestion_configs=[config]
+        )
         _expected, _delivered, missing = _compute_expected_delivered_missing(
             question_id="q_TEST",
             question=question,
