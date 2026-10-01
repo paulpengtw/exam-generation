@@ -1,0 +1,16 @@
+{
+  "$schema": "exam-generation.content-sidecar-keys/1",
+  "description": "Keys excluded from the question content signature at every depth. Both the Python snapshot ledger (server/generate/snapshot_ledger.py, via src/common/generation_events.CONTENT_SIGNATURE_EXCLUDED_KEYS) and the TypeScript evidence reducer (web/src/lib/generationEvidence.ts, CONTENT_SIDECAR_FIELDS) must exclude exactly this set. A drift test (tests/test_932_sidecar_contract.py) asserts the Python constant matches; the TS module imports this list so a rename fails both sides simultaneously.",
+  "keys": [
+    "verification",
+    "verification_trail",
+    "figure_policy_trail",
+    "reference_example_record",
+    "image_base64",
+    "metadata",
+    "review",
+    "progress",
+    "export",
+    "_export"
+  ]
+}
