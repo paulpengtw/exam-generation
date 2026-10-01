@@ -133,16 +133,12 @@ def test_fable_with_xhigh_effort_admitted_when_downgrade_on() -> None:
     With LLM_FABLE_DOWNGRADE=1 the route must NOT return 422 — admission
     validates against the requested model's roster (xhigh is valid for fable-5),
     and dispatch to claude-opus-4-6 happens at call time.
-    """
-    from server.generate import routes as gen_routes
 
+    Under the detached-run architecture (#929), GET /api/generate returns 202
+    immediately on acceptance; no stream is emitted on the wire.
+    """
     app, token, engine, _cfg = _make_app_and_token(fable_downgrade=True)
 
-    async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
-
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             r = client.get(
@@ -154,7 +150,6 @@ def test_fable_with_xhigh_effort_admitted_when_downgrade_on() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -163,20 +158,18 @@ def test_fable_with_xhigh_effort_admitted_when_downgrade_on() -> None:
         f"Expected admission to pass for claude-fable-5 + xhigh, got 422. "
         f"Body: {r.text}"
     )
-    assert r.status_code == 200
+    # Detached-run acceptance returns 202.
+    assert r.status_code == 202
 
 
 def test_fable_with_xhigh_effort_admitted_when_downgrade_off() -> None:
-    """Baseline: fable-5 + xhigh is also admitted with switch off (roster unchanged)."""
-    from server.generate import routes as gen_routes
+    """Baseline: fable-5 + xhigh is also admitted with switch off (roster unchanged).
 
+    Under the detached-run architecture (#929), GET /api/generate returns 202
+    immediately on acceptance; no stream is emitted on the wire.
+    """
     app, token, engine, _cfg = _make_app_and_token(fable_downgrade=False)
 
-    async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
-
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             r = client.get(
@@ -188,9 +181,9 @@ def test_fable_with_xhigh_effort_admitted_when_downgrade_off() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
     assert r.status_code != 422
-    assert r.status_code == 200
+    # Detached-run acceptance returns 202.
+    assert r.status_code == 202

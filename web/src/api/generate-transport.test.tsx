@@ -9,18 +9,14 @@ import socialBatch from "../../../tests/fixtures/transport-social-batch.json";
 import naturalBatch from "../../../tests/fixtures/transport-natural-batch.json";
 import { useAuthStore } from "../store/authStore";
 import { useGenerate } from "../hooks/useGenerate";
-import AgentStatusPanel from "../components/AgentStatusPanel";
 import { previewGenerate } from "./client";
 
 const originalFetch = globalThis.fetch;
 let server: Server;
 let received: { url?: string; method?: string; body: unknown; authorization?: string }[];
-let holdStream: boolean;
-let streamClosed: boolean;
 let rejectSubmission: boolean;
 let rejectionDetail: unknown;
-let startedLogId: string | null | undefined;
-let includePlannerEvents: boolean;
+let runFinished: boolean;
 const batches = [socialBatch, naturalBatch, {
   subject: "math", seed: 41, grade: 8, context: ["個人"], set_type: "單一題",
   q_type: ["選擇題"], style: ["text_only"], math_thinking: ["形成"],
@@ -32,11 +28,8 @@ beforeEach(async () => {
   captureException.mockClear();
   vi.stubEnv("VITE_SENTRY_DSN", "https://public@example.com/1");
   received = [];
-  holdStream = false;
-  streamClosed = false;
   rejectSubmission = false;
-  startedLogId = undefined;
-  includePlannerEvents = false;
+  runFinished = true;
   rejectionDetail = [{
     field: "per_question_params[0].subquestion_configs[0].question_type", code: "unresolved",
   }];
@@ -58,32 +51,50 @@ beforeEach(async () => {
       return;
     }
     if (request.url === "/api/generate") {
-      response.writeHead(200, { "Content-Type": "text/event-stream" });
-      const startedData = startedLogId === undefined
-        ? "{}"
-        : JSON.stringify({ generation_log_id: startedLogId });
-      response.write(`event: started\ndata: ${startedData}\n\n`);
-      if (includePlannerEvents) {
-        response.write([
-          `event: stage\ndata: ${JSON.stringify({
-            agent: "planner", stage: "batch_briefs", status: "start", ts: 1,
-          })}\n\n`,
-          `event: llm_request\ndata: ${JSON.stringify({
-            purpose: "plan_context_angles", model: "planner-model", messages: [],
-          })}\n\n`,
-          `event: llm_thinking\ndata: ${JSON.stringify({
-            purpose: "plan_context_angles", text: "planner thinking",
-          })}\n\n`,
-          `event: llm_content\ndata: ${JSON.stringify({
-            purpose: "plan_context_angles", text: "planner content",
-          })}\n\n`,
-        ].join(""));
-      }
-      if (holdStream) {
-        response.on("close", () => { streamClosed = true; });
-        return;
-      }
-      response.end('event: result\ndata: {"id":"transport-result","題目":["完整題目"]}\n\nevent: done\ndata: {}\n\n');
+      // Detached runs (issue #908): acceptance is a plain 202 JSON body.
+      response.writeHead(202, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        run_id: "transport-run",
+        protocol_version: 3,
+        total: 1,
+        questions: [{ index: 0, question_id: "transport-result" }],
+      }));
+      return;
+    }
+    if (request.url === "/api/runs/transport-run") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({
+        run_id: "transport-run",
+        status: runFinished ? "completed" : "running",
+        subject: "math",
+        total: 1,
+        started_at: "2026-09-14T00:00:00+00:00",
+        completed_at: runFinished ? "2026-09-14T00:01:00+00:00" : null,
+        error: null,
+        questions: [runFinished
+          ? {
+            index: 0,
+            question_id: "transport-result",
+            processing: "ended",
+            current_step: null,
+            termination_reason: "normal",
+            terminal: {
+              termination_reason: "normal", has_final: true, final_revision: 1,
+              delivery_status: "complete", expected: [], delivered: [], missing: [],
+              review: { status: "passed", content_revision: 1 },
+            },
+            error: null,
+            result: {
+              record_id: "record-1",
+              question: { id: "transport-result", 題目: ["完整題目"] },
+              verification_trail: [], figure_policy_trail: [], reference_example_record: null,
+            },
+          }
+          : {
+            index: 0, question_id: "transport-result", processing: "running",
+            current_step: "text", termination_reason: null, terminal: null, error: null, result: null,
+          }],
+      }));
       return;
     }
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -124,74 +135,45 @@ it.each(batches)("previews a complete large $subject batch over HTTP without sho
   }]);
 });
 
-it.each(batches)("submits a large complete $subject batch once and receives its SSE result", async (batch) => {
+it.each(batches)("submits a large complete $subject batch once and reads its result over HTTP", async (batch) => {
   const payload = { ...batch, text_instruction: "保留每個題組和小題的完整出題指示。".repeat(100) };
   const { result } = renderHook(() => useGenerate());
-  act(() => { result.current.generate(payload); });
-  await waitFor(() => expect(result.current.status).toBe("idle"));
+  act(() => { void result.current.generate(payload); });
+  await waitFor(() => expect(result.current.status).toBe("idle"), { timeout: 8000 });
   expect(result.current.errorMessage).toBeNull();
   expect(result.current.results).toEqual([{ id: "transport-result", 題目: ["完整題目"] }]);
-  expect(received).toEqual([{
-    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 2 },
+  const postRequests = received.filter((r) => r.method === "POST");
+  expect(postRequests).toHaveLength(1);
+  const sentBody = postRequests[0].body as Record<string, unknown>;
+  // issue #912: submission_key is generated per-press and sent in the body.
+  expect(typeof sentBody.submission_key).toBe("string");
+  expect(sentBody.submission_key).toMatch(/^[0-9a-f-]{36}$/);
+  expect(postRequests[0]).toEqual({
+    url: "/api/generate", method: "POST",
+    body: { ...payload, stream_version: 3, submission_key: sentBody.submission_key },
     authorization: "Bearer test-token",
-  }]);
-});
-
-it("routes live batch-planner thinking and content to the planner panel lane", async () => {
-  holdStream = true;
-  includePlannerEvents = true;
-  const { result } = renderHook(() => useGenerate());
-
-  act(() => { result.current.generate(socialBatch); });
-
-  await waitFor(() => {
-    const planner = result.current.agentLanes.find((lane) => lane.agent === "planner");
-    expect(planner?.status).toBe("running");
-    expect(planner?.streamingThinking).toBe("planner thinking");
-    expect(planner?.streamingContent).toBe("planner content");
   });
+  // Everything after the submission is a read of the run, never a write.
+  expect(received.slice(1).every((r) => r.method === "GET" && r.url === "/api/runs/transport-run")).toBe(true);
+  expect(received.slice(1).every((r) => r.authorization === "Bearer test-token")).toBe(true);
+}, 15_000);
 
-  render(
-    <AgentStatusPanel lanes={result.current.agentLanes} requestedTotal={2} />,
-  );
-
-  expect(screen.getByText("Planner")).toBeInTheDocument();
-  expect(screen.getByText("planner thinking")).toBeInTheDocument();
-  expect(screen.getByText("planner content")).toBeInTheDocument();
-  expect(screen.queryByText("Text Generator")).not.toBeInTheDocument();
-  expect(screen.getByTestId("agent-panel-aggregate-label")).toHaveTextContent("2");
-
-  act(() => result.current.reset());
-  await waitFor(() => expect(streamClosed).toBe(true));
-});
-
-it("retains the generation log ID from the started event at the real SSE boundary", async () => {
-  holdStream = true;
-  startedLogId = "transport-log-123";
+it("retains the run ID from the acceptance at the real HTTP boundary and stops on reset", async () => {
+  runFinished = false;
   const { result } = renderHook(() => useGenerate());
 
-  act(() => { result.current.generate(socialBatch); });
+  act(() => { void result.current.generate(socialBatch); });
 
-  await waitFor(() => expect(result.current.generationLogId).toBe("transport-log-123"));
+  await waitFor(() => expect(result.current.generationLogId).toBe("transport-run"));
   expect(result.current.status).toBe("generating");
 
   act(() => result.current.reset());
-  await waitFor(() => expect(streamClosed).toBe(true));
   expect(result.current.generationLogId).toBeNull();
-});
-
-it("cancels an active POST stream without starting another generation", async () => {
-  holdStream = true;
-  const { result } = renderHook(() => useGenerate());
-  act(() => { result.current.generate(socialBatch); });
-  await waitFor(() => expect(received).toHaveLength(1));
-  expect(result.current.status).toBe("generating");
-  act(() => result.current.reset());
-  await waitFor(() => expect(streamClosed).toBe(true));
   expect(result.current.status).toBe("idle");
-  expect(result.current.errorMessage).toBeNull();
+  // Reset only stops watching locally: no further request, cancel or otherwise.
+  await new Promise((resolve) => setTimeout(resolve, 3300));
   expect(received).toHaveLength(1);
-});
+}, 10_000);
 
 it("reports a rejected POST with its field address and does not retry generation", async () => {
   rejectSubmission = true;
@@ -230,18 +212,21 @@ it("shows the nested field and validation message when a malformed POST is rejec
   expect(captureException).toHaveBeenCalledExactlyOnceWith(
     new Error("Invalid request: per_question_params[0].math_thinking: Value error, math_thinking must contain 1 to 3 values"),
     {
-      tags: {
-        source: "fetchEventSource", last_event_type: "none", navigator_online: "true",
-      },
-      contexts: { stream: { elapsed_ms: expect.any(Number), message_count: 0 } },
+      tags: { source: "generateSubmit", navigator_online: "true" },
+      contexts: { submit: { elapsed_ms: expect.any(Number) } },
     },
   );
   const [error, context] = captureException.mock.calls[0];
   expect(`${error.message} ${JSON.stringify(error)} ${JSON.stringify(context)}`).not.toContain("PRIVATE_");
-  // fetch-event-source retries after 1s unless the HTTP rejection is fatal.
+  // A rejected submission is final: it is not retried.
   await new Promise((resolve) => setTimeout(resolve, 1100));
-  expect(received).toEqual([{
-    url: "/api/generate", method: "POST", body: { ...payload, stream_version: 2 },
+  expect(received).toHaveLength(1);
+  const rejBody = received[0].body as Record<string, unknown>;
+  // issue #912: submission_key is sent on every POST.
+  expect(typeof rejBody.submission_key).toBe("string");
+  expect(received[0]).toEqual({
+    url: "/api/generate", method: "POST",
+    body: { ...payload, stream_version: 3, submission_key: rejBody.submission_key },
     authorization: "Bearer test-token",
-  }]);
+  });
 });

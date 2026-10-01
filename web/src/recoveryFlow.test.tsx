@@ -1517,7 +1517,7 @@ describe("identity c: explicit logout — snapshot invalidated (router-driven)",
 
 describe("identity d: both 401 paths preserve snapshot", () => {
   // Unit-level: apiFetch 401 is tested by spying on globalThis.fetch directly (no router
-  // render). The useGenerate stream 401 path is covered by the real-hook test in
+  // render). The useGenerate 401 path (submit and run poll) is covered by the real-hook test in
   // hooks/useGenerate.401.test.ts. Router-driven coverage of the full UI 401→redirect flow
   // would require E2E tests (the auth redirect happens at the browser level after logout).
   it("apiFetch 401 clears auth but leaves snapshot on disk", async () => {
@@ -1539,7 +1539,7 @@ describe("identity d: both 401 paths preserve snapshot", () => {
     expect(JSON.parse(raw!).reason).toBe("session_expired");
   });
 
-  // identity d — useGenerate stream 401 path tested in hooks/useGenerate.401.test.ts
+  // identity d — useGenerate 401 path (submit and poll) tested in hooks/useGenerate.401.test.ts
 });
 
 // e. Two independent tabs each keep their own snapshot ─────────────────────────

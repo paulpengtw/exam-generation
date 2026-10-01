@@ -114,7 +114,7 @@ def test_post_missing_header_returns_426(tmp_path: Path) -> None:
     _write_fixture(fixture, _make_fixture("build-abc"))
     client = _make_client(fixture)
     params = complete_math_query_params()
-    resp = client.post("/api/generate", json={**params, "stream_version": 2})
+    resp = client.post("/api/generate", json={**params, "stream_version": 3})
     assert resp.status_code == 426
     assert resp.json()["code"] == "CLIENT_UPDATE_REQUIRED"
 
@@ -126,7 +126,7 @@ def test_post_current_build_passes(tmp_path: Path) -> None:
     params = complete_math_query_params()
     resp = client.post(
         "/api/generate",
-        json={**params, "stream_version": 2},
+        json={**params, "stream_version": 3},
         headers={"X-Frontend-Build-ID": "build-abc"},
     )
     assert resp.status_code not in (426, 503)
@@ -158,7 +158,7 @@ def test_current_build_still_requires_supported_stream_version(
 
     assert response.status_code == 426
     assert response.json()["code"] == "CLIENT_UPDATE_REQUIRED"
-    assert response.json()["supported_stream_versions"] == [2]
+    assert response.json()["supported_stream_versions"] == [3]
 
 
 def test_current_build_does_not_bypass_incomplete_predraw_validation(tmp_path: Path) -> None:
@@ -168,7 +168,7 @@ def test_current_build_does_not_bypass_incomplete_predraw_validation(tmp_path: P
 
     response = client.post(
         "/api/generate",
-        json={"subject": "math", "stream_version": 2},
+        json={"subject": "math", "stream_version": 3},
         headers={"X-Frontend-Build-ID": "build-abc"},
     )
 
@@ -180,7 +180,7 @@ def test_authority_policy_is_read_again_for_each_request(tmp_path: Path) -> None
     fixture = tmp_path / "policy.json"
     _write_fixture(fixture, _make_fixture("build-a"))
     client = _make_client(fixture)
-    incomplete = {"subject": "math", "stream_version": 2}
+    incomplete = {"subject": "math", "stream_version": 3}
 
     first = client.post(
         "/api/generate",
@@ -250,7 +250,7 @@ def test_zero_dispatch_and_provider_calls_before_build_rejection(
     def _fake_provider(*a: object, **kw: object) -> None:
         provider_calls.append(1)
 
-    monkeypatch.setattr(routes, "generate_question_stream", _fake_stream)
+    monkeypatch.setattr(routes, "accept_run", _fake_stream)
     monkeypatch.setattr(routes, "_check_provider_key_for_model", _fake_provider)
 
     fixture = tmp_path / "policy.json"
@@ -285,7 +285,7 @@ def test_url_source_timeout_returns_retryable_503(tmp_path: Path) -> None:
     client = _make_client(authority_source=source)
     response = client.post(
         "/api/generate",
-        json={"subject": "math", "stream_version": 2},
+        json={"subject": "math", "stream_version": 3},
         headers={"X-Frontend-Build-ID": "build-abc"},
     )
     assert response.status_code == 503
