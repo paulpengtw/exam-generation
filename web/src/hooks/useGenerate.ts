@@ -474,22 +474,6 @@ export function parseErrorPayload(raw: string): ErrorPayload {
   return fallback;
 }
 
-/** Parse the typed started-event payload while accepting legacy empty payloads. */
-export function parseStartedEventData(raw: string): StartedEventPayload | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== "object") return null;
-    const generationLogId = (parsed as Record<string, unknown>).generation_log_id;
-    if (typeof generationLogId === "string" || generationLogId === null) {
-      return { generation_log_id: generationLogId };
-    }
-  } catch {
-    // Legacy and third-party streams may send an empty or non-JSON payload.
-  }
-  return null;
-}
-
 function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
   if (!Array.isArray(detail)) return null;
