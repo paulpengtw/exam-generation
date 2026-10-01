@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -14,7 +13,6 @@ from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlencode
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -22,7 +20,6 @@ from server.app import prune_expired_llm_exchanges
 from server.auth.dependencies import get_config
 from server.auth.tokens import create_jwt
 from server.db import get_async_session
-from server.generate import routes as generate_routes
 from server.models import GenerationLog, GenerationRecord, LLMExchange, User
 from src.data_loader import (
     get_grade_content,
@@ -67,6 +64,25 @@ def math_client(request: pytest.FixtureRequest) -> TestClient:
     state.intro_text = load_intro_text(Path('Introduction to "學習表現" and "學習階段".md'))
     state.grade_content = {grade: get_grade_content(state.curriculum, grade) for grade in (7, 8, 9)}
     return client
+
+
+def _execute_math_run(math_client: TestClient, *, host_id: str = "test-host") -> None:
+    """Claim and execute one queued run from the isolated session factory."""
+    from server.generate.run import claim_next_run, execute_run
+
+    sessions = math_client.app.state.test_async_session_local
+    config = math_client.app.dependency_overrides[get_config]()
+    app_state = math_client.app.state
+
+    async def _run() -> None:
+        claimed = await claim_next_run(sessions, host_id=host_id)
+        if claimed is not None:
+            await execute_run(
+                claimed, app_state=app_state, config=config,
+                session_factory=sessions, host_id=host_id,
+            )
+
+    asyncio.run(_run())
 
 
 @asynccontextmanager
@@ -119,12 +135,11 @@ def test_started_and_history_advertise_the_same_readable_generation_log(
     response = math_client.post(
         "/api/generate", json=complete_math_query_params(skip_verify=True),
     )
-    assert response.status_code == 200
-    events = stream_events(response)
-    assert events[0][0] == "started"
-    log_id = events[0][1]["payload"]["generation_log_id"]
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
     assert str(uuid.UUID(log_id)) == log_id
-    assert any(name == "result" for name, _ in events), events
+
+    _execute_math_run(math_client)
 
     history = math_client.get("/api/history").json()
     detail = math_client.get(f"/api/history/{history['items'][0]['id']}").json()
@@ -134,99 +149,25 @@ def test_started_and_history_advertise_the_same_readable_generation_log(
     assert [(row["agent"], row["exchange_order"]) for row in exchanges.json()] == [("generator", 1)]
 
 
-@pytest.mark.parametrize("method", ["POST", "GET"])
-def test_advertised_log_is_readable_before_results_and_survives_disconnect(
-    math_client: TestClient, monkeypatch: pytest.MonkeyPatch, method: str,
-) -> None:
-    release = threading.Event()
-    calls = []
-
-    def provider_response(_self: Any, **kwargs: Any) -> Iterator[Any]:
-        calls.append(kwargs)
-        if len(calls) == 1:
-            return question_response(_self, **kwargs)
-        assert release.wait(timeout=10), "test did not release verification response"
-        content = json.dumps({"passed": True, "answer_match": True, "details": "correct",
-                              "my_answer": "A", "provided_answer": "A"})
-        return iter([SimpleNamespace(choices=[SimpleNamespace(
-            delta=SimpleNamespace(content=content),
-        )])])
-
-    monkeypatch.setattr("openai.resources.chat.completions.Completions.create", provider_response)
-
-    async def exercise() -> None:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=math_client.app), base_url="http://testserver",
-            headers={"Authorization": math_client.headers["Authorization"]},
-        ) as reader:
-            async with live_generation(
-                math_client, complete_math_query_params(model_verify="gpt-4.1"), method,
-            ) as (events, disconnected, task):
-                try:
-                    name, started = await asyncio.wait_for(events.get(), timeout=5)
-                    assert name == "started"
-                    log_id = started["payload"]["generation_log_id"]
-                    seen = []
-                    while True:
-                        name, data = await asyncio.wait_for(events.get(), timeout=5)
-                        seen.append(name)
-                        agent = data.get("payload", data).get("agent")
-                        if name == "llm_request" and agent == "verifier":
-                            break
-                    assert "result" not in seen
-                    assert not release.is_set()
-                    assert (await reader.get("/api/history")).json()["total"] == 0
-                    before = await reader.get(f"/api/generation-logs/{log_id}/exchanges")
-                    assert before.status_code == 200
-                    assert [row["agent"] for row in before.json()] == ["generator"]
-                    disconnected.set()
-                finally:
-                    release.set()
-                await asyncio.wait_for(task, timeout=10)
-
-            after = await reader.get(f"/api/generation-logs/{log_id}/exchanges")
-            assert after.json()[0] == before.json()[0]
-            history = (await reader.get("/api/history")).json()
-            details = [(await reader.get(f"/api/history/{item['id']}")).json()
-                       for item in history["items"]]
-            assert details and all(detail["generation_log_id"] == log_id for detail in details)
-            assert any(detail["status"] == "aborted" for detail in details)
-
-    asyncio.run(exercise())
-
-
 def test_log_is_advertised_before_the_first_provider_response(
     math_client: TestClient, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    release = threading.Event()
-
-    def held_response(_self: Any, **kwargs: Any) -> Iterator[Any]:
-        assert release.wait(timeout=10), "test did not release generation response"
-        return question_response(_self, **kwargs)
-
-    monkeypatch.setattr("openai.resources.chat.completions.Completions.create", held_response)
-
-    async def exercise() -> None:
-        async with live_generation(
-            math_client, complete_math_query_params(skip_verify=True),
-        ) as (events, _disconnected, _task):
-            try:
-                name, started = await asyncio.wait_for(events.get(), timeout=5)
-                assert name == "started"
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=math_client.app),
-                    base_url="http://testserver", headers=math_client.headers,
-                ) as reader:
-                    response = await reader.get(
-                        f"/api/generation-logs/{started['payload']['generation_log_id']}/exchanges",
-                    )
-                    assert response.status_code == 200
-                    assert response.json() == []
-                    assert not release.is_set()
-            finally:
-                release.set()
-
-    asyncio.run(exercise())
+    monkeypatch.setattr("openai.resources.chat.completions.Completions.create", question_response)
+    response = math_client.post(
+        "/api/generate", json=complete_math_query_params(skip_verify=True),
+    )
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    assert log_id
+    # The log is immediately accessible via the exchanges endpoint before the run executes.
+    exchanges = math_client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    assert exchanges.json() == []
+    _execute_math_run(math_client)
+    # After execution, there is one exchange from the generator.
+    exchanges_after = math_client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges_after.status_code == 200
+    assert len(exchanges_after.json()) == 1
 
 
 def test_failed_generation_keeps_its_advertised_log_and_completed_exchange(
@@ -246,9 +187,9 @@ def test_failed_generation_keeps_its_advertised_log_and_completed_exchange(
     response = math_client.post(
         "/api/generate", json=complete_math_query_params(model_verify="gpt-4.1"),
     )
-    events = stream_events(response)
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    assert "error" in [name for name, _ in events]
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_math_run(math_client)
     history = math_client.get("/api/history").json()
     detail = math_client.get(f"/api/history/{history['items'][0]['id']}").json()
     assert detail["status"] == "failed"
@@ -286,7 +227,8 @@ def test_advertising_log_id_preserves_authentication_and_existence_hiding(
     response = math_client.post(
         "/api/generate", json=complete_math_query_params(skip_verify=True),
     )
-    log_id = stream_events(response)[0][1]["payload"]["generation_log_id"]
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
     other_id = uuid.uuid4()
 
     async def seed() -> None:
@@ -452,7 +394,7 @@ def test_history_detail_reports_no_evidence_after_exchange_retention_pruning(
     config = math_client.app.dependency_overrides[get_config]()
     asyncio.run(prune_expired_llm_exchanges(
         config,
-        session_maker=generate_routes.AsyncSessionLocal,
+        session_maker=math_client.app.state.test_async_session_local,
     ))
 
     detail = math_client.get(f"/api/history/{record_id}")

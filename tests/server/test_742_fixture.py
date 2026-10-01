@@ -40,7 +40,7 @@ def test_event_protocol_importable() -> None:
     )
 
     assert PROTOCOL_VERSION == 2
-    assert 2 in SUPPORTED_STREAM_VERSIONS
+    assert 3 in SUPPORTED_STREAM_VERSIONS
 
 
 def test_generation_events_importable() -> None:
@@ -116,7 +116,7 @@ def test_426_gate_get() -> None:
     assert response.status_code == 426
     body = response.json()
     assert body.get("code") == "CLIENT_UPDATE_REQUIRED"
-    assert 2 in body.get("supported_stream_versions", [])
+    assert 3 in body.get("supported_stream_versions", [])
 
 
 def test_426_gate_post() -> None:
