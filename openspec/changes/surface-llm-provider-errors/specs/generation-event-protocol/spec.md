@@ -25,3 +25,18 @@ Every SSE `error` event in the generation stream SHALL carry, alongside the exis
 #### Scenario: No provider secret in payload
 - **WHEN** any error event is emitted after an authentication or key error
 - **THEN** the `error` event payload contains no API key, no auth token, and no raw provider error body text
+
+#### Scenario: Run-level exception emits error event before done sentinel (issue #956 Gap 1)
+- **WHEN** a run-level exception (outside of per-question workers) terminates the generation stream
+- **THEN** the run host loop emits an SSE `error` event with `code="stream_failed"` and `failure_class` derived from the exception via `classify_provider_error` BEFORE the `done` sentinel
+- **AND** for `_TimeLimitExceededError`, `failure_class` is conservatively `"unknown"`
+
+#### Scenario: failure_class persisted to generation_logs (issue #956 Gap 2)
+- **WHEN** a generation run ends in `status="failed"`
+- **THEN** the `generation_logs.failure_class` column stores the first resolved `failure_class` string (from a per-question error event or from the run-level exception handler, whichever fires first)
+- **AND** `GET /api/runs/{id}` includes `failure_class` in the response body
+- **AND** a reconnecting client reads `snapshot.failure_class` and renders the same localized error message as the live path
+
+#### Scenario: started_invalid error event carries failure_class (issue #956 Gap 3)
+- **WHEN** the generation manifest validation fails before any workers start
+- **THEN** the `started_invalid` error event carries `failure_class="unknown"`

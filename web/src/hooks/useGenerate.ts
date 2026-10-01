@@ -1122,9 +1122,19 @@ export function useGenerate(): UseGenerateReturn {
     const completedAt = snapshot.completed_at !== null ? Date.parse(snapshot.completed_at) : Number.NaN;
     setFinishedAt(Number.isNaN(completedAt) ? Date.now() : completedAt);
     if (snapshot.status === "failed") {
-      // snapshot.error is a plain string — no failure_class is recoverable from it
-      setErrorFailureClass(null);
-      setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+      // issue #946: use snapshot.failure_class when present to show localized message
+      const snapshotFc =
+        typeof snapshot.failure_class === "string" && TAXONOMY_CODES.has(snapshot.failure_class)
+          ? snapshot.failure_class
+          : null;
+      setErrorFailureClass(snapshotFc);
+      if (snapshotFc !== null) {
+        const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+        const localizedErrMsg = `${errMessages[`error.class.${snapshotFc}`] ?? snapshot.error ?? localMessage("generate.run_failed")}\n${errMessages[`error.class_hint.${snapshotFc}`] ?? ""}`.trim();
+        setErrorMessage(localizedErrMsg);
+      } else {
+        setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+      }
       setStatus("error");
       setResultsCompletion("error");
       setTerminalEvidence(false);
