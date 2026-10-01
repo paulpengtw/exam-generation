@@ -25,6 +25,7 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.drain import get_drain
 from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
+from server.generate.model_substitutions import model_substitutions as _model_substitutions
 from server.generate.models import (
     ALLOWED_SUBJECTS,
     SERVER_ONLY_GENERATE_FIELDS,
@@ -339,6 +340,10 @@ async def generate_endpoint(
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
     stream_version: int | None = Query(default=None),  # #742: stream protocol version gate
+    # #943: server-derived field; any client-supplied value is accepted here but
+    # silently discarded — the server always recomputes it from config.
+    # Typed as str | None so FastAPI can accept it (dict is not a valid Query type).
+    model_substitutions: str | None = Query(default=None),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
     config: ServerConfig = Depends(get_config),
@@ -492,9 +497,15 @@ async def _generate(
     params = _require_complete_generate_params(params)
     logger.info("generate request params=%s", params.model_dump(mode="json"))
 
+    params_json_dict = params.model_dump(mode="json")
+    # Strip any client-supplied model_substitutions — it is server-derived only (#943).
+    params_json_dict.pop("model_substitutions", None)
+    subs = _model_substitutions(params, config)
+    if subs:
+        params_json_dict["model_substitutions"] = subs
     log = GenerationLog(
         user_id=user.id,
-        params_json=params.model_dump(mode="json"),
+        params_json=params_json_dict,
         status="started",
     )
     session.add(log)
@@ -522,6 +533,7 @@ async def _generate(
                 params=params,
                 error=message,
                 session_factory=AsyncSessionLocal,
+                model_substitutions_dict=subs or None,
             )
 
         async def persist_aborted_once() -> None:
@@ -535,6 +547,7 @@ async def _generate(
                 subject=params.subject,
                 params=params,
                 session_factory=AsyncSessionLocal,
+                model_substitutions_dict=subs or None,
             )
 
         _drain = get_drain(app_state)

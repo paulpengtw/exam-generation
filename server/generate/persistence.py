@@ -311,6 +311,7 @@ async def _insert_generation_record(
     verification_trail_json: list[dict[str, Any]] | None = None,
     figure_policy_trail_json: list[dict[str, Any]] | None = None,
     reference_example_record_json: Any | None = None,
+    model_substitutions_dict: dict[str, Any] | None = None,
 ) -> uuid.UUID:
     """Build and insert one GenerationRecord row; raises on any failure.
 
@@ -319,18 +320,27 @@ async def _insert_generation_record(
     ``persist_generation_record``).  Callers that want retry semantics should
     call this inside a loop (see
     ``persist_generation_record(..., max_attempts=..., report_exhaustion=True)``).
+
+    *model_substitutions_dict* — when non-empty, the ``model_substitutions`` key
+    is added to ``params_json`` (issue #943).  It is server-derived and never
+    accepted from the client.
     """
+    params_json_value: dict[str, Any] = (
+        params.model_dump(mode="json")
+        if hasattr(params, "model_dump")
+        else dict(params)
+    )
+    # Strip any client-supplied model_substitutions; only the server-derived dict is stored.
+    params_json_value.pop("model_substitutions", None)
+    if model_substitutions_dict:
+        params_json_value["model_substitutions"] = model_substitutions_dict
     record = GenerationRecord(
         user_id=user_id,
         generation_log_id=generation_log_id,
         parent_record_id=parent_record_id,
         subject=subject,
         question_id=payload.get("id", ""),
-        params_json=(
-            params.model_dump(mode="json")
-            if hasattr(params, "model_dump")
-            else dict(params)
-        ),
+        params_json=params_json_value,
         annotations_json=annotations_json,
         question_json=strip_image_base64(payload),
         verification_trail_json=verification_trail_json,
@@ -358,6 +368,7 @@ async def persist_generation_record(
     verification_trail_json: list[dict[str, Any]] | None = None,
     figure_policy_trail_json: list[dict[str, Any]] | None = None,
     reference_example_record_json: list[dict[str, Any]] | None = None,
+    model_substitutions_dict: dict[str, Any] | None = None,
     max_attempts: int = 1,
     backoff_fn: Callable[[int], Awaitable[Any]] | None = None,
     report_exhaustion: bool = False,
@@ -373,6 +384,9 @@ async def persist_generation_record(
     None contract.  Pass ``max_attempts=SAVE_MAX_ATTEMPTS``,
     ``backoff_fn=ctx.save_backoff_fn``, and ``report_exhaustion=True`` from the
     worker thread for bounded retry with Sentry notification on exhaustion.
+
+    *model_substitutions_dict* — when non-empty, the ``model_substitutions`` key
+    is added to ``params_json`` (issue #943).
     """
     if backoff_fn is None:
 
@@ -396,6 +410,7 @@ async def persist_generation_record(
                 verification_trail_json=verification_trail_json,
                 figure_policy_trail_json=figure_policy_trail_json,
                 reference_example_record_json=reference_example_record_json,
+                model_substitutions_dict=model_substitutions_dict,
             )
         except Exception as exc:  # noqa: BLE001 — best-effort persistence
             last_exc = exc
@@ -426,12 +441,16 @@ async def persist_failed_generation_record(
     params: Any,
     error: str,
     session_factory: Any,
+    model_substitutions_dict: dict[str, Any] | None = None,
 ) -> None:
     """Insert one failed-run tombstone without a question payload.
 
     Failed-run history is best effort for the same reason as successful result
     persistence: a database problem must not prevent the stream from reporting
     its server-side error to the caller.
+
+    *model_substitutions_dict* — when non-empty, the ``model_substitutions`` key
+    is added to ``params_json`` (issue #943).
     """
     try:
         figure_policy_trail_json = await _staged_figure_policy_trail(
@@ -442,12 +461,17 @@ async def persist_failed_generation_record(
             generation_log_id,
             session_factory,
         )
+        params_json_value: dict[str, Any] = params.model_dump(mode="json")
+        # Strip any client-supplied model_substitutions; only server-derived dict is stored.
+        params_json_value.pop("model_substitutions", None)
+        if model_substitutions_dict:
+            params_json_value["model_substitutions"] = model_substitutions_dict
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
             subject=subject,
             question_id="",
-            params_json=params.model_dump(mode="json"),
+            params_json=params_json_value,
             question_json=None,
             verification_trail_json=None,
             figure_policy_trail_json=figure_policy_trail_json,
@@ -470,8 +494,13 @@ async def persist_aborted_generation_record(
     subject: str,
     params: Any,
     session_factory: Any,
+    model_substitutions_dict: dict[str, Any] | None = None,
 ) -> None:
-    """Insert one user-aborted run tombstone without a question payload."""
+    """Insert one user-aborted run tombstone without a question payload.
+
+    *model_substitutions_dict* — when non-empty, the ``model_substitutions`` key
+    is added to ``params_json`` (issue #943).
+    """
     try:
         figure_policy_trail_json = await _staged_figure_policy_trail(
             generation_log_id,
@@ -481,12 +510,17 @@ async def persist_aborted_generation_record(
             generation_log_id,
             session_factory,
         )
+        params_json_value: dict[str, Any] = params.model_dump(mode="json")
+        # Strip any client-supplied model_substitutions; only server-derived dict is stored.
+        params_json_value.pop("model_substitutions", None)
+        if model_substitutions_dict:
+            params_json_value["model_substitutions"] = model_substitutions_dict
         record = GenerationRecord(
             user_id=user_id,
             generation_log_id=generation_log_id,
             subject=subject,
             question_id="",
-            params_json=params.model_dump(mode="json"),
+            params_json=params_json_value,
             question_json=None,
             verification_trail_json=None,
             figure_policy_trail_json=figure_policy_trail_json,

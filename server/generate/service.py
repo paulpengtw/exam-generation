@@ -34,6 +34,7 @@ from server.generate.marshalling import (
     make_publisher_trail_emitter,
     question_to_event,
 )
+from server.generate.model_substitutions import model_substitutions as _model_substitutions_helper
 from server.generate.models import (
     GenerateParams,
     build_sse_error,
@@ -787,6 +788,7 @@ def _worker_one_body(
                 "disabled": bool(ctx.params.disable_reference_fewshot),
                 "entries": setup.reference_example_entries,
             }
+            _subs = _model_substitutions_helper(ctx.params, ctx.config)
             _save_coro = persist_generation_record(
                 user_id=ctx.user_id,
                 generation_log_id=ctx.generation_log_id,
@@ -801,6 +803,7 @@ def _worker_one_body(
                     setup.figure_policy_trail if setup.figure_policy_trail else None
                 ),
                 reference_example_record_json=_reference_example_record_json,
+                model_substitutions_dict=_subs or None,
                 max_attempts=SAVE_MAX_ATTEMPTS,
                 backoff_fn=ctx.save_backoff_fn,
                 report_exhaustion=True,

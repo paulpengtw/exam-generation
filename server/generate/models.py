@@ -56,7 +56,10 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
 # no web form control or generated client forwarding.
 # Note: allow_duplicate_figure_kinds was here before issue #450 exposed it in the
 # web UI; it is now forwarded by the frontend and appears in the generated contract.
-SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset({"stream_version"})
+# model_substitutions is server-derived and must never be accepted from the
+# client (it could be spoofed).  It is added to params_json at the server
+# side only (issue #943).
+SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset({"stream_version", "model_substitutions"})
 
 
 def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:
@@ -160,6 +163,9 @@ class GenerateParams(BaseModel):
     reporting_scale: str | None = None
     # #742: stream version gate — server-only, excluded from TS contract
     stream_version: int | None = Field(default=None)
+    # #943: server-derived model substitution record — must not be used from client input;
+    # any client-supplied value is stripped before params_json is built.
+    model_substitutions: dict[str, Any] | None = Field(default=None)
 
     @field_validator(
         "set_type",
