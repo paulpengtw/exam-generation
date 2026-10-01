@@ -523,7 +523,9 @@ def generate_one_core(
     if is_cancelled is not None and is_cancelled():
         raise GenerationCancelled()
 
-    question = spec.parse_text_shell_fn(text_raw, question_id, params, config.model_execute)
+    question = spec.parse_text_shell_fn(
+        text_raw, question_id, params, config.dispatch_model(config.model_execute)
+    )
 
     sq_plans: list[dict] = text_raw.get("subquestions", [])
     subquestion_configs = getattr(params, "subquestion_configs", [])
@@ -965,7 +967,7 @@ def generate_one_core(
             on_trail_entry,
             question_id,
             result,
-            config.model_verify or config.model_execute,
+            config.dispatch_model(config.model_verify or config.model_execute),
             scope=verify_scope,
             content_revision=content_revision,
         )
@@ -1232,7 +1234,7 @@ def generate_with_corrections_core(
             question_id,
             question,
             attempt + 1,
-            config.model_correct or config.model_execute,
+            config.dispatch_model(config.model_correct or config.model_execute),
             decision,
             scope=correction_scope,
             content_revision=content_revision,
@@ -1274,7 +1276,7 @@ def generate_with_corrections_core(
                 on_trail_entry,
                 question_id,
                 result,
-                config.model_verify or config.model_execute,
+                config.dispatch_model(config.model_verify or config.model_execute),
                 scope=verify_scope,
                 content_revision=content_revision,
             )
