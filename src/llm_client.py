@@ -794,10 +794,18 @@ class LLMClient:
             return self.config.effort_correct or self.config.effort_execute
         return self.config.effort_execute
 
-    def _effort_kwargs(self, purpose: str, provider: str = "anthropic") -> dict:
+    def _effort_kwargs(
+        self,
+        purpose: str,
+        provider: str = "anthropic",
+        requested_model: str | None = None,
+    ) -> dict:
         """Return effort kwargs appropriate for the provider and call purpose.
 
         Delegates tier selection to ``_effort_for_purpose`` (plan/verify/correct/execute).
+
+        When ``requested_model`` is provided, applies the fable-downgrade effort clamp
+        so that a substituted Fable call never sends ``xhigh`` to ``claude-opus-4-6``.
 
         Anthropic: wraps effort in ``{"extra_body": {"output_config": {"effort": ...}}}``.
         gemini / openai: maps low/medium/high to ``{"reasoning_effort": effort}``.
@@ -810,6 +818,10 @@ class LLMClient:
         are caught upstream rather than being silently dropped here.
         """
         effort = self._effort_for_purpose(purpose)
+        if requested_model is not None:
+            clamped = self.config.dispatch_effort(requested_model, effort)
+            if clamped is not None:
+                effort = clamped
 
         if provider == "anthropic":
             return {"extra_body": {"output_config": {"effort": effort}}}
@@ -827,15 +839,25 @@ class LLMClient:
             )
         return {}
 
-    def _provider_options(self, model: str, purpose: str, provider: str) -> dict:
-        """Resolve the provider options shared by dispatch and observation."""
+    def _provider_options(
+        self,
+        model: str,
+        purpose: str,
+        provider: str,
+        requested_model: str | None = None,
+    ) -> dict:
+        """Resolve the provider options shared by dispatch and observation.
+
+        When ``requested_model`` is provided, the fable-downgrade effort clamp is
+        applied inside ``_effort_kwargs`` (issue #940).
+        """
         options = (
             _anthropic_output_kwargs(model)
             if provider == "anthropic"
             else _max_tokens_kwargs(provider)
         )
         options.update(self._temperature_kwargs(model))
-        options.update(self._effort_kwargs(purpose, provider))
+        options.update(self._effort_kwargs(purpose, provider, requested_model=requested_model))
         return options
 
     def _openai_compat_client(self, provider: str) -> OpenAI:
@@ -1030,8 +1052,18 @@ class LLMClient:
         if _call_scope_sink is not None and call_scope is not None:
             _call_scope_sink.append(call_scope)
 
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_model = model
+        model = self.config.dispatch_model(model)
+        if model != _requested_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_model,
+                model,
+            )
+
         provider = resolve_provider(model)
-        options = self._provider_options(model, purpose, provider)
+        options = self._provider_options(model, purpose, provider, requested_model=_requested_model)
         if provider != "anthropic" and self._observer and self.config.llm_stream:
             options.update({
                 "stream": True,
@@ -1511,10 +1543,23 @@ class LLMClient:
         if self.config.rate_limit_delay > 0:
             time.sleep(self.config.rate_limit_delay)
         call_model = model or self._model_for_purpose(purpose)
+
+        # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
+        _requested_call_model = call_model
+        call_model = self.config.dispatch_model(call_model)
+        if call_model != _requested_call_model:
+            logger.warning(
+                "fable_downgrade: substituting %s → %s",
+                _requested_call_model,
+                call_model,
+            )
+
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
         operation_scope = self._operation_scope(scope, kind=purpose)
         call_scope: CallScope | None = None
-        options = self._provider_options(call_model, purpose, "anthropic")
+        options = self._provider_options(
+            call_model, purpose, "anthropic", requested_model=_requested_call_model
+        )
         options["tools"] = tools
 
         system_param = (

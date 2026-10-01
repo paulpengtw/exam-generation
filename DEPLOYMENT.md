@@ -152,6 +152,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `LLM_TEMPERATURE` | (unset) | Optional sampling temperature; leave unset to use the provider default. Ignored for models that reject sampling params. |
+| `LLM_FABLE_DOWNGRADE` | (unset / off) | Set to `1` or `true` to transparently dispatch any call whose model id contains `"fable"` to `claude-opus-4-6` instead. `xhigh` effort is clamped to `high` for the substituted model. One WARNING per substituted call is logged; events and records still carry the original requested id. Backend service only — a Railway variable change takes effect only after the staged deploy completes. |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |
