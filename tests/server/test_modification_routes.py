@@ -1374,3 +1374,78 @@ def test_modification_stream_orders_modify_verify_correct_verify_steps(
         if event["event"] == "stage" and event["data"].get("status") == "start"
     ]
     assert starts == ["modification", "verify", "correct", "verify"]
+
+
+# ---------------------------------------------------------------------------
+# issue #946 — Task: modification_failed SSE event carries failure_class
+# ---------------------------------------------------------------------------
+
+class _FailingModificationLLM:
+    """Fake LLM that raises a RuntimeError on first generate_json call."""
+
+    def set_observer(self, observer) -> None:
+        pass
+
+    def generate_json(self, system: str, user: str, **_kwargs):
+        raise RuntimeError("simulated provider failure for #946 test")
+
+    def generate_with_image(self, *args, **kwargs):
+        raise RuntimeError("not used in this test")
+
+
+def test_modification_stream_error_event_carries_failure_class(
+    app_ctx, monkeypatch
+) -> None:
+    """modification_failed SSE error event must carry failure_class (#946).
+
+    When the modification LLM call raises an exception, the emitted SSE error
+    event must include a failure_class field from the taxonomy (#946 task 3.4/3.6).
+    The code/message fields must remain unchanged.
+    """
+    from src.llm_client import _TAXONOMY_CODES
+
+    app, SessionLocal, config = app_ctx
+    base = _full_social_studies_question()
+    user_id, record_id = _seed_record(SessionLocal, question_json=base)
+    fake = _FailingModificationLLM()
+
+    from server.generate import modification_routes as mod_routes
+
+    monkeypatch.setattr(mod_routes, "LLMClient", lambda _config: fake, raising=False)
+
+    token = create_jwt(user_id, "user@example.com", config=config)
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/generation-records/{record_id}/modifications",
+            json=_modification_payload(),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        run_id = response.json()["run_id"]
+        stream = client.get(
+            f"/api/generation-records/{record_id}/modifications/{run_id}/stream",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert stream.status_code == 200
+    events = _parse_sse_events(stream.text)
+
+    # Find the error event
+    error_events = [e for e in events if e["event"] == "error"]
+    assert error_events, f"No SSE error event found; events: {[e['event'] for e in events]}"
+
+    err_data = error_events[0]["data"]
+    # code and message must be present (unchanged contract)
+    assert err_data.get("code") == "modification_failed", (
+        f"code must be 'modification_failed', got {err_data!r}"
+    )
+    assert isinstance(err_data.get("message"), str), (
+        f"message must be a string, got {err_data!r}"
+    )
+    # failure_class must be present and from the taxonomy
+    assert "failure_class" in err_data, (
+        f"failure_class missing from modification_failed SSE payload: {err_data!r}"
+    )
+    assert err_data["failure_class"] in _TAXONOMY_CODES, (
+        f"failure_class {err_data['failure_class']!r} not in taxonomy"
+    )

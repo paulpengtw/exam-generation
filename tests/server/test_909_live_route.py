@@ -386,3 +386,87 @@ def test_events_route_full_envelope_for_generation_event(harness: _Harness) -> N
         _live_observers.pop(run_id, None)
 
     asyncio.run(asyncio.wait_for(_run(), timeout=15.0))
+
+
+def test_live_stream_error_event_carries_failure_class(harness: _Harness) -> None:
+    """SSE error events published to a live run carry failure_class in their payload.
+
+    Issue #946: confirms the detached-run observe path delivers failure_class to clients.
+    The error event is published via _publish_live and must appear verbatim in the
+    SSE stream, including the failure_class field set by build_sse_error.
+    """
+    from server.generate.models import build_sse_error
+
+    async def _run() -> None:
+        app = harness.app()
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            post_resp = await client.post(
+                "/api/generate",
+                json=_body(),
+                headers=harness.headers(harness.owner),
+            )
+            assert post_resp.status_code == 202, post_resp.text
+            run_id = post_resp.json()["run_id"]
+
+            _live_observers[run_id] = []
+
+            error_payload = build_sse_error(
+                "quota_billing_exhausted",
+                "Provider quota exhausted",
+                failure_class="quota_billing_exhausted",
+            )
+            error_event = {
+                "event": "error",
+                "context": {"run_id": run_id, "event_seq": 1},
+                "payload": error_payload,
+            }
+
+            async def _publisher() -> None:
+                deadline = asyncio.get_event_loop().time() + 8.0
+                while asyncio.get_event_loop().time() < deadline:
+                    if list(_live_observers.get(run_id, [])):
+                        await _publish_live(run_id, error_event)
+                        await _publish_live(run_id, {"event": "done", "payload": None})
+                        return
+                    await asyncio.sleep(0.01)
+                await _publish_live(run_id, {"event": "done", "payload": None})
+
+            publisher_task = asyncio.create_task(_publisher())
+
+            events_resp = await asyncio.wait_for(
+                client.get(
+                    f"/api/runs/{run_id}/events",
+                    headers=harness.headers(harness.owner),
+                ),
+                timeout=10.0,
+            )
+            await publisher_task
+
+        assert events_resp.status_code == 200, events_resp.text
+        body = events_resp.text
+
+        error_frames: list[dict[str, Any]] = []
+        for chunk in body.split("\n\n"):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            lines = chunk.splitlines()
+            event_line = next((ln for ln in lines if ln.startswith("event: ")), None)
+            data_line = next((ln for ln in lines if ln.startswith("data: ")), None)
+            if event_line == "event: error" and data_line is not None:
+                error_frames.append(json.loads(data_line[len("data: "):]))
+
+        assert error_frames, "expected at least one error SSE frame"
+        envelope = error_frames[0]
+        inner = envelope.get("payload", {})
+        assert isinstance(inner, dict), f"expected dict payload in error envelope: {envelope}"
+        assert inner.get("failure_class") == "quota_billing_exhausted", (
+            f"failure_class missing or wrong in error inner payload: {inner}"
+        )
+
+        _live_observers.pop(run_id, None)
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=15.0))

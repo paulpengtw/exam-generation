@@ -447,6 +447,9 @@ def _parse_subquestion(
         raw_question_type = sq_raw.get("題型", params.題型.value)
         if raw_question_type not in tuple(member.value for member in QuestionType):
             raise SubquestionParseError("題型欄位不是可辨識的題型")
+        題目 = sq_raw.get("題目", "")
+        if not isinstance(題目, str) or not 題目.strip():
+            raise SubquestionParseError("子題缺少必要的「題目」文字（空白或遺漏）")
         result = SubQuestion(
             id=sq_raw.get("id", f"{question_id}-{sq_raw.get('序號', i):02d}"),
             序號=sq_raw.get("序號", i),
@@ -459,7 +462,7 @@ def _parse_subquestion(
             出題概念=sq_raw.get("出題概念", ""),
             reporting_scale=sq_raw.get("reporting_scale") or (cfg.reporting_scale if cfg else None),
             題型=raw_question_type,
-            題目=sq_raw.get("題目", ""),
+            題目=題目,
             答案=sq_raw.get("答案", ""),
             答案解析=sq_raw.get("答案解析", ""),
             評分規準=rubric,

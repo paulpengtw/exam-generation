@@ -97,6 +97,10 @@ class GenerationLog(Base):
         Boolean, nullable=False, default=False, server_default=false()
     )
     submission_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Issue #946: LLM provider error taxonomy code when the run fails.
+    # One of the ten stable codes from classify_provider_error, or None when the
+    # run has not failed or the failure predates this column.
+    failure_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     user: Mapped[User] = relationship(back_populates="generation_logs")
 

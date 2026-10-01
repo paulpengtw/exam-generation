@@ -30,6 +30,7 @@ from src.corrector import (
     FROZEN_TOP_LEVEL_FIELDS as MATH_FROZEN_TOP_LEVEL_FIELDS,
 )
 from src.llm_client import LLMClient
+from src.llm_client import classify_provider_error as _classify_provider_error
 from src.natural_sciences.corrector import (
     FROZEN_SUBQUESTION_FIELDS as NS_FROZEN_SUBQUESTION_FIELDS,
 )
@@ -456,9 +457,11 @@ async def stream_modification_run(
                 yield _serialize_event(event)
         except Exception as exc:
             status = "failed"
+            _mfc = _classify_provider_error(exc)
             error_payload = build_sse_error(
                 "modification_failed",
                 f"Modification stream failed ({type(exc).__name__})",
+                failure_class=_mfc,
             )
             error_message = error_payload["message"]
             yield _serialize_event(

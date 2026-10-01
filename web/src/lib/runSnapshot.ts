@@ -71,6 +71,11 @@ export interface RunSnapshot {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  /**
+   * Issue #946: LLM provider error taxonomy code when the run failed.
+   * One of the ten stable codes from classify_provider_error, or null when absent.
+   */
+  failure_class?: string | null;
   /** True when the owner has requested cancellation but not all questions have ended yet. */
   cancel_requested?: boolean;
   /**
@@ -194,6 +199,8 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
     started_at: stringOrNull(raw.started_at),
     completed_at: stringOrNull(raw.completed_at),
     error: stringOrNull(raw.error),
+    // issue #946: persist LLM error taxonomy code through the snapshot
+    failure_class: typeof raw.failure_class === "string" ? raw.failure_class : null,
     questions,
     cancel_requested: raw.cancel_requested === true ? true : undefined,
     queue_position: typeof raw.queue_position === "number" && Number.isInteger(raw.queue_position) && raw.queue_position >= 0

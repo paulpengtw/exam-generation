@@ -83,21 +83,44 @@ function parseResult(raw: string): ModificationRunResult | null {
   };
 }
 
-function parseError(raw: string): Error {
+const _TAXONOMY_CODES_MOD = new Set([
+  "auth_config",
+  "quota_billing_exhausted",
+  "rate_limited",
+  "overloaded",
+  "timeout",
+  "connection",
+  "context_length",
+  "content_filtered",
+  "malformed_response",
+  "unknown",
+]);
+
+function parseError(raw: string): { error: Error; failureClass: string | null } {
   const parsed = parseJson(raw);
+  let errorMsg: string | null = null;
+  let failureClass: string | null = null;
   if (parsed !== null && typeof parsed === "object") {
-    const message = (parsed as Record<string, unknown>).message;
+    const obj = parsed as Record<string, unknown>;
+    const message = obj.message;
     if (typeof message === "string" && message.length > 0) {
-      return new Error(message);
+      errorMsg = message;
+    }
+    const fc = obj.failure_class;
+    if (typeof fc === "string" && _TAXONOMY_CODES_MOD.has(fc)) {
+      failureClass = fc;
     }
   }
-  return new Error(raw || "Modification stream failed");
+  return {
+    error: new Error(errorMsg ?? (raw || "Modification stream failed")),
+    failureClass,
+  };
 }
 
 export type ModificationStreamEvent =
   | { kind: "stage"; event: ModificationStageEvent }
   | { kind: "result"; result: ModificationRunResult }
-  | { kind: "error"; error: Error }
+  | { kind: "error"; error: Error; failureClass: string | null }
   | { kind: "done"; result: ModificationRunResult | null };
 
 export function decodeModificationEvent(
@@ -113,8 +136,10 @@ export function decodeModificationEvent(
       const result = parseResult(rawData);
       return result === null ? null : { kind: "result", result };
     }
-    case "error":
-      return { kind: "error", error: parseError(rawData) };
+    case "error": {
+      const { error, failureClass } = parseError(rawData);
+      return { kind: "error", error, failureClass };
+    }
     case "done":
       return { kind: "done", result: parseResult(rawData) };
     default:
