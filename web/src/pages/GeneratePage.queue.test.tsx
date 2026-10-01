@@ -57,6 +57,7 @@ import { resetRecoveryStoreForTests } from "../lib/recovery/recoveryStore";
 import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
 import {
   acceptedRun,
+  endedQuestion,
   runSnapshot,
   waitingQuestion,
   runningQuestion,
@@ -176,5 +177,41 @@ describe("GeneratePage queue features (issue #912)", () => {
       () => expect(screen.getByTestId("param-form-submit")).not.toBeDisabled(),
       { timeout: 5000 },
     );
+  }, 20_000);
+
+  it("q3: provider failure shows safe context and keeps the form retryable", async () => {
+    server.setAcceptance(acceptedRun(1, "run-provider-failure"));
+    server.setSnapshot("run-provider-failure", runSnapshot(
+      [waitingQuestion("q-1")],
+      { run_id: "run-provider-failure", status: "running" },
+    ));
+
+    renderPage(ROUTE);
+    const submitBtn = await screen.findByRole("button", { name: "Start generation" });
+    fireEvent.click(submitBtn);
+    await waitFor(() => expect(server.submits()).toHaveLength(1));
+
+    server.setSnapshot("run-provider-failure", runSnapshot(
+      [endedQuestion("q-1", { reason: "failed" })],
+      {
+        run_id: "run-provider-failure",
+        status: "failed",
+        error: "Run execution failed (RuntimeError)",
+        failure_class: "rate_limited",
+        failure_context: {
+          provider: "gemini",
+          model: "gemini-3.1-pro-preview",
+          httpStatus: 429,
+        },
+      },
+    ));
+
+    await waitFor(
+      () => expect(screen.getByRole("alert")).toHaveTextContent(
+        "gemini · gemini-3.1-pro-preview · HTTP 429",
+      ),
+      { timeout: 8_000 },
+    );
+    expect(screen.getByTestId("param-form-submit")).not.toBeDisabled();
   }, 20_000);
 });

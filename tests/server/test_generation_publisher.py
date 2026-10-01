@@ -596,7 +596,17 @@ def test_slice4b_error_event_has_v2_context(tmp_path) -> None:
     def _fake_do_generate(rng_params, overrides, **kwargs):
         # Index 1 is _002; raise there
         if kwargs["question_id"].endswith("_002"):
-            raise RuntimeError("boom")
+            from src.llm_client import ProviderFailureContext
+
+            exc = RuntimeError("boom")
+            exc._provider_failure_context = ProviderFailureContext(  # type: ignore[attr-defined]
+                provider="gemini",
+                model="gemini-3.1-pro-preview",
+                tier="execute",
+                http_status=429,
+                retry_after_seconds=12,
+            )
+            raise exc
         return ExamQuestion(
             id=kwargs["question_id"],
             情境=[c for c in rng_params.情境],
@@ -657,10 +667,15 @@ def test_slice4b_error_event_has_v2_context(tmp_path) -> None:
     assert p["failure_class"] in _TAXONOMY_CODES, (
         f"unexpected failure_class value {p['failure_class']!r}"
     )
+    assert p["provider"] == "gemini"
+    assert p["model"] == "gemini-3.1-pro-preview"
+    assert p["tier"] == "execute"
+    assert p["http_status"] == 429
+    assert p["retry_after_seconds"] == 12
+    assert "boom" not in p
 
     # Stream still ends (break on error behavior unchanged)
     assert events[-1]["event"] in ("done", "error"), (
         f"stream must end with done or error; last event: {events[-1]['event']}"
     )
-
 

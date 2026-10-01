@@ -69,7 +69,11 @@ from src.common.generation_events import (
     new_operation_scope,
     new_run_id,
 )
-from src.llm_client import LLMClient, classify_provider_error
+from src.llm_client import (
+    LLMClient,
+    classify_provider_error,
+    provider_failure_sse_kwargs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -959,6 +963,7 @@ def _worker_one_body(
                 "generation_failed",
                 f"Question generation failed ({type(exc).__name__})",
                 failure_class=_fc,
+                **provider_failure_sse_kwargs(exc),
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
@@ -1357,6 +1362,7 @@ async def generate_question_stream(
                     "batch_generation_failed",
                     f"Batch planning failed ({type(batch_fatal_error).__name__})",
                     failure_class=_bfc,
+                    **provider_failure_sse_kwargs(batch_fatal_error),
                 ),
             )
             for i, question in enumerate(ctx.manifest):
@@ -1395,6 +1401,7 @@ async def generate_question_stream(
                         "generation_failed",
                         f"Question generation failed ({type(outcome).__name__})",
                         failure_class=_ofc,
+                        **provider_failure_sse_kwargs(outcome),
                     ),
                 )
                 # Phase 3 – worker-unexpected-exit terminal (shared finalize path).

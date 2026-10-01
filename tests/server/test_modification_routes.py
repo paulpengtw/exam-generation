@@ -1387,10 +1387,30 @@ class _FailingModificationLLM:
         pass
 
     def generate_json(self, system: str, user: str, **_kwargs):
-        raise RuntimeError("simulated provider failure for #946 test")
+        from src.llm_client import ProviderFailureContext
+
+        exc = RuntimeError("simulated provider failure for #946 test")
+        exc._provider_failure_context = ProviderFailureContext(  # type: ignore[attr-defined]
+            provider="gemini",
+            model="gemini-3.1-pro-preview",
+            tier="correct",
+            http_status=500,
+            retry_after_seconds=None,
+        )
+        raise exc
 
     def generate_with_image(self, *args, **kwargs):
-        raise RuntimeError("not used in this test")
+        from src.llm_client import ProviderFailureContext
+
+        exc = RuntimeError("not used in this test")
+        exc._provider_failure_context = ProviderFailureContext(  # type: ignore[attr-defined]
+            provider="gemini",
+            model="gemini-3.1-pro-preview",
+            tier="verify",
+            http_status=500,
+            retry_after_seconds=None,
+        )
+        raise exc
 
 
 def test_modification_stream_error_event_carries_failure_class(
@@ -1449,3 +1469,8 @@ def test_modification_stream_error_event_carries_failure_class(
     assert err_data["failure_class"] in _TAXONOMY_CODES, (
         f"failure_class {err_data['failure_class']!r} not in taxonomy"
     )
+    assert err_data["provider"] == "gemini"
+    assert err_data["model"] == "gemini-3.1-pro-preview"
+    assert err_data["tier"] == "verify"
+    assert err_data["http_status"] == 500
+    assert "simulated provider failure" not in err_data

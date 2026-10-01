@@ -128,6 +128,53 @@ class TestCallFailureCarriesDetail:
                 )
         assert exc_info.value is fake_exc
 
+    def test_call_failure_attaches_safe_context_for_sse(self) -> None:
+        """Caught provider failures expose only display-safe context to SSE callers."""
+        from src.llm_client import LLMClient, provider_failure_sse_kwargs
+
+        config = _make_config()
+        client = LLMClient(config)
+        fake_exc = _make_fake_exc(
+            body={"error": {"type": "rate_limit_error", "message": "SENSITIVE BODY"}},
+        )
+
+        with patch.object(client, "_anthropic_call", side_effect=fake_exc):
+            with pytest.raises(Exception) as exc_info:
+                client._call(
+                    [{"role": "user", "content": "hello"}],
+                    "claude-opus-4-6",
+                    "generate",
+                    scope=None,
+                )
+
+        assert provider_failure_sse_kwargs(exc_info.value) == {
+            "provider": "anthropic",
+            "model": "claude-opus-4-6",
+            "tier": "execute",
+            "http_status": 429,
+            "retry_after_seconds": None,
+        }
+        assert "SENSITIVE BODY" not in provider_failure_sse_kwargs(exc_info.value)
+
+    def test_call_failure_context_uses_dispatched_model_after_fable_downgrade(self) -> None:
+        """SSE context names the model that actually made the provider call."""
+        from src.llm_client import LLMClient, provider_failure_sse_kwargs
+
+        config = _make_config(fable_downgrade=True)
+        client = LLMClient(config)
+        fake_exc = _make_fake_exc()
+
+        with patch.object(client, "_anthropic_call", side_effect=fake_exc):
+            with pytest.raises(Exception) as exc_info:
+                client._call(
+                    [{"role": "user", "content": "hello"}],
+                    "claude-fable-5",
+                    "generate",
+                    scope=None,
+                )
+
+        assert provider_failure_sse_kwargs(exc_info.value)["model"] == "claude-opus-4-6"
+
     def test_generate_with_tools_failure_carries_detail(self) -> None:
         """generate_with_tools() llm_failure event carries ProviderErrorDetail fields."""
         from src.llm_client import LLMClient
@@ -222,7 +269,10 @@ class TestLlmFailureGuard:
 
         for pos in failure_positions:
             # Each llm_failure emission must be inside _report_provider_failure
-            window_start = max(0, pos - 50)
+            # The helper now also constructs the safe SSE projection before
+            # emitting the diagnostic, so its body is longer than the original
+            # 50-line guard window.
+            window_start = max(0, pos - 125)
             window = lines[window_start:pos + 1]
             window_text = "\n".join(window)
             assert "_report_provider_failure" in window_text, (

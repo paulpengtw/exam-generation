@@ -263,7 +263,7 @@ def test_invalid_started_error_payload_has_no_question_content(
             # code+message are present.
             allowed_keys = {
                 "code", "message", "failure_class",
-                "provider", "model", "tier", "retry_after_seconds",
+                "provider", "model", "tier", "http_status", "retry_after_seconds",
             }
             extra = set(payload.keys()) - allowed_keys
             assert not extra, f"error payload has unexpected keys: {extra}"

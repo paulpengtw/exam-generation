@@ -53,6 +53,23 @@ class ProviderErrorDetail:
     raw_body_truncated: str | None
 
 
+@dataclasses.dataclass(frozen=True)
+class ProviderFailureContext:
+    """Safe display context carried from a failed provider dispatch.
+
+    This deliberately contains no provider message, request id, raw response,
+    API key, or prompt content. The full :class:`ProviderErrorDetail` remains
+    available to the redacted exchange recorder, while SSE callers receive only
+    these allow-listed fields.
+    """
+
+    provider: str
+    model: str
+    tier: str
+    http_status: int | None
+    retry_after_seconds: int | None
+
+
 _RAW_BODY_LIMIT = 4096
 
 
@@ -614,6 +631,43 @@ _PLAN_PURPOSES: frozenset[str] = frozenset({"plan", "plan_core_questions", "plan
 # equality check against a string no caller sends silently degrades to the execute tier.
 _VERIFY_PURPOSES: frozenset[str] = frozenset({"verify", "fact_check"})
 _CORRECT_PURPOSES: frozenset[str] = frozenset({"correct"})
+
+
+def tier_for_purpose(purpose: str) -> str:
+    """Map a provider call purpose to the user-visible model tier."""
+    if purpose in _PLAN_PURPOSES:
+        return "plan"
+    if purpose in _VERIFY_PURPOSES:
+        return "verify"
+    if purpose in _CORRECT_PURPOSES:
+        return "correct"
+    return "execute"
+
+
+def get_provider_failure_context(
+    exc: BaseException,
+) -> ProviderFailureContext | None:
+    """Return the sanitized context attached by the provider call boundary."""
+    context = getattr(exc, "_provider_failure_context", None)
+    if context is None:
+        # Planner validation errors intentionally carry the same safe value after
+        # discarding the provider exception chain.
+        context = getattr(exc, "provider_context", None)
+    return context if isinstance(context, ProviderFailureContext) else None
+
+
+def provider_failure_sse_kwargs(exc: BaseException) -> dict[str, object]:
+    """Project a caught provider failure into the safe SSE error allow-list."""
+    context = get_provider_failure_context(exc)
+    if context is None:
+        return {}
+    return {
+        "provider": context.provider,
+        "model": context.model,
+        "tier": context.tier,
+        "http_status": context.http_status,
+        "retry_after_seconds": context.retry_after_seconds,
+    }
 
 
 class Citation(BaseModel):
@@ -1264,6 +1318,23 @@ class LLMClient:
         """
         try:
             detail = extract_provider_error(exc, provider=provider, model=model)
+            context = ProviderFailureContext(
+                provider=detail.provider,
+                model=detail.model,
+                tier=tier_for_purpose(purpose),
+                http_status=detail.http_status,
+                retry_after_seconds=detail.retry_after_seconds,
+            )
+            # Keep the normalized diagnostic and its display-safe projection
+            # reachable from the original exception. Callers may then enrich an
+            # SSE error without re-parsing or forwarding sensitive fields.
+            try:
+                setattr(exc, "_provider_error_detail", detail)
+                setattr(exc, "_provider_failure_context", context)
+            except Exception:
+                # A provider SDK may use an exception type that disallows custom
+                # attributes; diagnostics and propagation still remain intact.
+                pass
             logger.warning(
                 "llm_failure provider=%s model=%s http_status=%s "
                 "error_type=%s error_code=%s request_id=%s retry_after_seconds=%s",
@@ -1284,6 +1355,7 @@ class LLMClient:
                     call_scope,
                     purpose=purpose,
                     agent=agent,
+                    tier=context.tier,
                     error_type=type(exc).__name__,
                     **detail_dict,
                 )

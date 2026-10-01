@@ -625,7 +625,7 @@ async def plan_core_questions_endpoint(
     _check_provider_key_for_model(effective_plan_model, config, "model_plan")
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     from src.config import Config as SrcConfig
-    from src.llm_client import LLMClient
+    from src.llm_client import LLMClient, provider_failure_sse_kwargs
 
     src_config = SrcConfig.from_env()
     src_config = dataclasses.replace(
@@ -674,12 +674,18 @@ async def plan_core_questions_endpoint(
         _sentry.capture_exception(exc)
         if is_provider_failure:
             _pfc = getattr(exc, "failure_class", None) or "unknown"
+            _provider_context = {
+                key: value
+                for key, value in provider_failure_sse_kwargs(exc).items()
+                if value is not None
+            }
             return JSONResponse(
                 status_code=502,
                 content={
                     "detail": "Planner provider call failed",
                     "code": "PLANNER_PROVIDER_ERROR",
                     "failure_class": _pfc,
+                    **_provider_context,
                 },
             )
         return JSONResponse(

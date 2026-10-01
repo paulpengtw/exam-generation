@@ -31,6 +31,7 @@ from src.corrector import (
 )
 from src.llm_client import LLMClient
 from src.llm_client import classify_provider_error as _classify_provider_error
+from src.llm_client import provider_failure_sse_kwargs as _provider_failure_sse_kwargs
 from src.natural_sciences.corrector import (
     FROZEN_SUBQUESTION_FIELDS as NS_FROZEN_SUBQUESTION_FIELDS,
 )
@@ -462,6 +463,7 @@ async def stream_modification_run(
                 "modification_failed",
                 f"Modification stream failed ({type(exc).__name__})",
                 failure_class=_mfc,
+                **_provider_failure_sse_kwargs(exc),
             )
             error_message = error_payload["message"]
             yield _serialize_event(

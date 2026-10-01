@@ -20,6 +20,7 @@ def build_sse_error(
     provider: str | None = None,
     model: str | None = None,
     tier: str | None = None,
+    http_status: int | None = None,
     retry_after_seconds: int | None = None,
 ) -> dict[str, Any]:
     """Return a structured SSE error payload dict.
@@ -43,6 +44,7 @@ def build_sse_error(
     - *provider*:            provider string, e.g. ``"anthropic"``.
     - *model*:               model id string.
     - *tier*:                call tier, e.g. ``"execute"`` / ``"verify"``.
+    - *http_status*:         upstream HTTP status, when one was returned.
     - *retry_after_seconds*: integer seconds hint from provider.
     """
     d: dict[str, Any] = {"code": code, "message": message}
@@ -54,6 +56,8 @@ def build_sse_error(
         d["model"] = model
     if tier is not None:
         d["tier"] = tier
+    if http_status is not None:
+        d["http_status"] = http_status
     if retry_after_seconds is not None:
         d["retry_after_seconds"] = retry_after_seconds
     return d

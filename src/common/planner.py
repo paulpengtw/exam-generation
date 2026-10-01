@@ -11,7 +11,12 @@ import re
 
 from src.common.generation_events import OperationScope
 from src.common.kwarg_compat import accepts_kwarg
-from src.llm_client import LLMClient, classify_provider_error
+from src.llm_client import (
+    LLMClient,
+    ProviderFailureContext,
+    classify_provider_error,
+    get_provider_failure_context,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,7 @@ class CandidateValidationError(ValueError):
         self, stage: str, *, expected_count: int, actual_count: int = 0,
         received_count: int = 0, attempt: int = 1,
         failure_class: str | None = None,
+        provider_context: ProviderFailureContext | None = None,
     ):
         self.stage = stage
         self.expected_count = expected_count
@@ -44,6 +50,7 @@ class CandidateValidationError(ValueError):
         # issue #946 — taxonomy code computed before the chain is discarded;
         # ``None`` for non-provider-call failures.
         self.failure_class: str | None = failure_class
+        self.provider_context = provider_context
         super().__init__(
             f"Planner validation failed: stage={stage} attempt={attempt} "
             f"expected_count={expected_count} actual_count={actual_count} "
@@ -87,9 +94,11 @@ def plan_core_questions(
             # Preserve the failing boundary, never its raw message or chain.
             # Compute failure_class BEFORE discarding the exception chain (#946).
             _fc = classify_provider_error(_prov_exc)
+            _provider_context = get_provider_failure_context(_prov_exc)
             raise CandidateValidationError(
                 "provider_call", expected_count=n, attempt=attempt + 1,
                 failure_class=_fc,
+                provider_context=_provider_context,
             ) from None
         try:
             return _parse_candidates(raw, n, attempt=attempt + 1)

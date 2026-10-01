@@ -30,7 +30,7 @@ from server.generate.run import (
     execute_run,
     read_run,
 )
-from server.models import Base, GenerationLog, User
+from server.models import Base, GenerationLog, LLMExchange, User
 from tests.server.generate_test_utils import resolved_generate_params
 
 # ---------------------------------------------------------------------------
@@ -128,7 +128,17 @@ def test_run_level_exception_publishes_error_event_before_done(tmp_path: Path) -
         _live_observers[run_str_id] = [observer_queue]
 
         async def _failing_stream(*args: Any, **kwargs: Any):
-            raise RuntimeError("injected stream-level failure")
+            from src.llm_client import ProviderFailureContext
+
+            exc = RuntimeError("injected stream-level failure")
+            exc._provider_failure_context = ProviderFailureContext(  # type: ignore[attr-defined]
+                provider="gemini",
+                model="gemini-3.1-pro-preview",
+                tier="execute",
+                http_status=504,
+                retry_after_seconds=8,
+            )
+            raise exc
             yield  # make it an async generator
 
         with patch(
@@ -178,6 +188,11 @@ def test_run_level_exception_publishes_error_event_before_done(tmp_path: Path) -
             "malformed_response", "unknown",
         }
         assert fc in _TAXONOMY, f"failure_class={fc!r} not in taxonomy"
+        assert payload.get("provider") == "gemini"
+        assert payload.get("model") == "gemini-3.1-pro-preview"
+        assert payload.get("tier") == "execute"
+        assert payload.get("http_status") == 504
+        assert payload.get("retry_after_seconds") == 8
 
         await engine.dispose()
 
@@ -329,6 +344,58 @@ def test_read_run_returns_failure_class(tmp_path: Path) -> None:
             f"failure_class must be non-empty string: {fc!r}"
         )
 
+        await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=40.0))
+
+
+def test_read_run_returns_safe_provider_failure_context(tmp_path: Path) -> None:
+    """A failed run exposes provider context without persisted sensitive detail."""
+    async def _run() -> None:
+        claimed, sessions, engine = await _setup_db_and_run(tmp_path, "context.db")
+        async with sessions() as session:
+            log = (
+                await session.execute(
+                    select(GenerationLog).where(GenerationLog.id == claimed.run_id)
+                )
+            ).scalar_one()
+            log.status = "failed"
+            log.failure_class = "rate_limited"
+            session.add(LLMExchange(
+                generation_log_id=claimed.run_id,
+                exchange_order=1,
+                agent="generator",
+                purpose="generate",
+                request_body={"messages": [{"role": "user", "content": "secret prompt"}]},
+                response_body={"error": {
+                    "provider": "gemini",
+                    "model": "gemini-3.1-pro-preview",
+                    "tier": "execute",
+                    "http_status": 429,
+                    "retry_after_seconds": 12,
+                    "provider_message": "secret provider response",
+                    "raw_body_truncated": "secret raw body",
+                }},
+                model_used="gemini-3.1-pro-preview",
+            ))
+            await session.commit()
+
+            result = await read_run(
+                claimed.run_id,
+                claimed.user_id,
+                session=session,
+                config=_server_config(tmp_path),
+            )
+
+        assert result is not None
+        assert result["failure_context"] == {
+            "provider": "gemini",
+            "model": "gemini-3.1-pro-preview",
+            "tier": "execute",
+            "http_status": 429,
+            "retry_after_seconds": 12,
+        }
+        assert "secret" not in str(result["failure_context"])
         await engine.dispose()
 
     asyncio.run(asyncio.wait_for(_run(), timeout=40.0))

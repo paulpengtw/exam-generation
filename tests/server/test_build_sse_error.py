@@ -61,6 +61,16 @@ def test_retry_after_seconds_none_omitted():
     assert "retry_after_seconds" not in result
 
 
+def test_http_status_included():
+    result = build_sse_error("generation_failed", "err", http_status=429)
+    assert result["http_status"] == 429
+
+
+def test_http_status_none_omitted():
+    result = build_sse_error("generation_failed", "err", http_status=None)
+    assert "http_status" not in result
+
+
 def test_all_kwargs():
     result = build_sse_error(
         "generation_failed",
@@ -69,6 +79,7 @@ def test_all_kwargs():
         provider="anthropic",
         model="claude-opus-4-6",
         tier="execute",
+        http_status=429,
         retry_after_seconds=60,
     )
     assert result == {
@@ -78,6 +89,7 @@ def test_all_kwargs():
         "provider": "anthropic",
         "model": "claude-opus-4-6",
         "tier": "execute",
+        "http_status": 429,
         "retry_after_seconds": 60,
     }
 
