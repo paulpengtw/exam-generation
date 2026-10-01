@@ -250,6 +250,8 @@ class _RunContext:
     # issue #904: save-before-RESULT fields
     user_id: uuid.UUID | None  # None → no persistence (CLI / log-less runs)
     save_backoff_fn: Callable[[int], Awaitable[Any]] | None  # None → default exponential backoff
+    # issue #911: resume support — question IDs already ended in a prior attempt
+    skip_question_ids: frozenset  # frozenset[str]; empty on first attempt
 
 
 def _build_run_context(
@@ -270,6 +272,8 @@ def _build_run_context(
     confirmed_cancel_event: threading.Event | None = None,
     user_id: uuid.UUID | None = None,
     save_backoff_fn: Callable[[int], Awaitable[Any]] | None = None,
+    skip_question_ids: frozenset | None = None,
+    attempt: int = 1,
 ) -> _RunContext:
     """Build the frozen per-request context from resolved collaborators."""
     overrides = spec.coerce_overrides(params, app_state)
@@ -301,12 +305,14 @@ def _build_run_context(
         generation_log_id=generation_log_id,
         loop=loop,
         session_factory=session_factory,
+        attempt=attempt,
     )
     reference_example_recorder = make_reference_example_record_recorder(
         generation_log_id=generation_log_id,
         loop=loop,
         session_factory=session_factory,
         disabled=bool(params.disable_reference_fewshot),
+        attempt=attempt,
     )
 
     def _next_order() -> int:
@@ -356,6 +362,7 @@ def _build_run_context(
         drain_telemetry=get_drain(app_state),
         user_id=user_id,
         save_backoff_fn=save_backoff_fn,
+        skip_question_ids=skip_question_ids if skip_question_ids is not None else frozenset(),
     )
 
 
@@ -961,6 +968,8 @@ async def generate_question_stream(
     session_factory: Any = None,
     client_factory: Callable[..., LLMClient] | None = None,
     confirmed_cancel_event: threading.Event | None = None,
+    skip_question_ids: frozenset | None = None,
+    attempt: int = 1,
 ) -> AsyncIterator[dict[str, Any]]:
     """Async generator yielding SSE event dicts for one or more questions.
 
@@ -1026,6 +1035,8 @@ async def generate_question_stream(
         publisher=_publisher,
         run_id=_run_id,
         user_id=user_id,
+        skip_question_ids=skip_question_ids,
+        attempt=attempt,
     )
 
     _started_payload: dict[str, Any] = {
@@ -1238,12 +1249,18 @@ async def generate_question_stream(
             _scoped_client(_client_factory, ctx.client_config, ctx.manifest[i])
             for i in range(ctx.count)
         ]
-        futures = [
-            loop.run_in_executor(
-                None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+        futures = []
+        for i in range(ctx.count):
+            qid = ctx.manifest[i].question_id
+            # Issue #911: skip already-ended questions on resume.
+            if qid in ctx.skip_question_ids:
+                logger.debug("resume: skipping already-ended question %s", qid)
+                continue
+            futures.append(
+                loop.run_in_executor(
+                    None, functools.partial(_worker_one, i, question_clients[i], ctx, batch_briefs),
+                )
             )
-            for i in range(ctx.count)
-        ]
     else:
         futures = []
 

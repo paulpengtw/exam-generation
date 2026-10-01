@@ -83,5 +83,9 @@ async def run_migrations_online() -> None:
 
 if context.is_offline_mode():
     run_migrations_offline()
+elif config.attributes.get("connection") is not None:
+    # A caller-supplied sync connection (e.g. a Postgres-marked test running
+    # against a scratch schema) migrates in place instead of opening its own.
+    do_run_migrations(config.attributes["connection"])
 else:
     asyncio.run(run_migrations_online())

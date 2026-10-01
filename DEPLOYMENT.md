@@ -991,3 +991,57 @@ Set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to the p95, rounded up, and record the
 | Cleanup decision | Not needed: no duplicates, so the unique constraint can be added directly | 2026-09-29 |
 
 The p95 is a lower bound. On `main` a run's records are saved from the HTTP stream, and Railway cuts a request at about 900 seconds, so questions still running at that point were never saved. That is consistent with the maximum of 897.6 seconds. Fifty samples also make the p95 rough. `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` has not been changed yet; choosing it is task 6.1 of the change.
+
+## Admission limits and duplicate-submit protection (issue #912)
+
+### QUEUE_LIMIT
+
+`QUEUE_LIMIT` (env var on the **backend** service, default `5`) sets the maximum
+number of simultaneously queued runs per teacher.  A sixth submission while five
+are already `queued` returns HTTP 429 with body:
+
+```json
+{"code": "queue_limit_reached", "detail": "…"}
+```
+
+The frontend shows a localised message and keeps the form usable.  A submission
+carrying the same `submission_key` as an already-queued run returns the original
+run (HTTP 202) and does **not** count as a new submission, even when the queue is
+full.
+
+To raise the limit on Railway: add `QUEUE_LIMIT=N` as an environment variable on
+the backend service.  To disable the limit entirely, set `QUEUE_LIMIT=0` (not
+recommended for production).
+
+### Submission-key idempotency
+
+Every `POST /api/generate` must carry a `submission_key` UUID in the request
+body.  The client generates this key once per 確定發送 press and reuses the same
+key on any retry that follows a network-level error.  On a successful response
+(202) or an HTTP error response (4xx other than network failure), the client
+generates a fresh key for the next press.
+
+`submission_key` is a server-only field: it is consumed by `accept_run` and is
+excluded from `params_json` (listed in `SERVER_ONLY_GENERATE_FIELDS`).  The DB
+column `generation_logs.submission_key` has a unique constraint on `(user_id,
+submission_key)` so duplicate race submissions are collapsed at the database level
+with an `IntegrityError` catch in `accept_run`.
+
+### Queue position
+
+`GET /api/runs/{id}` includes `queue_position` (0-based integer) when the run is
+in `queued` status.  The frontend displays `排隊中 · 前面還有 k 個` on the
+generate page while the run is waiting.
+
+### GENERATION_HOST_CONCURRENCY
+
+`GENERATION_HOST_CONCURRENCY` (env var on the **backend** service, default `3`)
+sets how many generation runs the host's `run_host_loop` worker may execute in
+parallel at any one time.  When more runs are queued than this limit allows, the
+excess stays in `queued` status until a running slot frees up.
+
+To change the limit on Railway: add `GENERATION_HOST_CONCURRENCY=N` as an
+environment variable on the backend service.  Increase this value if you have
+spare CPU/memory and want to process queued runs faster; decrease it if parallel
+LLM calls are exhausting rate limits or memory.  A value of `1` serialises all
+generation on that host.

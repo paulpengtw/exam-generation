@@ -23,26 +23,17 @@ from server.auth.dependencies import get_config
 from server.auth.routes import router as auth_router
 from server.config import ServerConfig
 from server.db import AsyncSessionLocal, DatabaseUnavailableError
-from server.generate.drain import DrainTelemetry
 from server.generate.modification_routes import router as modification_router
 from server.generate.release_authority import AuthoritySource, build_authority_source
 from server.generate.routes import router as generate_router
+from server.generate.run import run_host_loop
+from server.generation_state import load_generation_state, stop_generation_state
 from server.history.routes import router as history_router
 from server.internal.routes import router as internal_router
 from server.models import GenerationRecord, LLMExchange
 from server.observability import init_sentry
 from server.rate_limit import limiter
 from server.utility.routes import router as utility_router
-from src.common.subject_spec import NATURAL_SCIENCES, SOCIAL_STUDIES
-from src.curriculum_context import load_curriculum_context
-from src.data_loader import (
-    get_grade_content,
-    load_curriculum,
-    load_intro_text,
-    load_performance_standards,
-)
-from src.html_renderer import PlaywrightRenderer
-from src.schema_loader import load_grades, load_schemas
 
 logger = logging.getLogger(__name__)
 
@@ -124,58 +115,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # pragma: no cover - best effort
         print(f"Warning: llm_exchanges pruning failed: {exc}", file=sys.stderr)
 
-    curriculum = load_curriculum(config.data_dir / "curriculum" / "學習內容.json")
-    performance = load_performance_standards(config.data_dir / "curriculum" / "學習表現.json")
-    intro_text = load_intro_text(Path('Introduction to "學習表現" and "學習階段".md'))
-    grades = load_grades(load_schemas(config.question_schemas_path))
-    grade_content = {g: get_grade_content(curriculum, g) for g in grades}
+    load_generation_state(app.state, config)
 
-    app.state.curriculum = curriculum
-    app.state.performance = performance
-    app.state.intro_text = intro_text
-    app.state.grade_content = grade_content
-    # Build the canonical math curriculum context once per server process so
-    # generator, verifier, and corrector all share the same corpus (issue #154).
-    app.state.math_curriculum_context = load_curriculum_context()
-    # Build social-studies and natural-sciences curriculum contexts (issue #158).
-    app.state.ss_curriculum_context = load_curriculum_context(SOCIAL_STUDIES.data_dir)
-    app.state.ns_curriculum_context = load_curriculum_context(NATURAL_SCIENCES.data_dir)
-    print(f"Curriculum loaded: {len(curriculum)} grade entries, target grades {grades}")
-
-    renderer_pool: asyncio.Queue[PlaywrightRenderer] = asyncio.Queue()
-    started_renderers: list[PlaywrightRenderer] = []
-    for _ in range(2):
-        try:
-            r = PlaywrightRenderer()
-            r.start()
-            renderer_pool.put_nowait(r)
-            started_renderers.append(r)
-        except Exception as exc:
-            print(f"Warning: Playwright failed to start: {exc}", file=sys.stderr)
-            break
-    app.state.renderer_pool = renderer_pool if started_renderers else None
-    app.state.drain_telemetry = DrainTelemetry()
-    app.state.html_renderer = None  # legacy; service.py uses renderer_pool
-    if started_renderers:
-        print(f"Playwright renderer pool started ({len(started_renderers)} instances)")
-
-    # Surface CJK font availability to deploy logs (issue #258).
-    try:
-        from src.renderer import report_cjk_font_status
-        report_cjk_font_status(logger)
-    except Exception as exc:  # pragma: no cover — best effort
-        print(f"Warning: CJK font status check failed: {exc}", file=sys.stderr)
+    # The 生成執行 host (ADR 0034). GENERATION_HOST_ENABLED=false moves it to
+    # `python -m server.worker` and doubles as the emergency stop.
+    host_stop = asyncio.Event()
+    host_task: asyncio.Task[None] | None = None
+    if config.generation_host_enabled:
+        host_task = asyncio.create_task(
+            run_host_loop(host_stop, app_state=app.state, config=config)
+        )
 
     try:
         yield
     finally:
-        if app.state.renderer_pool is not None:
-            while not app.state.renderer_pool.empty():
-                r = app.state.renderer_pool.get_nowait()
-                try:
-                    r.stop()
-                except Exception as exc:  # pragma: no cover
-                    print(f"Warning: Playwright shutdown failed: {exc}", file=sys.stderr)
+        host_stop.set()
+        if host_task is not None:
+            await host_task
+        stop_generation_state(app.state)
 
 
 def create_app(*, release_authority_source: AuthoritySource | None = None) -> FastAPI:

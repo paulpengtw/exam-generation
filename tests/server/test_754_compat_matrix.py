@@ -292,8 +292,8 @@ def test_c0_s1_get_returns_426_zero_dispatch() -> None:
     assert isinstance(body.get("detail"), str), (
         "detail must be a string (C0 can display strings but not objects)"
     )
-    assert 2 in body.get("supported_stream_versions", []), (
-        "supported_stream_versions must include 2"
+    assert 3 in body.get("supported_stream_versions", []), (
+        "supported_stream_versions must include 3"
     )
 
     # Zero dispatch: generate_question_stream must NOT have been called
