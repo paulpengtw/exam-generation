@@ -182,6 +182,26 @@ Each slice ships on its own.
 - Before slice 3, every slice reverts independently.
 - After slice 3, a backend rollback runs with admission paused. Accepted runs stay queued and resume on the next compatible deploy, per the modified release-control spec.
 
+### D11. Question-scoped ERROR events do not make the run failed (issue #931)
+
+Only batch-scoped `ERROR` events (no `question_id` in `context`, e.g.
+`batch_generation_failed`, `started_invalid`) immediately set the run status to
+`failed`.  Question-scoped `ERROR` events (with a `question_id`) are handled by
+`_QuestionStateRecorder`; the run status is derived at the end of the stream from
+whether any question delivered a final result (`terminal.has_final === true`).
+
+**Conservative all-question-fail policy:** the run is marked `failed` and a batch
+tombstone is written only when *no* question delivered a final result.  If at least
+one question has `has_final=True` the run is `completed` even when siblings failed.
+This is the most conservative interpretation of "partial success": a completed run
+contains what was generated; callers read the per-question `GenerationQuestionState`
+to distinguish successful from failed questions.
+
+*Alternative considered:* mark the run `failed` whenever any question fails, even
+when siblings succeed.  Rejected because the per-question `terminal_json` already
+carries the full failure evidence and the batch tombstone would be misleading
+(it implies *nothing* was generated).
+
 ## Open Questions
 
 - **Per-question p95 duration** from production `generation_records` timestamps. This sets the drain window in slice 4; the specs already allow about 120 s until then.

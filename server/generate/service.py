@@ -68,7 +68,7 @@ from src.common.generation_events import (
     new_operation_scope,
     new_run_id,
 )
-from src.llm_client import LLMClient
+from src.llm_client import LLMClient, classify_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -896,6 +896,7 @@ def _worker_one_body(
             )
             return
         record_generation_outcome(ctx.params.subject, "failure")
+        _fc = classify_provider_error(exc)
         ctx.publisher.publish(
             SSEEventName.ERROR,
             question_id=question_id,
@@ -903,6 +904,7 @@ def _worker_one_body(
             payload=build_sse_error(
                 "generation_failed",
                 f"Question generation failed ({type(exc).__name__})",
+                failure_class=_fc,
             ),
         )
         logger.exception("worker_one error (index=%d)", i)
@@ -1057,7 +1059,11 @@ async def generate_question_stream(
         )
         ctx.publisher.publish(
             SSEEventName.ERROR,
-            payload=build_sse_error("started_invalid", "generation manifest validation failed"),
+            payload=build_sse_error(
+                "started_invalid",
+                "generation manifest validation failed",
+                failure_class="unknown",
+            ),
         )
         await asyncio.sleep(0)
         yield queue.get_nowait()
@@ -1290,11 +1296,13 @@ async def generate_question_stream(
 
     async def _wait_and_signal() -> None:
         if batch_fatal_error is not None:
+            _bfc = classify_provider_error(batch_fatal_error)
             ctx.publisher.publish(
                 SSEEventName.ERROR,
                 payload=build_sse_error(
                     "batch_generation_failed",
                     f"Batch planning failed ({type(batch_fatal_error).__name__})",
+                    failure_class=_bfc,
                 ),
             )
             for i, question in enumerate(ctx.manifest):
@@ -1324,6 +1332,7 @@ async def generate_question_stream(
                     i,
                     type(outcome).__name__,
                 )
+                _ofc = classify_provider_error(outcome)
                 ctx.publisher.publish(
                     SSEEventName.ERROR,
                     question_id=question.question_id,
@@ -1331,6 +1340,7 @@ async def generate_question_stream(
                     payload=build_sse_error(
                         "generation_failed",
                         f"Question generation failed ({type(outcome).__name__})",
+                        failure_class=_ofc,
                     ),
                 )
                 # Phase 3 – worker-unexpected-exit terminal (shared finalize path).

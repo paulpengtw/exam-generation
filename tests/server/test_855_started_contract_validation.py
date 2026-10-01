@@ -258,7 +258,13 @@ def test_invalid_started_error_payload_has_no_question_content(
         if isinstance(payload, str):
             payload = json.loads(payload)
         if isinstance(payload, dict):
-            allowed_keys = {"code", "message"}
+            # issue #946: failure_class and other structured error fields are allowed;
+            # the invariant is that no question/prompt content leaks, not that only
+            # code+message are present.
+            allowed_keys = {
+                "code", "message", "failure_class",
+                "provider", "model", "tier", "retry_after_seconds",
+            }
             extra = set(payload.keys()) - allowed_keys
             assert not extra, f"error payload has unexpected keys: {extra}"
             msg = str(payload.get("message", ""))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import json
 import logging
 import re
@@ -25,6 +26,483 @@ from src.common.generation_events import (
 from src.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Provider error extraction — normalises the three body shapes into a record.
+# ---------------------------------------------------------------------------
+
+@dataclasses.dataclass(frozen=True)
+class ProviderErrorDetail:
+    """Normalised description of a provider API error.
+
+    All fields may be ``None`` when not available (e.g. timeout/connection
+    errors that never receive an HTTP response).  ``raw_body_truncated`` is
+    capped at 4 096 bytes.  Never contains API keys or prompt text.
+    """
+
+    provider: str
+    model: str
+    http_status: int | None
+    provider_error_type: str | None
+    provider_error_code: str | None
+    provider_error_status: str | None
+    provider_message: str | None
+    request_id: str | None
+    retry_after_seconds: int | None
+    raw_body_truncated: str | None
+
+
+_RAW_BODY_LIMIT = 4096
+
+
+def _truncate_body(body: object) -> str | None:
+    """Convert *body* to a string truncated to ``_RAW_BODY_LIMIT`` bytes."""
+    if body is None:
+        return None
+    text = str(body)
+    if len(text) > _RAW_BODY_LIMIT:
+        return text[:_RAW_BODY_LIMIT]
+    return text
+
+
+def _parse_retry_after(value: str | None, *, is_ms: bool = False) -> int | None:
+    """Parse a ``retry-after`` header value into integer seconds.
+
+    When *is_ms* is ``True`` (header was ``retry-after-ms``), the value is in
+    milliseconds and is converted to seconds (rounding up).
+    Returns ``None`` when *value* is absent or unparseable.
+    """
+    if value is None:
+        return None
+    try:
+        n = int(float(value))
+        if is_ms:
+            return (n + 999) // 1_000
+        return n
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_google_details(details: list | None) -> dict:
+    """Extract ``retry_after`` and ``quota_id`` from Google gRPC *details* list."""
+    result: dict = {}
+    if not isinstance(details, list):
+        return result
+    for entry in details:
+        if not isinstance(entry, dict):
+            continue
+        at_type = entry.get("@type", "")
+        if "RetryInfo" in at_type:
+            delay = entry.get("retryDelay")
+            if isinstance(delay, str) and delay.endswith("s"):
+                try:
+                    result["retry_after"] = str(int(float(delay[:-1])))
+                except (ValueError, TypeError):
+                    pass
+        if "QuotaFailure" in at_type:
+            violations = entry.get("violations", [])
+            if violations and isinstance(violations, list):
+                first = violations[0]
+                if isinstance(first, dict) and "quotaId" in first:
+                    result["quota_id"] = first["quotaId"]
+    return result
+
+
+def _parse_anthropic_details(details: dict | list | None) -> dict:
+    """Extract ``error_code`` from Anthropic body ``error.details`` field."""
+    result: dict = {}
+    if isinstance(details, dict):
+        if "error_code" in details:
+            result["error_code"] = details["error_code"]
+    elif isinstance(details, list):
+        # Some Anthropic bodies embed RetryInfo in a details list
+        for entry in details:
+            if not isinstance(entry, dict):
+                continue
+            at_type = entry.get("@type", "")
+            if "RetryInfo" in at_type:
+                delay = entry.get("retryDelay")
+                if isinstance(delay, str) and delay.endswith("s"):
+                    try:
+                        result["retry_after"] = str(int(float(delay[:-1])))
+                    except (ValueError, TypeError):
+                        pass
+            if "error_code" in entry:
+                result["error_code"] = entry["error_code"]
+    return result
+
+
+def extract_provider_error(
+    exc: Exception,
+    *,
+    provider: str,
+    model: str,
+) -> ProviderErrorDetail:
+    """Extract a normalised :class:`ProviderErrorDetail` from any provider exception.
+
+    Covers three body shapes:
+    - Anthropic: ``{"type":"error","error":{"type":"...","message":"...",
+      "details":{...}}}``
+    - OpenAI:    ``{"error":{"type":"...","code":"...","message":"..."}}``
+    - Google:    ``[{"error":{"code":<int>,"message":"...","status":"<gRPC>"}}]``
+
+    Never raises; on any parse failure returns a detail with ``None`` provider
+    fields.  Never exposes API keys or prompt text.
+    """
+    status: int | None = getattr(exc, "status_code", None)
+    body: object = getattr(exc, "body", None)
+    response = getattr(exc, "response", None)
+    headers: dict = {}
+    if response is not None:
+        raw_headers = getattr(response, "headers", {})
+        if isinstance(raw_headers, dict):
+            headers = raw_headers
+        else:
+            try:
+                headers = dict(raw_headers)
+            except Exception:
+                headers = {}
+
+    error_type: str | None = None
+    error_code: str | None = None
+    error_status: str | None = None
+    message: str | None = None
+    retry_after_str: str | None = None
+    retry_after_is_ms: bool = False
+
+    try:
+        if isinstance(body, list) and body:
+            # Google list-wrapped body
+            inner = body[0].get("error", {}) if isinstance(body[0], dict) else {}
+            # SDK sets exc.code = None and exc.type = None for list bodies
+            error_type = None
+            error_code = None
+            error_status = inner.get("status")
+            message = inner.get("message")
+            details_parsed = _parse_google_details(inner.get("details"))
+            retry_after_str = details_parsed.get("retry_after")
+
+        elif isinstance(body, dict):
+            # Anthropic or OpenAI dict body
+            err = body.get("error", body)
+            if not isinstance(err, dict):
+                err = {}
+            error_type = err.get("type") or getattr(exc, "type", None)
+            error_code = err.get("code") or getattr(exc, "code", None)
+            error_status = None
+            message = err.get("message") or getattr(exc, "message", None)
+
+            # Anthropic may embed details as a dict or list
+            details_raw = err.get("details")
+            details_parsed = _parse_anthropic_details(details_raw)
+            if "error_code" in details_parsed:
+                error_code = details_parsed["error_code"]
+            if "retry_after" in details_parsed:
+                retry_after_str = details_parsed["retry_after"]
+
+        else:
+            # Non-HTTP or unparseable body
+            error_type = error_code = error_status = message = None
+
+    except Exception:
+        # Parse failure: return null provider fields
+        error_type = error_code = error_status = message = None
+
+    # Check response headers for retry-after (seconds or ms)
+    if retry_after_str is None:
+        sec_val = headers.get("retry-after") or headers.get("Retry-After")
+        if sec_val is not None:
+            retry_after_str = sec_val
+            retry_after_is_ms = False
+        else:
+            ms_val = headers.get("retry-after-ms") or headers.get("Retry-After-Ms")
+            if ms_val is not None:
+                retry_after_str = ms_val
+                retry_after_is_ms = True
+
+    request_id: str | None = (
+        headers.get("request-id")
+        or headers.get("Request-Id")
+        or headers.get("x-request-id")
+        or headers.get("X-Request-Id")
+    )
+
+    return ProviderErrorDetail(
+        provider=provider,
+        model=model,
+        http_status=status,
+        provider_error_type=error_type,
+        provider_error_code=error_code,
+        provider_error_status=error_status,
+        provider_message=message,
+        request_id=request_id,
+        retry_after_seconds=_parse_retry_after(retry_after_str, is_ms=retry_after_is_ms),
+        raw_body_truncated=_truncate_body(body),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Failure-class taxonomy — issue #946
+# ---------------------------------------------------------------------------
+
+_TAXONOMY_CODES = frozenset({
+    "auth_config",
+    "quota_billing_exhausted",
+    "rate_limited",
+    "overloaded",
+    "timeout",
+    "connection",
+    "context_length",
+    "content_filtered",
+    "malformed_response",
+    "unknown",
+})
+
+# Exception class names (as strings) that map to specific codes regardless of
+# HTTP status or body — handles cases where exc lacks status_code/body.
+_CLASS_NAME_MAP: dict[str, str] = {
+    "APITimeoutError": "timeout",
+    "Timeout": "timeout",
+    "TimeoutError": "timeout",
+    "APIConnectionError": "connection",
+    "ConnectionError": "connection",
+    "ContentFilterFinishReasonError": "content_filtered",
+}
+
+# provider_error_code values → quota_billing_exhausted
+_QUOTA_CODES: frozenset[str] = frozenset({
+    "enforced_spend_limit_reached",
+    "credit_balance_exhausted",
+    "billing_not_active",
+    "insufficient_quota",
+    "payment_required",
+})
+
+# provider_error_type values → quota_billing_exhausted
+_QUOTA_TYPES: frozenset[str] = frozenset({
+    "billing_error",
+    "insufficient_quota",
+    "payment_required",
+})
+
+# provider_error_type values → rate_limited
+_RATE_LIMIT_TYPES: frozenset[str] = frozenset({
+    "rate_limit_error",
+    "requests",
+    "tokens",
+})
+
+# provider_error_status (gRPC) values → rate_limited
+_RATE_LIMIT_STATUSES: frozenset[str] = frozenset({
+    "RESOURCE_EXHAUSTED",
+})
+
+# provider_error_status (gRPC) values → auth_config
+_AUTH_STATUSES: frozenset[str] = frozenset({
+    "UNAUTHENTICATED",
+    "PERMISSION_DENIED",
+})
+
+# provider_error_type values → auth_config
+_AUTH_TYPES: frozenset[str] = frozenset({
+    "authentication_error",
+    "permission_error",
+    "api_key_error",
+})
+
+# provider_error_type values → context_length
+_CONTEXT_TYPES: frozenset[str] = frozenset({
+    "request_too_large",
+    "context_window_exceeded",
+    "max_tokens_exceeded",
+})
+
+# provider_error_code values → context_length
+_CONTEXT_CODES: frozenset[str] = frozenset({
+    "context_window_exceeded",
+    "max_tokens_exceeded",
+    "request_too_large",
+})
+
+# provider_error_type values → overloaded
+_OVERLOADED_TYPES: frozenset[str] = frozenset({
+    "overloaded_error",
+    "server_overloaded",
+})
+
+# HTTP statuses that are strictly 5xx "server fault" → malformed_response
+_SERVER_FAULT_STATUSES: frozenset[int] = frozenset({500, 501, 502, 503, 504, 505})
+
+# provider_message substrings → auth_config (case-insensitive)
+_AUTH_MESSAGE_KEYWORDS: tuple[str, ...] = (
+    "api key",
+    "api_key",
+    "apikey",
+    "authentication",
+    "invalid key",
+    "not valid",
+    "unauthorized",
+)
+
+
+def classify_provider_error(
+    exc: Exception | None,
+    *,
+    detail: ProviderErrorDetail | None = None,
+) -> str:
+    """Classify a provider exception into one of ten stable taxonomy codes.
+
+    Returns one of::
+
+        auth_config | quota_billing_exhausted | rate_limited | overloaded |
+        timeout | connection | context_length | content_filtered |
+        malformed_response | unknown
+
+    The function **never raises** for any input.
+
+    When *detail* is provided it is used directly (it was already extracted by
+    :func:`extract_provider_error`).  Otherwise *exc* is inspected by class
+    name first (fast-path for timeout/connection/content-filter) and then by
+    extracting a :class:`ProviderErrorDetail` with dummy provider/model values.
+
+    The classification follows the precedence below (first match wins):
+
+    1. Exception class name (timeout, connection, content_filtered)
+    2. HTTP status (401/403 → auth, 402 → quota, 413/request_too_large → context)
+    3. provider_error_type / provider_error_code / provider_error_status
+    4. provider_message keywords (auth hints in Gemini INVALID_ARGUMENT 400)
+    5. 5xx → malformed_response
+    6. Fallback: unknown
+    """
+    try:
+        # ------------------------------------------------------------------
+        # Step 1: exception class-name fast-path
+        # ------------------------------------------------------------------
+        if exc is not None:
+            cls_name = type(exc).__name__
+            if cls_name in _CLASS_NAME_MAP:
+                return _CLASS_NAME_MAP[cls_name]
+            # Check MRO for base class names
+            for base in type(exc).__mro__:
+                if base.__name__ in _CLASS_NAME_MAP:
+                    return _CLASS_NAME_MAP[base.__name__]
+
+        # ------------------------------------------------------------------
+        # Step 2: obtain a ProviderErrorDetail
+        # ------------------------------------------------------------------
+        if detail is None:
+            if exc is None:
+                return "unknown"
+            try:
+                detail = extract_provider_error(exc, provider="unknown", model="unknown")
+            except Exception:
+                return "unknown"
+
+        status = detail.http_status
+        etype = detail.provider_error_type or ""
+        ecode = detail.provider_error_code or ""
+        estatus = detail.provider_error_status or ""
+        msg = (detail.provider_message or "").lower()
+
+        # ------------------------------------------------------------------
+        # Step 3: HTTP 401 / 403 → auth_config
+        # ------------------------------------------------------------------
+        if status in (401, 403):
+            return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 4: HTTP 402 → quota_billing_exhausted
+        # ------------------------------------------------------------------
+        if status == 402:
+            return "quota_billing_exhausted"
+
+        # ------------------------------------------------------------------
+        # Step 5: HTTP 413 → context_length
+        # ------------------------------------------------------------------
+        if status == 413:
+            return "context_length"
+
+        # ------------------------------------------------------------------
+        # Step 6: HTTP 529 → overloaded
+        # ------------------------------------------------------------------
+        if status == 529:
+            return "overloaded"
+
+        # ------------------------------------------------------------------
+        # Step 7: Check error_type / error_code for auth
+        # ------------------------------------------------------------------
+        if etype in _AUTH_TYPES or estatus in _AUTH_STATUSES:
+            return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 8: Check for quota / billing by type or code
+        # ------------------------------------------------------------------
+        if etype in _QUOTA_TYPES or ecode in _QUOTA_CODES:
+            # Distinguish from pure 429 rate-limit: only quota when the code
+            # or type is explicitly billing/quota — not just any 429.
+            if ecode == "credit_balance_exhausted" or etype in _QUOTA_TYPES:
+                return "quota_billing_exhausted"
+            if ecode in _QUOTA_CODES:
+                return "quota_billing_exhausted"
+
+        # ------------------------------------------------------------------
+        # Step 9: 429 — distinguish rate_limit vs quota
+        # ------------------------------------------------------------------
+        if status == 429:
+            # Quota codes/types take precedence; remaining 429s are rate_limited
+            if etype in _QUOTA_TYPES or ecode in _QUOTA_CODES:
+                return "quota_billing_exhausted"
+            if estatus in _RATE_LIMIT_STATUSES:
+                return "rate_limited"
+            if etype in _RATE_LIMIT_TYPES:
+                return "rate_limited"
+            # Default 429 → rate_limited
+            return "rate_limited"
+
+        # ------------------------------------------------------------------
+        # Step 10: rate_limit_error type without 429
+        # ------------------------------------------------------------------
+        if etype in _RATE_LIMIT_TYPES or estatus in _RATE_LIMIT_STATUSES:
+            return "rate_limited"
+
+        # ------------------------------------------------------------------
+        # Step 11: overloaded type
+        # ------------------------------------------------------------------
+        if etype in _OVERLOADED_TYPES:
+            return "overloaded"
+
+        # ------------------------------------------------------------------
+        # Step 12: context_length type/code
+        # ------------------------------------------------------------------
+        if etype in _CONTEXT_TYPES or ecode in _CONTEXT_CODES:
+            return "context_length"
+
+        # ------------------------------------------------------------------
+        # Step 13: INVALID_ARGUMENT 400 + auth keyword in message → auth_config
+        # ------------------------------------------------------------------
+        if status == 400 and estatus == "INVALID_ARGUMENT":
+            for kw in _AUTH_MESSAGE_KEYWORDS:
+                if kw in msg:
+                    return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 14: 5xx server fault → malformed_response
+        # ------------------------------------------------------------------
+        if status is not None and status in _SERVER_FAULT_STATUSES:
+            return "malformed_response"
+
+        # ------------------------------------------------------------------
+        # Step 15: fallback
+        # ------------------------------------------------------------------
+        return "unknown"
+
+    except Exception:
+        # Safety net — never crash the caller.
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
 
 # Observer ids that have already emitted a failure warning (once-per-observer
 # suppression — avoids log spam on repeated observer failures).
@@ -765,6 +1243,55 @@ class LLMClient:
             })
         return content
 
+    def _report_provider_failure(
+        self,
+        exc: Exception,
+        *,
+        provider: str,
+        model: str,
+        call_scope: "CallScope | None",
+        purpose: str,
+        agent: str,
+        requested_model: str | None = None,
+    ) -> None:
+        """Extract, log, and optionally emit llm_failure detail. Never raises.
+
+        WARNING is emitted unconditionally (so CLI runs without an observer
+        still forward errors to Sentry via LoggingIntegration). The observer
+        event is emitted only when an observer is attached.
+        Any internal exception is swallowed so the original caller exception
+        always propagates.
+        """
+        try:
+            detail = extract_provider_error(exc, provider=provider, model=model)
+            logger.warning(
+                "llm_failure provider=%s model=%s http_status=%s "
+                "error_type=%s error_code=%s request_id=%s retry_after_seconds=%s",
+                detail.provider,
+                detail.model,
+                detail.http_status,
+                detail.provider_error_type,
+                detail.provider_error_code,
+                detail.request_id,
+                detail.retry_after_seconds,
+            )
+            if self._observer:
+                detail_dict = dataclasses.asdict(detail)
+                if requested_model is not None:
+                    detail_dict["requested_model"] = requested_model
+                self._emit_call_event(
+                    "llm_failure",
+                    call_scope,
+                    purpose=purpose,
+                    agent=agent,
+                    error_type=type(exc).__name__,
+                    **detail_dict,
+                )
+        except Exception as inner:  # noqa: BLE001
+            logger.debug(
+                "llm_failure diagnostic step failed: %s", type(inner).__name__
+            )
+
     def _call(
         self,
         messages: list[dict],
@@ -838,16 +1365,15 @@ class LLMClient:
                 requested_model=_passed_requested,
             )
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=model,
-                    error_type=type(exc).__name__,
-                    **_rm_extra,
-                )
+            self._report_provider_failure(
+                exc,
+                provider=provider,
+                model=model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+                requested_model=_passed_requested,
+            )
             raise
 
     def _anthropic_call(
@@ -1273,15 +1799,14 @@ class LLMClient:
             )
             return str(output)
         except Exception as exc:
-            if call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=_PURPOSE_TO_AGENT[purpose],
-                    model=self.config.image_model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="openai",
+                model=self.config.image_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=_PURPOSE_TO_AGENT[purpose],
+            )
             raise
 
     def generate_with_tools(
@@ -1440,16 +1965,17 @@ class LLMClient:
                 })
             return final_text, collected_citations
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=call_model,
-                    error_type=type(exc).__name__,
-                    **_tools_rm_extra,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="anthropic",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+                requested_model=(
+                    _requested_call_model if _tools_substituted else None
+                ),
+            )
             raise
 
     def generate_with_google_search(
@@ -1517,15 +2043,14 @@ class LLMClient:
                 )
             return content, citations
         except Exception as exc:
-            if self._observer and call_scope is not None:
-                self._emit_call_event(
-                    "llm_failure",
-                    call_scope,
-                    purpose=purpose,
-                    agent=agent,
-                    model=call_model,
-                    error_type=type(exc).__name__,
-                )
+            self._report_provider_failure(
+                exc,
+                provider="gemini",
+                model=call_model,
+                call_scope=call_scope,
+                purpose=purpose,
+                agent=agent,
+            )
             raise
 
 
