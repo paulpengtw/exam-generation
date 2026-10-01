@@ -1144,16 +1144,18 @@ async def execute_run(
                 raise _TimeLimitExceededError("time_limit exceeded during generation")
             if event.get("event") == SSEEventName.ERROR:
                 status = "failed"
-                payload = event.get("payload")
-                if isinstance(payload, dict):
-                    error = payload.get("message", str(payload))
-                    # issue #946: capture the first per-question failure_class
-                    if failure_class is None:
+                # issue #946: capture both error and failure_class from the same
+                # (first) error event so they are always consistent.  Subsequent
+                # error events are ignored for persistence purposes.
+                if error is None:
+                    payload = event.get("payload")
+                    if isinstance(payload, dict):
+                        error = payload.get("message", str(payload))
                         fc = payload.get("failure_class")
                         if isinstance(fc, str) and fc:
                             failure_class = fc
-                else:
-                    error = str(payload)
+                    else:
+                        error = str(payload)
             await recorder.observe(event)
             await _publish_live(run_str_id, event)
     except _TimeLimitExceededError:

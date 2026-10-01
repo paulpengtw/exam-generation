@@ -411,3 +411,92 @@ def test_started_invalid_event_in_stream_carries_failure_class(tmp_path: Path) -
     assert payload.get("code") == "started_invalid", (
         f"expected code=started_invalid, got {payload.get('code')!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Fix: error and failure_class must come from the same (first) error event
+# ---------------------------------------------------------------------------
+
+
+def test_two_error_events_persist_first_message_and_first_failure_class(
+    tmp_path: Path,
+) -> None:
+    """When two question-scoped error events arrive with different messages and
+    different failure_class values, both persisted fields must belong to the
+    FIRST event — they must not be mismatched (last message with first class).
+
+    This is the regression test for the issue where ``error`` was overwritten by
+    every error event (keeping LAST) while ``failure_class`` was captured only
+    from the first, so after a reconnect the snapshot could show one error's
+    message with another error's failure_class.
+    """
+    async def _run() -> None:
+        claimed, sessions, engine = await _setup_db_and_run(tmp_path, "two_err.db")
+        run_id = claimed.run_id
+
+        async def _two_error_stream(*args: Any, **kwargs: Any):
+            # First error event
+            yield {
+                "event": "error",
+                "context": {"run_id": str(run_id), "event_seq": 1},
+                "payload": {
+                    "code": "generation_failed",
+                    "message": "First error message",
+                    "failure_class": "rate_limited",
+                },
+            }
+            # Second error event with a different message AND a different failure_class
+            yield {
+                "event": "error",
+                "context": {"run_id": str(run_id), "event_seq": 2},
+                "payload": {
+                    "code": "generation_failed",
+                    "message": "Second error message",
+                    "failure_class": "timeout",
+                },
+            }
+            yield {"event": "done", "payload": {}}
+
+        with patch(
+            "server.generate.run.generate_question_stream",
+            new=_two_error_stream,
+        ):
+            await asyncio.wait_for(
+                execute_run(
+                    claimed,
+                    app_state=_app_state(),
+                    config=_server_config(tmp_path),
+                    session_factory=sessions,
+                    host_id="fc-test-host",
+                    client_factory=None,
+                    subjects=None,
+                ),
+                timeout=30.0,
+            )
+
+        async with sessions() as session:
+            log = (
+                await session.execute(
+                    select(GenerationLog).where(GenerationLog.id == run_id)
+                )
+            ).scalar_one_or_none()
+            assert log is not None
+            assert log.status == "failed"
+            assert log.error == "First error message", (
+                f"error must come from the first event, got {log.error!r}"
+            )
+            assert log.failure_class == "rate_limited", (
+                f"failure_class must come from the first event, got {log.failure_class!r}"
+            )
+            # Guard against the regression: error and failure_class must not be
+            # from different events (e.g. last message + first class).
+            assert log.error != "Second error message", (
+                "error must not be overwritten by the second event"
+            )
+            assert log.failure_class != "timeout", (
+                "failure_class must not be overwritten by the second event"
+            )
+
+        await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=40.0))

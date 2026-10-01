@@ -1079,7 +1079,7 @@ export function useGenerate(): UseGenerateReturn {
         throw err; // prevent fetchEventSource retry
       },
     });
-  }, []);
+  }, [endOperation]);
 
   /** Fold a polled snapshot into state. Repeating the same snapshot changes nothing. */
   const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
