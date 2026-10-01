@@ -482,7 +482,9 @@ def test_ss_persists_one_failed_record_after_prior_success(tmp_path: Path) -> No
             )
 
         # Issue #931: partial success → run completed; only q1's record exists.
-        assert len(rows) == 1, f"expected 1 record (q1 success only), got {len(rows)}: {[r.status for r in rows]}"
+        assert len(rows) == 1, (
+            f"expected 1 record (q1 success only), got {len(rows)}: {[r.status for r in rows]}"
+        )
         assert rows[0].status == "completed"
 
         # Check the GenerationLog directly for the run status.

@@ -21,9 +21,10 @@ import pytest
 
 pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra web")
 
+from unittest.mock import MagicMock
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from unittest.mock import MagicMock
 
 from server.config import ServerConfig
 from server.generate.run import (
@@ -34,7 +35,6 @@ from server.generate.run import (
 )
 from server.models import Base, GenerationLog, GenerationQuestionState, GenerationRecord, User
 from tests.server.generate_test_utils import resolved_generate_params
-
 
 _MATH_PARAMS: dict[str, Any] = {
     "subject": "math",
@@ -221,13 +221,15 @@ def test_all_questions_fail_with_question_scoped_error_makes_run_failed(
                 # Question-scoped ERROR: context carries a question_id.
                 yield {
                     "event": "error",
-                    "context": {"run_id": accepted.run_id, "event_seq": seq * 2 - 1, "question_id": qid},
+                    "context": {"run_id": accepted.run_id, "event_seq": seq * 2 - 1,
+                               "question_id": qid},
                     "payload": {"code": "generation_failed", "message": "q failed"},
                 }
                 # Real service always follows ERROR with a question_terminal.
                 yield {
                     "event": "question_terminal",
-                    "context": {"run_id": accepted.run_id, "event_seq": seq * 2, "question_id": qid},
+                    "context": {"run_id": accepted.run_id, "event_seq": seq * 2,
+                               "question_id": qid},
                     "payload": _failed_terminal(),
                 }
 
