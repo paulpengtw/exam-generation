@@ -165,7 +165,7 @@ describe("GeneratePage clear results guard", () => {
     expectOtherConfirmationsAbsent();
   });
 
-  it("additionally warns that a streaming run will be interrupted", () => {
+  it("additionally warns that this page will stop showing a run still in progress", () => {
     renderPage({ withResults: true, status: "generating" });
 
     clickClear();
@@ -194,21 +194,21 @@ describe("GeneratePage clear results guard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("cancelling does not interrupt a streaming generation", () => {
+  it("cancelling keeps watching a run still in progress", () => {
     renderPage({ withResults: true, status: "generating" });
     clickClear();
 
     clickCancel();
 
-    // reset() is the only operation that aborts the in-flight request, so not
-    // calling it guarantees that the streaming run continues to completion.
+    // reset() is the only operation that stops watching the run locally, so not
+    // calling it guarantees that the page keeps following it to completion.
     expect(resetMock).not.toHaveBeenCalled();
     expect(
       screen.queryByText("confirm.clear_results_title"),
     ).not.toBeInTheDocument();
   });
 
-  it("confirming clears the questions and aborts any in-flight run", () => {
+  it("confirming clears the questions and stops watching any in-flight run", () => {
     for (const status of ["idle", "generating"] satisfies GenerateStatus[]) {
       const { unmount } = renderPage({ withResults: true, status });
       clickClear();

@@ -7,8 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, StrictInt, field_validator, model_validator
 
+# Version of the in-process v2 event bus envelopes (started / result / ...).
 PROTOCOL_VERSION = 2
-SUPPORTED_STREAM_VERSIONS: tuple[int, ...] = (2,)
+# Submission protocol accepted by POST /api/generate: 3 = detached-run 受理
+# (openspec detached-generation-runs D8). Streaming version 2 is refused with 426.
+SUPPORTED_STREAM_VERSIONS: tuple[int, ...] = (3,)
 CLIENT_UPDATE_REQUIRED_DETAIL = "介面版本已更新，請重新整理頁面後再生成。"
 
 

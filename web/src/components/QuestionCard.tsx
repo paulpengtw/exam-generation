@@ -582,8 +582,12 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
   const terminal = evidence.terminalConflict ? null : evidence.terminal;
   const terminationLabel = terminal
     ? terminal.termination_reason === "normal" ? t("card.termination_normal")
-      : terminal.termination_reason === "failed" ? t("card.termination_failed")
-      : t("card.termination_cancelled")
+      : terminal.termination_reason === "failed" && terminal.unknown_reason === "recovery_exhausted"
+        ? t("card.termination_recovery_exhausted")
+        : terminal.termination_reason === "failed" && terminal.unknown_reason === "time_limit"
+          ? t("card.termination_time_limit")
+          : terminal.termination_reason === "failed" ? t("card.termination_failed")
+            : t("card.termination_cancelled")
     : null;
   const deliveryLabel = terminal
     ? t(`card.delivery_${terminal.delivery_status}`)

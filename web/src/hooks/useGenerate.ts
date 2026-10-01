@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchEventSource } from "@microsoft/fetch-event-source";
 import * as Sentry from "@sentry/react";
 
 import { useAuthStore } from "../store/authStore";
@@ -7,23 +6,24 @@ import { useLangStore } from "../store/langStore";
 import { isSentryEnabled } from "../sentry";
 import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
-import type { GenerateParams, StartedPayload } from "../api/generated/contract";
+import type { GenerateParams } from "../api/generated/contract";
 import { MESSAGES } from "../i18n/messages";
-import { createGenerationStreamDecoder, SEQ_BUFFER_MAX_AGE_MS } from "../lib/generationStream";
 import {
-  createLegacyAdapter,
-  applyLegacyEvent,
-  selectLegacyItems,
-  type LegacyAdapterState,
-} from "../lib/legacyAdapter";
-import {
-  createRunEvidence,
-  applyV2Event,
-  applyDegraded,
-  closeRun,
-  selectEndedCount,
-  type RunEvidenceState,
-} from "../lib/generationEvidence";
+  applyRunSnapshot,
+  deriveDisplay,
+  evidenceFromAccepted,
+  isTerminalRunStatus,
+  parseAcceptedRun,
+  parseRunSnapshot,
+  snapshotEnded,
+  stageEventsFromSnapshot,
+  DETACHED_RUN_PROTOCOL_VERSION,
+  type RunSnapshot,
+} from "../lib/runSnapshot";
+import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
+import { createGenerationStreamDecoder, type RunManifest } from "../lib/generationStream";
+import { fetchEventSource } from "@microsoft/fetch-event-source";
+import { ApiError, cancelRun as apiCancelRun, getRun } from "../api/client";
 import {
   formatResolverFieldErrors,
   isResolverFieldErrorLike,
@@ -37,7 +37,15 @@ import type { ResultsCompletion, ResultsWorkspaceSnapshot } from "../lib/workspa
 export type { GenerateParams };
 
 export type AdmissionState = "idle" | "submitting" | "admitted" | "rejected";
-export type AdmissionOutcome = { outcome: "admitted" } | { outcome: "rejected"; reason: string };
+export type AdmissionOutcome =
+  | { outcome: "admitted"; runId?: string }
+  | { outcome: "rejected"; reason: string };
+
+/** Result of reopening a run by id (`?run=<id>`). */
+export type ResumeOutcome =
+  | { outcome: "resumed" }
+  | { outcome: "not_found" }
+  | { outcome: "failed"; reason: string };
 
 export type GenerateStatus = "idle" | "generating" | "error";
 
@@ -326,9 +334,6 @@ export interface AgentLane {
   errorMessage?: string;
 }
 
-/** Payload announced before a generation stream starts doing model work. */
-export type StartedEventPayload = Required<Pick<StartedPayload, "generation_log_id">>;
-
 function purposeToAgent(purpose: string): string {
   const map: Record<string, string> = {
     generate: "generator",
@@ -350,13 +355,6 @@ export interface UseGenerateReturn {
   results: ExamQuestion[];
   displayResults: GeneratedQuestion[];
   evidence: RunEvidenceState | null;
-  /**
-   * C1×S0 legacy adapter state (issue #750). Non-null when the decoder is in
-   * legacy mode AND a "started" event has been received for this run.
-   * Used by GeneratePage to build GenerationLegacyAdapterEvidence for the
-   * status bar, and by tests to inspect the adapter state directly.
-   */
-  legacyAdapter: LegacyAdapterState | null;
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
@@ -365,6 +363,8 @@ export interface UseGenerateReturn {
   startedAt: number | null;
   finishedAt: number | null;
   generationLogId: string | null;
+  /** Id of the detached run being shown (accepted or resumed); null when none. */
+  runId: string | null;
   subQuestionTotal: number | null;
   admission: AdmissionState;
   admissionError: string | null;
@@ -372,16 +372,26 @@ export interface UseGenerateReturn {
   resultsCompletion?: ResultsCompletion | null;
   terminalEvidence?: boolean;
   generate: (params: GenerateParams) => Promise<AdmissionOutcome>;
+  /** True when three or more consecutive poll attempts failed transiently. */
+  pollReadFailed: boolean;
+  /** True when the server has recorded a cancel_requested flag for the current run. */
+  cancelRequested: boolean;
+  /**
+   * Number of runs ahead in the teacher's FIFO queue; non-null only while the
+   * current run is status "queued".  0 means this run is next.
+   */
+  queuePosition: number | null;
+  /** Reopen a detached run by id and keep polling it. Never cancels anything. */
+  resume: (runId: string) => Promise<ResumeOutcome>;
   restoreResults: (snapshot: ResultsWorkspaceSnapshot) => boolean;
   reset: () => void;
+  /**
+   * Request server-side cancellation of the current run (issue #910).
+   * Returns true when the request was accepted (200), false on 404, or throws
+   * on unexpected errors. Idempotent: succeeds even if the run already ended.
+   */
+  cancelRun: () => Promise<boolean>;
 }
-
-class FatalStreamError extends Error {}
-
-function questionKey(question: ExamQuestion, index: number): string {
-  return question.id && question.id.length > 0 ? question.id : `index-${index}`;
-}
-
 
 /**
  * Parse an SSE error event's raw data string into a human-readable message.
@@ -516,7 +526,7 @@ function formatHttpErrorDetail(detail: unknown): string | null {
 
 export function buildQueryString(params: GenerateParams): string {
   const qs = new URLSearchParams();
-  qs.append("stream_version", "2");
+  qs.append("stream_version", String(DETACHED_RUN_PROTOCOL_VERSION));
   if (params.subject !== undefined) qs.append("subject", params.subject);
   if (params.grade !== undefined) qs.append("grade", String(params.grade));
   if (params.content_type !== undefined) qs.append("content_type", params.content_type);
@@ -668,6 +678,42 @@ function buildAgentLanes(events: LlmCallEvent[]): AgentLane[] {
   });
 }
 
+/** Poll cadence for a detached run (issue #908): brisk while watched, lazy when hidden. */
+export const RUN_POLL_VISIBLE_MS = 3_000;
+export const RUN_POLL_HIDDEN_MS = 15_000;
+/** Polls that must agree the run status is terminal before questions without a 終止原因 are given up on. */
+const STATUS_SETTLE_POLLS = 2;
+
+function currentPollInterval(): number {
+  return typeof document !== "undefined" && document.visibilityState === "hidden"
+    ? RUN_POLL_HIDDEN_MS
+    : RUN_POLL_VISIBLE_MS;
+}
+
+function localMessage(key: string): string {
+  const lang = useLangStore.getState().lang;
+  return MESSAGES[lang][key] ?? MESSAGES["zh-TW"][key] ?? key;
+}
+
+/** One local polling session. Ending it only stops timers; nothing is sent to the server. */
+interface ActiveRun {
+  runId: string | null;
+  timer: ReturnType<typeof setTimeout> | null;
+  lastPollAt: number;
+  stageKey: string;
+  terminalStatusPolls: number;
+  /** True for a run reopened by id: the start time comes from the server. */
+  resumed: boolean;
+  detachVisibility: (() => void) | null;
+}
+
+type PollResult =
+  | { kind: "stale" }
+  | { kind: "applied"; ended: boolean }
+  | { kind: "not_found" }
+  | { kind: "fatal"; message: string }
+  | { kind: "transient" };
+
 export function useGenerate(): UseGenerateReturn {
   const [status, setStatus] = useState<GenerateStatus>("idle");
   const [admission, setAdmission] = useState<AdmissionState>("idle");
@@ -685,27 +731,36 @@ export function useGenerate(): UseGenerateReturn {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const [generationLogId, setGenerationLogId] = useState<string | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
   const [subQuestionTotal, setSubQuestionTotal] = useState<number | null>(null);
   const [resultsCompletion, setResultsCompletion] = useState<ResultsCompletion | null>(null);
   const [terminalEvidence, setTerminalEvidence] = useState(false);
-  const [legacyAdapter, setLegacyAdapter] = useState<LegacyAdapterState | null>(null);
-  const legacyAdapterRef = useRef<LegacyAdapterState | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
-  const gapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const trailByQuestionRef = useRef(new Map<string, VerificationTrailEntry[]>());
-  const figurePolicyTrailByQuestionRef = useRef(
-    new Map<string, FigurePolicyTrailEntry[]>(),
-  );
-  const referenceExampleEntriesByQuestionRef = useRef(
-    new Map<string, ReferenceExampleEntryShape[]>(),
-  );
-  const terminalQuestionKeysRef = useRef(new Set<string>());
-  const expectedQuestionTotalRef = useRef<number | null>(null);
-  const paramsRef = useRef<GenerateParams | null>(null);
-  // Tracks whether a `started` event was received for the current generate() call.
-  // Used to guard setResultsCompletion("error") so pre-stream failures (426, 503,
-  // preflight) do not clobber the previous run's completion state.  See #771/#774.
-  const startedRef = useRef(false);
+  const [pollReadFailCount, setPollReadFailCount] = useState(0);
+  const [cancelRequested, setCancelRequested] = useState(false);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  /**
+   * One-per-button-press idempotency key (issue #912).  Generated lazily at
+   * the start of ``generate()``; kept through network errors so retries reuse
+   * the same key; cleared after a 202 acceptance or a 4xx/5xx error (new
+   * intent required).  Never sent as a header — sent in the POST body so the
+   * server can store it in ``submission_key``.
+   */
+  const submissionKeyRef = useRef<string | null>(null);
+  const activeRef = useRef<ActiveRun | null>(null);
+  /** Run whose state is currently on screen, even after its polling ended. */
+  const shownRunRef = useRef<string | null>(null);
+  /** AbortController for the current live SSE stream (issue #909). */
+  const liveAbortRef = useRef<AbortController | null>(null);
+  /** Run id whose live stream is currently open, or null when none. */
+  const liveRunIdRef = useRef<string | null>(null);
+  /** Manifest from the accepted run, used to pre-seed the live decoder. */
+  const acceptedManifestRef = useRef<RunManifest | null>(null);
+  /**
+   * Runs whose live stream has permanently ended (error / non-200 / run_id or
+   * manifest mismatch / clean `done`). The stream is never reopened for these.
+   * Reset when a new run starts (clearRunState).
+   */
+  const liveEndedRunsRef = useRef<Set<string>>(new Set());
 
   const agentLanes = useMemo(() => buildAgentLanes(llmCalls), [llmCalls]);
 
@@ -722,19 +777,71 @@ export function useGenerate(): UseGenerateReturn {
     operationRef.current = null;
   }, []);
 
+  /** Stop watching locally. The run itself keeps going on the server. */
+  const stopWatching = useCallback(() => {
+    const run = activeRef.current;
+    if (run === null) return;
+    if (run.timer !== null) clearTimeout(run.timer);
+    run.timer = null;
+    run.detachVisibility?.();
+    run.detachVisibility = null;
+    activeRef.current = null;
+    // Abort only the AbortController — no cancel request to server (issue #909 §f).
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+    liveRunIdRef.current = null;
+  }, []);
+
   useEffect(() => {
     return () => {
       admissionResolveRef.current?.({ outcome: "rejected", reason: "aborted" });
       admissionResolveRef.current = null;
       endOperation("aborted");
-      controllerRef.current?.abort();
-      controllerRef.current = null;
-      if (gapTimerRef.current !== null) {
-        clearTimeout(gapTimerRef.current);
-        gapTimerRef.current = null;
-      }
+      // Leaving the page must not cancel the run (issue #908): only local polling stops.
+      stopWatching();
     };
-  }, [endOperation]);
+  }, [endOperation, stopWatching]);
+
+  // When three or more consecutive poll attempts fail, mark questions that have
+  // no terminal as "unknown" (persisted state unavailable).  This is the only
+  // place where processing becomes "unknown"; stream loss (closeRun) does not.
+  useEffect(() => {
+    if (pollReadFailCount < 3) return;
+    const prev = evidenceRef.current;
+    if (prev === null) return;
+    const next = applyPollReadFailed(prev);
+    if (next !== prev) {
+      evidenceRef.current = next;
+      setEvidence(next);
+    }
+  }, [pollReadFailCount]);
+
+  const clearRunState = useCallback(() => {
+    setProgressLines([]);
+    setLlmCalls([]);
+    setEvidence(null);
+    evidenceRef.current = null;
+    setResults([]);
+    setDisplayResults([]);
+    setErrorMessage(null);
+    setErrorFailureClass(null);
+    setStartedAt(null);
+    setFinishedAt(null);
+    setGenerationLogId(null);
+    setRunId(null);
+    shownRunRef.current = null;
+    setSubQuestionTotal(null);
+    setResultsCompletion(null);
+    setTerminalEvidence(false);
+    setCancelRequested(false);
+    setQueuePosition(null);
+    // Clean up live stream state (abort only the controller — no cancel request)
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+    liveRunIdRef.current = null;
+    acceptedManifestRef.current = null;
+    liveEndedRunsRef.current = new Set();
+  }, []);
 
   const reset = useCallback(() => {
     admissionResolveRef.current?.({ outcome: "rejected", reason: "reset" });
@@ -742,32 +849,13 @@ export function useGenerate(): UseGenerateReturn {
     endOperation("aborted");
     setAdmission("idle");
     setAdmissionError(null);
-    controllerRef.current?.abort();
-    controllerRef.current = null;
-    setProgressLines([]);
-    setLlmCalls([]);
-    setEvidence(null);
-    evidenceRef.current = null;
-    setErrorMessage(null);
-    setErrorFailureClass(null);
-    setStartedAt(null);
-    setFinishedAt(null);
-    setGenerationLogId(null);
-    setSubQuestionTotal(null);
-    setResultsCompletion(null);
-    setTerminalEvidence(false);
-    setLegacyAdapter(null);
-    legacyAdapterRef.current = null;
-    trailByQuestionRef.current.clear();
-    figurePolicyTrailByQuestionRef.current.clear();
-    referenceExampleEntriesByQuestionRef.current.clear();
-    terminalQuestionKeysRef.current.clear();
-    expectedQuestionTotalRef.current = null;
+    stopWatching();
+    clearRunState();
     setStatus("idle");
-  }, [endOperation]);
+  }, [clearRunState, endOperation, stopWatching]);
 
   const restoreResults = useCallback((snapshot: ResultsWorkspaceSnapshot): boolean => {
-    if (controllerRef.current !== null) return false;
+    if (activeRef.current !== null) return false;
     const hydrated = importResultsWorkspace(snapshot);
     if (!hydrated) return false;
     setResults(hydrated.results);
@@ -793,599 +881,413 @@ export function useGenerate(): UseGenerateReturn {
     return true;
   }, []);
 
+  /**
+   * Open the live SSE stream for a run (issue #909).
+   *
+   * Called from applySnapshot when the polled snapshot advertises
+   * live_events_available=true and no stream is already open for this run.
+   * Events are fed through createGenerationStreamDecoder (pre-seeded with the
+   * accepted manifest so late subscribers work) and applied to evidenceRef via
+   * applyV2Event.  On stream end/error: applyStreamLost clears activity only
+   * (never closeRun).  Polling continues as the authoritative source regardless.
+   */
+  const openLiveStream = useCallback((runId: string): void => {
+    // Already tracking this run — do not open a second stream
+    if (liveRunIdRef.current === runId) return;
+    // After a stream for this run ended (error / mismatch / done), never reopen it
+    if (liveEndedRunsRef.current.has(runId)) return;
+
+    // Abort any previous stream (for a different run that ended)
+    liveAbortRef.current?.abort();
+    liveAbortRef.current = null;
+
+    const controller = new AbortController();
+    liveAbortRef.current = controller;
+    liveRunIdRef.current = runId;
+
+    const manifest = acceptedManifestRef.current;
+    const decoder = createGenerationStreamDecoder(
+      manifest ? { preSeededManifest: manifest } : undefined,
+    );
+    const token = useAuthStore.getState().token;
+
+    /** Mark this run's stream as permanently ended and clean up refs. */
+    const closeStream = () => {
+      liveEndedRunsRef.current.add(runId);
+      controller.abort();
+      if (liveRunIdRef.current === runId) liveRunIdRef.current = null;
+      if (liveAbortRef.current === controller) liveAbortRef.current = null;
+    };
+
+    void fetchEventSource(`/api/runs/${encodeURIComponent(runId)}/events`, {
+      method: "GET",
+      headers: {
+        "X-Frontend-Build-ID": __BUILD_ID__,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      signal: controller.signal,
+      openWhenHidden: true,
+
+      async onopen(response) {
+        if (response.ok) return;
+        // Non-200 response: surface nothing, clear stream state, don't retry
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        throw new Error(`events: HTTP ${response.status}`);
+      },
+
+      onmessage(ev) {
+        if (controller.signal.aborted) return;
+        if (liveRunIdRef.current !== runId) return;
+
+        if (ev.event === "done") {
+          // Sentinel: run finished cleanly — close the stream and don't reconnect
+          closeStream();
+          return;
+        }
+
+        // Defensive run_id validation before the decoder sees the event.
+        // With a pre-seeded decoder, an event whose context.run_id differs from
+        // the accepted run is silently dropped by the decoder (kind:"ignore"),
+        // so the hook must detect the mismatch here and abort the stream.
+        try {
+          const parsed = JSON.parse(ev.data) as unknown;
+          if (
+            parsed !== null &&
+            typeof parsed === "object" &&
+            "context" in (parsed as object) &&
+            (parsed as Record<string, unknown>).context !== null &&
+            typeof (parsed as Record<string, unknown>).context === "object" &&
+            "run_id" in ((parsed as Record<string, unknown>).context as object) &&
+            typeof ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id === "string"
+          ) {
+            const payloadRunId = ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id as string;
+            if (payloadRunId !== runId) {
+              closeStream();
+              return;
+            }
+            // If this is a "started" event, also validate the manifest (T3b)
+            if (
+              ev.event === "started" &&
+              acceptedManifestRef.current !== null &&
+              "payload" in (parsed as object)
+            ) {
+              const payload = ((parsed as Record<string, unknown>).payload) as Record<string, unknown> | null | undefined;
+              if (payload !== null && payload !== undefined && typeof payload === "object") {
+                const payloadTotal = (payload as Record<string, unknown>).total;
+                const payloadQuestions = (payload as Record<string, unknown>).questions;
+                const accepted = acceptedManifestRef.current;
+                const totalMismatch = typeof payloadTotal === "number" && payloadTotal !== accepted.total;
+                let idsMismatch = false;
+                if (Array.isArray(payloadQuestions) && payloadQuestions.length === accepted.manifest.length) {
+                  idsMismatch = payloadQuestions.some((q: unknown, i: number) =>
+                    q !== null && typeof q === "object" &&
+                    (q as Record<string, unknown>).question_id !== accepted.manifest[i]?.questionId
+                  );
+                } else if (Array.isArray(payloadQuestions)) {
+                  idsMismatch = true;
+                }
+                if (totalMismatch || idsMismatch) {
+                  closeStream();
+                  return;
+                }
+              }
+            }
+          }
+        } catch { /* non-JSON or missing fields — let decoder handle */ }
+
+        // Batch-level error event: extract failure_class for localized display
+        if (ev.event === "error") {
+          const errPayload = parseErrorPayload(ev.data);
+          const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+          const localizedErrMsg = errPayload.failureClass
+            ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+            : errPayload.message;
+          setErrorFailureClass(errPayload.failureClass);
+          setErrorMessage(localizedErrMsg);
+          setStatus("error");
+          setResultsCompletion("error");
+          endOperation("failed");
+          closeStream();
+          return;
+        }
+
+        const decoded = decoder.decode(ev.event, ev.data);
+        for (const decodedEvent of decoded) {
+          if (decodedEvent.kind !== "v2") continue;
+
+          // "started" — evidence already set from the 202 / snapshot; skip
+          if (decodedEvent.event.name === "started") continue;
+
+          const prev = evidenceRef.current;
+          if (prev === null) continue;
+          const next = applyV2Event(prev, decodedEvent);
+          if (next !== prev) {
+            evidenceRef.current = next;
+            setEvidence(next);
+            const derived = deriveDisplay(next);
+            setDisplayResults(derived.displayResults);
+            setResults(derived.results);
+          }
+        }
+      },
+
+      onclose() {
+        // Server closed the connection without a `done` sentinel — treat as lost
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        // Throwing here prevents fetchEventSource from attempting a reconnect
+        throw new Error("events: server closed connection");
+      },
+
+      onerror(err) {
+        // Stream error: apply stream lost (clears activity only), permanently close
+        if (liveRunIdRef.current === runId) {
+          const prev = evidenceRef.current;
+          if (prev !== null) {
+            const next = applyStreamLost(prev);
+            if (next !== prev) { evidenceRef.current = next; setEvidence(next); }
+          }
+        }
+        closeStream();
+        throw err; // prevent fetchEventSource retry
+      },
+    });
+  }, []);
+
+  /** Fold a polled snapshot into state. Repeating the same snapshot changes nothing. */
+  const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
+    // issue #910: track cancel_requested from the server so 取消中 survives a page reopen.
+    setCancelRequested(snapshot.cancel_requested === true);
+    // issue #912: track queue position so the page can show 排隊中 · 前面還有 k 個.
+    setQueuePosition(typeof snapshot.queue_position === "number" ? snapshot.queue_position : null);
+    const previous = evidenceRef.current;
+    let next = applyRunSnapshot(previous, snapshot);
+    if (next !== previous) {
+      evidenceRef.current = next;
+      setEvidence(next);
+      const derived = deriveDisplay(next);
+      setDisplayResults(derived.displayResults);
+      setResults(derived.results);
+    }
+
+    const stages = stageEventsFromSnapshot(snapshot);
+    const stageKey = JSON.stringify(stages);
+    if (stageKey !== run.stageKey) {
+      run.stageKey = stageKey;
+      setLlmCalls(stages);
+    }
+
+    if (run.resumed) {
+      run.resumed = false;
+      const started = snapshot.started_at !== null ? Date.parse(snapshot.started_at) : Number.NaN;
+      setStartedAt(Number.isNaN(started) ? Date.now() : started);
+      setGenerationLogId(snapshot.run_id);
+      setRunId(snapshot.run_id);
+      shownRunRef.current = snapshot.run_id;
+    }
+
+    // Open the live SSE stream when the snapshot advertises it (issue #909 §a).
+    // Only when: the run is not yet ended AND the snapshot says live events are
+    // available AND no stream is already open for this run.
+    const isEnded = snapshotEnded(snapshot) || isTerminalRunStatus(snapshot.status);
+    if (!isEnded && snapshot.live_events_available === true && run.runId !== null) {
+      // For resumed runs (acceptedManifestRef is null), seed the decoder manifest
+      // from the first snapshot so the decoder does not wait forever for a
+      // "started" event that late subscribers never receive (issue #909 §d).
+      if (acceptedManifestRef.current === null) {
+        acceptedManifestRef.current = {
+          runId: snapshot.run_id,
+          total: snapshot.total,
+          manifest: snapshot.questions.map((q) => ({ index: q.index, questionId: q.question_id })),
+        };
+      }
+      openLiveStream(run.runId);
+    }
+
+    let ended = snapshotEnded(snapshot);
+    if (!ended && isTerminalRunStatus(snapshot.status)) {
+      run.terminalStatusPolls += 1;
+      if (run.terminalStatusPolls >= STATUS_SETTLE_POLLS) {
+        // The run says it is over but some question never got a 終止原因:
+        // stop watching and let the evidence say "unknown" for it.
+        ended = true;
+        if (!next.closed) {
+          next = closeRun(next);
+          evidenceRef.current = next;
+          setEvidence(next);
+        }
+      }
+    } else {
+      run.terminalStatusPolls = 0;
+    }
+    if (!ended) return { ended: false };
+
+    const completedAt = snapshot.completed_at !== null ? Date.parse(snapshot.completed_at) : Number.NaN;
+    setFinishedAt(Number.isNaN(completedAt) ? Date.now() : completedAt);
+    if (snapshot.status === "failed") {
+      // snapshot.error is a plain string — no failure_class is recoverable from it
+      setErrorFailureClass(null);
+      setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+      setStatus("error");
+      setResultsCompletion("error");
+      setTerminalEvidence(false);
+      endOperation("failed");
+    } else {
+      const settled = next.total > 0 && selectEndedCount(next) >= next.total;
+      setTerminalEvidence(settled);
+      setResultsCompletion(settled ? "settled" : "unknown");
+      setStatus("idle");
+      endOperation("completed");
+    }
+    return { ended: true };
+  }, [endOperation, openLiveStream]);
+
+  /** One `GET /api/runs/{id}`. Only reads; never cancels. */
+  const pollOnce = useCallback(async (run: ActiveRun): Promise<PollResult> => {
+    if (run.runId === null) return { kind: "stale" };
+    run.lastPollAt = Date.now();
+    try {
+      const raw = await getRun(run.runId);
+      if (activeRef.current !== run) return { kind: "stale" };
+      const snapshot = parseRunSnapshot(raw);
+      if (snapshot === null) return { kind: "fatal", message: localMessage("generate.run_invalid_response") };
+      setPollReadFailCount(0);
+      return { kind: "applied", ended: applySnapshot(snapshot, run).ended };
+    } catch (err) {
+      if (activeRef.current !== run) return { kind: "stale" };
+      if (err instanceof ApiError) {
+        if (err.status === 404) return { kind: "not_found" };
+        if (err.status === 401) return { kind: "fatal", message: "Session expired — please sign in again" };
+        // Rate limiting and server trouble pass; the run itself is unaffected.
+        if (err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429) {
+          return { kind: "fatal", message: err.detail };
+        }
+      }
+      setPollReadFailCount((c) => c + 1);
+      return { kind: "transient" };
+    }
+  }, [applySnapshot]);
+
+  /** Fail the shown run locally (the server-side run is untouched). */
+  const failWatching = useCallback((message: string) => {
+    stopWatching();
+    setErrorMessage(message);
+    setStatus("error");
+    setFinishedAt(Date.now());
+    endOperation("failed");
+  }, [endOperation, stopWatching]);
+
+  /** Poll on a timer while the page is alive: ~3 s visible, ~15 s hidden. */
+  const startPolling = useCallback((run: ActiveRun) => {
+    const schedule = () => {
+      if (activeRef.current !== run) return;
+      if (run.timer !== null) clearTimeout(run.timer);
+      const wait = Math.max(0, currentPollInterval() - (Date.now() - run.lastPollAt));
+      run.timer = setTimeout(step, wait);
+    };
+    const step = async () => {
+      run.timer = null;
+      const result = await pollOnce(run);
+      if (activeRef.current !== run) return;
+      if (result.kind === "applied" && result.ended) {
+        stopWatching();
+        return;
+      }
+      if (result.kind === "fatal") {
+        failWatching(result.message);
+        return;
+      }
+      if (result.kind === "not_found") {
+        failWatching(localMessage("generate.run_not_found"));
+        return;
+      }
+      schedule();
+    };
+    const onVisibilityChange = () => {
+      if (activeRef.current === run && run.timer !== null) schedule();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      run.detachVisibility = () => document.removeEventListener("visibilitychange", onVisibilityChange);
+    }
+    run.lastPollAt = Date.now();
+    schedule();
+  }, [failWatching, pollOnce, stopWatching]);
+
+  const newRun = useCallback((id: string | null, resumed: boolean): ActiveRun => ({
+    runId: id,
+    timer: null,
+    lastPollAt: Date.now(),
+    stageKey: "[]",
+    terminalStatusPolls: 0,
+    resumed,
+    detachVisibility: null,
+  }), []);
+
   const generate = useCallback(async (params: GenerateParams): Promise<AdmissionOutcome> => {
-    if (controllerRef.current !== null) {
+    if (activeRef.current !== null) {
       return { outcome: "rejected", reason: "generation already in progress" };
     }
+    // issue #912: generate one idempotency key per button-press; reuse on retry
+    // after a network error; clear on 202 (accepted) or any 4xx/5xx (new intent).
+    if (submissionKeyRef.current === null) {
+      submissionKeyRef.current = crypto.randomUUID();
+    }
+    const submissionKey = submissionKeyRef.current;
+
     const admissionPromise = new Promise<AdmissionOutcome>((resolve) => {
       admissionResolveRef.current = resolve;
     });
-    paramsRef.current = params;
-    const controller = new AbortController();
-    controllerRef.current = controller;
-
-    const streamContext = {
-      startedAt: Date.now(),
-      messageCount: 0,
-      lastEventType: "none",
-    };
-
+    const run = newRun(null, false);
+    activeRef.current = run;
+    const submittedAt = Date.now();
     const token = useAuthStore.getState().token;
-
-    // Create a fresh decoder for this connection
-    const decoder = createGenerationStreamDecoder();
 
     setStatus("generating");
     setAdmission("submitting");
     setAdmissionError(null);
     setProgressLines([]);
-    // Results, displayResults, and evidence are cleared only when the 'started'
-    // event establishes admission — so previous output is preserved on pre-stream
-    // errors (426 / 503 / preflight failure).  See issue #771.
+    // Previous results, displayResults and evidence are cleared only once the
+    // server accepts the run — so previous output survives pre-acceptance
+    // failures (426 / 503 / preflight failure).  See issue #771.
     setLlmCalls([]);
     setErrorMessage(null);
-    setStartedAt(streamContext.startedAt);
+    setStartedAt(submittedAt);
     setFinishedAt(null);
     setGenerationLogId(null);
+    setRunId(null);
+    shownRunRef.current = null;
     setSubQuestionTotal(null);
-    startedRef.current = false;
-    // Always initialize legacy adapter for C1×S0 compatibility (issue #750).
-    // Pre-started held events are processed by this adapter immediately;
-    // the "started" handler re-initializes it once the server count is known.
-    const initialAdapter = createLegacyAdapter(params.count ?? null);
-    legacyAdapterRef.current = initialAdapter;
-    setLegacyAdapter(initialAdapter);
-    trailByQuestionRef.current.clear();
-    figurePolicyTrailByQuestionRef.current.clear();
-    referenceExampleEntriesByQuestionRef.current.clear();
-    terminalQuestionKeysRef.current.clear();
-    expectedQuestionTotalRef.current = typeof params.count === "number" ? params.count : null;
 
-    /**
-     * Rebuild displayResults and results from the current legacy adapter state.
-     * Called after every question_update or result event in legacy-adapter mode.
-     * Items with resolvedIndex get their 0-based index; items without get a sentinel
-     * (10000+ordinal) so they sort to the end, and positionUnknown is set to true.
-     */
-    function rebuildDisplayResultsFromAdapter(adapterState: LegacyAdapterState) {
-      const items = selectLegacyItems(adapterState);
-      const newDisplay: GeneratedQuestion[] = items.map((item, ordinalPosition) => {
-        const sentinelIndex = 10000 + ordinalPosition;
-        const effectiveIndex = item.resolvedIndex ?? sentinelIndex;
-        const laneKey = item.id; // opaque id used as trail map key
-        const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
-        return {
-          index: effectiveIndex,
-          question: item.question,
-          phase: item.phase,
-          isFinal: item.isFinal,
-          stableId: item.id,
-          contentRevision: item.contentRevision,
-          trail: trailByQuestionRef.current.get(laneKey) ?? [],
-          figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-          referenceExampleRecord: refEntries
-            ? { disabled: false, entries: refEntries }
-            : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
-          positionUnknown: item.resolvedIndex === null ? true : undefined,
-        };
-      });
-      setDisplayResults(newDisplay);
-      const newResults = items.filter((item) => item.isFinal).map((item) => item.question);
-      setResults(newResults);
-    }
-
-    // ---------------------------------------------------------------------------
-    // V2 event handler — routes decoded v2 events to evidence + llmCalls
-    // ---------------------------------------------------------------------------
-    function handleV2Event(name: string, context: Record<string, unknown>, payload: unknown) {
-      const p = payload as Record<string, unknown>;
-      const identity: LlmIdentity = {
-        runId: typeof context.run_id === "string" ? context.run_id : undefined,
-        operationId: typeof context.operation_id === "string" ? context.operation_id : undefined,
-        callId: typeof context.call_id === "string" ? context.call_id : undefined,
-        retryOfCallId: typeof p.retry_of_call_id === "string" ? p.retry_of_call_id : undefined,
-        supersedesOperationId: typeof p.supersedes_operation_id === "string"
-          ? p.supersedes_operation_id
-          : undefined,
-      };
-
-      switch (name) {
-        case "started": {
-          setResults([]);
-          setDisplayResults([]);
-          setEvidence(null);
-          evidenceRef.current = null;
-          setStatus("generating");
-          settleAdmission({ outcome: "admitted" });
-          setResultsCompletion(null);
-          setTerminalEvidence(false);
-          startedRef.current = true;
-          // Build evidence from decoder's manifest
-          if (decoder.run) {
-            const initial = createRunEvidence(decoder.run);
-            evidenceRef.current = initial;
-            setEvidence(initial);
-          }
-          break;
-        }
-        case "llm_request": {
-          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
-          setLlmCalls((prev) => [...prev, {
-            type: "request",
-            purpose: (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "",
-            agent,
-            model: (p.model as string) ?? "",
-            messages: (p.messages as unknown[]) ?? [],
-            params: p.params,
-            ...identity,
-          }]);
-          break;
-        }
-        case "llm_thinking": {
-          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
-          const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
-          const text = (p.text as string) ?? "";
-          setLlmCalls((prev) => {
-            let matchIndex = -1;
-            if (identity.callId) {
-              for (let index = prev.length - 1; index >= 0; index -= 1) {
-                const event = prev[index];
-                if (event.type === "thinking" && event.callId === identity.callId) {
-                  matchIndex = index;
-                  break;
-                }
-              }
-            }
-            const last = matchIndex >= 0 ? prev[matchIndex] : prev[prev.length - 1];
-            if (last && last.type === "thinking" && (
-              identity.callId ? last.callId === identity.callId : last.purpose === purpose
-            )) {
-              const next = [...prev];
-              next[matchIndex >= 0 ? matchIndex : prev.length - 1] = { ...last, text: last.text + text };
-              return next;
-            }
-            return [...prev, { type: "thinking", purpose, agent, text, channel: "thinking", ...identity }];
-          });
-          break;
-        }
-        case "llm_content": {
-          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
-          const purpose = (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "";
-          const text = (p.text as string) ?? "";
-          setLlmCalls((prev) => {
-            let matchIndex = -1;
-            if (identity.callId) {
-              for (let index = prev.length - 1; index >= 0; index -= 1) {
-                const event = prev[index];
-                if (event.type === "content" && event.callId === identity.callId) {
-                  matchIndex = index;
-                  break;
-                }
-              }
-            }
-            const last = matchIndex >= 0 ? prev[matchIndex] : prev[prev.length - 1];
-            if (last && last.type === "content" && (
-              identity.callId ? last.callId === identity.callId : last.purpose === purpose
-            )) {
-              const next = [...prev];
-              next[matchIndex >= 0 ? matchIndex : prev.length - 1] = { ...last, text: last.text + text };
-              return next;
-            }
-            return [...prev, { type: "content", purpose, agent, text, channel: "content", ...identity }];
-          });
-          break;
-        }
-        case "llm_response": {
-          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
-          setLlmCalls((prev) => [...prev, {
-            type: "response",
-            purpose: (p.purpose as string | undefined) ?? (p.agent as string | undefined) ?? "",
-            agent,
-            model: (p.model as string) ?? "",
-            usage: p.usage,
-            ...identity,
-          }]);
-          break;
-        }
-        case "llm_failure": {
-          const agent = (p.agent as string | undefined) ?? purposeToAgent((p.purpose as string | undefined) ?? "");
-          setLlmCalls((prev) => [...prev, {
-            type: "failure",
-            purpose: (p.purpose as string | undefined) ?? "",
-            agent,
-            model: (p.model as string) ?? "",
-            errorType: p.error_type as string | undefined,
-            ...identity,
-          }]);
-          break;
-        }
-        case "stage": {
-          setLlmCalls((prev) => [...prev, {
-            type: "stage",
-            agent: (p.agent as string) ?? "",
-            stage: (p.stage as string) ?? "",
-            status: (p.status as "start" | "end" | "error") ?? "start",
-            ts: (p.ts as number) ?? 0,
-            retry: p.retry as number | undefined,
-            message: p.message as string | undefined,
-            ...identity,
-          }]);
-          break;
-        }
-        case "plan": {
-          const total = p.sub_question_total;
-          if (typeof total === "number") setSubQuestionTotal(total);
-          break;
-        }
-        case "trail": {
-          const parsed = p as unknown as VerificationTrailEntry | FigurePolicyTrailEntry | ReferenceExampleEntryShape;
-          if (!parsed.question_id) break;
-          if (parsed.code === "verification_trail") {
-            const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
-            const trail = [...previous, parsed as VerificationTrailEntry];
-            trailByQuestionRef.current.set(parsed.question_id, trail);
-          } else if (parsed.code === "figure_policy") {
-            const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
-            const fpt = [...previous, parsed as FigurePolicyTrailEntry];
-            figurePolicyTrailByQuestionRef.current.set(parsed.question_id, fpt);
-          } else if (parsed.code === "reference_example") {
-            const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
-            const entries = [...previous, parsed as ReferenceExampleEntryShape];
-            referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
-          }
-          break;
-        }
-        case "question_update":
-        case "result":
-        case "question_terminal":
-        case "pipeline": {
-          // Route to evidence reducer
-          const prev = evidenceRef.current;
-          if (!prev) break;
-          const next = applyV2Event(prev, { kind: "v2", event: { name, context, payload } });
-          evidenceRef.current = next;
-          setEvidence(next);
-          // Track question_terminal for terminalEvidence settlement
-          if (name === "question_terminal") {
-            const questionId = typeof context.question_id === "string" ? context.question_id : null;
-            if (questionId !== null) {
-              const questionEvidence = next.questions[questionId];
-              if (questionEvidence && questionEvidence.terminal !== null && !questionEvidence.terminalConflict) {
-                terminalQuestionKeysRef.current.add(questionId);
-              } else {
-                terminalQuestionKeysRef.current.delete(questionId);
-              }
-            }
-          }
-          // In v2 mode, also update displayResults and results from evidence
-          if (name === "result" || name === "question_update") {
-            // Derive displayResults from evidence manifest order
-            const newDisplay: GeneratedQuestion[] = [];
-            for (const entry of next.order) {
-              const qev = next.questions[entry];
-              if (qev && qev.content.question) {
-                const qid = qev.questionId;
-                const laneKey = qid;
-                const refEntries = referenceExampleEntriesByQuestionRef.current.get(laneKey);
-                newDisplay.push({
-                  index: qev.index,
-                  question: qev.content.question,
-                  phase: (qev.content.phase ?? "draft") as DraftPhase,
-                  isFinal: qev.content.receipt === "final",
-                  stableId: qev.questionId,
-                  contentRevision: typeof qev.content.revision === "number" && qev.content.revision > 0
-                    ? qev.content.revision
-                    : null,
-                  trail: trailByQuestionRef.current.get(laneKey) ?? [],
-                  figurePolicyTrail: figurePolicyTrailByQuestionRef.current.get(laneKey) ?? [],
-                  referenceExampleRecord: refEntries
-                    ? { disabled: false, entries: refEntries }
-                    : { disabled: paramsRef.current?.disable_reference_fewshot === true, entries: [] },
-                });
-              }
-            }
-            setDisplayResults(newDisplay);
-            // results = unique finals in manifest order
-            const newResults = next.order
-              .map((qid) => next.questions[qid])
-              .filter((qev) => qev?.content.receipt === "final" && qev.content.question)
-              .map((qev) => qev.content.question!);
-            setResults(newResults);
-          }
-          break;
-        }
-        case "error": {
-          // Re-serialize the structured payload for parseErrorPayload
-          const rawData = typeof payload === "string"
-            ? payload
-            : payload !== null && typeof payload === "object"
-              ? JSON.stringify(payload)
-              : "";
-          const errPayload = parseErrorPayload(rawData);
-          const lang = useLangStore.getState().lang;
-          const messages = MESSAGES[lang] ?? MESSAGES["en-US"];
-          const localizedMsg = errPayload.failureClass
-            ? `${messages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${messages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
-            : errPayload.message;
-          setErrorMessage(localizedMsg);
-          setErrorFailureClass(errPayload.failureClass);
-          setStatus("error");
-          if (startedRef.current) {
-            setResultsCompletion("error");
-            setTerminalEvidence(false);
-          }
-          setFinishedAt(Date.now());
-          endOperation("failed");
-          break;
-        }
-        case "done": {
-          // Clear gap timer — stream is ending
-          if (gapTimerRef.current !== null) {
-            clearTimeout(gapTimerRef.current);
-            gapTimerRef.current = null;
-          }
-          // Apply done to close the evidence run
-          const prev = evidenceRef.current;
-          const closed = prev
-            ? applyV2Event(prev, { kind: "v2", event: { name, context, payload } })
-            : null;
-          if (closed) {
-            evidenceRef.current = closed;
-            setEvidence(closed);
-          }
-          {
-            const expected = expectedQuestionTotalRef.current;
-            const endedCount = closed
-              ? selectEndedCount(closed)
-              : terminalQuestionKeysRef.current.size;
-            const hasTerminalEvidence = expected === null
-              ? endedCount > 0
-              : expected > 0 && endedCount >= expected;
-            setTerminalEvidence(hasTerminalEvidence);
-            setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
-          }
-          setStatus("idle");
-          setFinishedAt(Date.now());
-          endOperation("completed");
-          controller.abort();
-          controllerRef.current = null;
-          break;
-        }
-        default:
-          break;
+    // A rejected submission is reported to Sentry (when enabled) as before the
+    // detached-run transport; only the message is sent, never request content.
+    const rejectSubmission = (message: string, cause?: Error) => {
+      if (isSentryEnabled()) {
+        Sentry.captureException(cause ?? new Error(message), {
+          tags: { source: "generateSubmit", navigator_online: String(navigator.onLine) },
+          contexts: { submit: { elapsed_ms: Date.now() - submittedAt } },
+        });
       }
-    }
-
-    // ---------------------------------------------------------------------------
-    // Legacy event handler — existing switch statement logic unchanged
-    // ---------------------------------------------------------------------------
-    function handleLegacyEvent(eventName: string, data: string) {
-      switch (eventName) {
-        case "started":
-          setResults([]);
-          setDisplayResults([]);
-          setEvidence(null);
-          evidenceRef.current = null;
-          setStatus("generating");
-          settleAdmission({ outcome: "admitted" });
-          setResultsCompletion(null);
-          setTerminalEvidence(false);
-          startedRef.current = true;
-          {
-            const payload = parseStartedEventData(data);
-            if (payload) setGenerationLogId(payload.generation_log_id);
-          }
-          // Initialize legacy adapter for C1×S0 compatibility (issue #750)
-          {
-            const adapter = createLegacyAdapter(paramsRef.current?.count ?? null);
-            legacyAdapterRef.current = adapter;
-            setLegacyAdapter(adapter);
-          }
-          break;
-        case "progress":
-          setProgressLines((prev) => [...prev, data]);
-          break;
-        case "llm_request": {
-          try {
-            const d = JSON.parse(data) as { purpose: string; agent?: string; model: string; messages: unknown[]; params?: unknown };
-            const agent = d.agent ?? purposeToAgent(d.purpose);
-            setLlmCalls((prev) => [...prev, { type: "request", purpose: d.purpose, agent, model: d.model, messages: d.messages, params: d.params }]);
-          } catch { /* ignore */ }
-          break;
-        }
-        case "llm_thinking": {
-          try {
-            const d = JSON.parse(data) as { purpose: string; agent?: string; text: string };
-            const agent = d.agent ?? purposeToAgent(d.purpose);
-            setLlmCalls((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.type === "thinking" && last.purpose === d.purpose) {
-                return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
-              }
-              return [...prev, { type: "thinking", purpose: d.purpose, agent, text: d.text }];
-            });
-          } catch { /* ignore */ }
-          break;
-        }
-        case "llm_content": {
-          try {
-            const d = JSON.parse(data) as { purpose: string; agent?: string; text: string };
-            const agent = d.agent ?? purposeToAgent(d.purpose);
-            setLlmCalls((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.type === "content" && last.purpose === d.purpose) {
-                return [...prev.slice(0, -1), { ...last, text: last.text + d.text }];
-              }
-              return [...prev, { type: "content", purpose: d.purpose, agent, text: d.text }];
-            });
-          } catch { /* ignore */ }
-          break;
-        }
-        case "llm_response": {
-          try {
-            const d = JSON.parse(data) as { purpose: string; agent?: string; model: string; usage?: unknown };
-            const agent = d.agent ?? purposeToAgent(d.purpose);
-            setLlmCalls((prev) => [...prev, { type: "response", purpose: d.purpose, agent, model: d.model, usage: d.usage }]);
-          } catch { /* ignore */ }
-          break;
-        }
-        case "llm_failure": {
-          try {
-            const d = JSON.parse(data) as {
-              purpose: string;
-              agent?: string;
-              model?: string;
-              error_type?: string;
-              run_id?: string;
-              operation_id?: string;
-              call_id?: string;
-            };
-            const agent = d.agent ?? purposeToAgent(d.purpose);
-            setLlmCalls((prev) => [...prev, {
-              type: "failure",
-              purpose: d.purpose,
-              agent,
-              model: d.model ?? "",
-              errorType: d.error_type,
-              runId: d.run_id,
-              operationId: d.operation_id,
-              callId: d.call_id,
-            }]);
-          } catch { /* ignore */ }
-          break;
-        }
-        case "stage": {
-          try {
-            const d = JSON.parse(data) as { agent: string; stage: string; status: "start" | "end" | "error"; ts: number; retry?: number; message?: string };
-            setLlmCalls((prev) => [...prev, { type: "stage", agent: d.agent, stage: d.stage, status: d.status, ts: d.ts, retry: d.retry, message: d.message }]);
-          } catch { /* ignore */ }
-          break;
-        }
-        case "plan": {
-          try {
-            const d = JSON.parse(data) as { sub_question_total: number };
-            setSubQuestionTotal(d.sub_question_total);
-          } catch { /* ignore */ }
-          break;
-        }
-        case "pipeline":
-          // pipeline-level events (pipeline_start, question_start/end, pipeline_end) — no UI action needed beyond stage events
-          break;
-        case "question_update": {
-          // Always route through legacy adapter (C1×S0, issue #750).
-          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
-          // fallback deliberately removed — no index-by-arrival-order in C1.
-          try {
-            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "question_update", data);
-            legacyAdapterRef.current = nextAdapter;
-            setLegacyAdapter(nextAdapter);
-            rebuildDisplayResultsFromAdapter(nextAdapter);
-          } catch { /* ignore malformed updates */ }
-          break;
-        }
-        case "trail": {
-          try {
-            const parsed = JSON.parse(data) as
-              | VerificationTrailEntry
-              | FigurePolicyTrailEntry
-              | ReferenceExampleEntryShape;
-            if (!parsed.question_id) break;
-            if (parsed.code === "verification_trail") {
-              const previous = trailByQuestionRef.current.get(parsed.question_id) ?? [];
-              const trail = [...previous, parsed as VerificationTrailEntry];
-              trailByQuestionRef.current.set(parsed.question_id, trail);
-              setDisplayResults((prev) => prev.map((item) => (
-                questionKey(item.question, item.index) === parsed.question_id
-                  ? { ...item, trail }
-                  : item
-              )));
-            } else if (parsed.code === "figure_policy") {
-              const previous = figurePolicyTrailByQuestionRef.current.get(parsed.question_id) ?? [];
-              const figurePolicyTrail = [...previous, parsed as FigurePolicyTrailEntry];
-              figurePolicyTrailByQuestionRef.current.set(parsed.question_id, figurePolicyTrail);
-              setDisplayResults((prev) => prev.map((item) => (
-                questionKey(item.question, item.index) === parsed.question_id
-                  ? { ...item, figurePolicyTrail }
-                  : item
-              )));
-            } else if (parsed.code === "reference_example") {
-              const previous = referenceExampleEntriesByQuestionRef.current.get(parsed.question_id) ?? [];
-              const entries = [...previous, parsed as ReferenceExampleEntryShape];
-              referenceExampleEntriesByQuestionRef.current.set(parsed.question_id, entries);
-              setDisplayResults((prev) => prev.map((item) => (
-                questionKey(item.question, item.index) === parsed.question_id
-                  ? { ...item, referenceExampleRecord: { disabled: false, entries } }
-                  : item
-              )));
-            }
-          } catch { /* ignore malformed trail events */ }
-          break;
-        }
-        case "question_terminal":
-          try {
-            const parsed = JSON.parse(data) as Record<string, unknown>;
-            const ctx = parsed.context && typeof parsed.context === "object"
-              ? parsed.context as Record<string, unknown>
-              : null;
-            const questionId = typeof parsed.question_id === "string"
-              ? parsed.question_id
-              : typeof ctx?.question_id === "string"
-                ? ctx.question_id
-                : Number.isInteger(parsed.index) ? `index-${parsed.index}` : null;
-            if (questionId !== null) terminalQuestionKeysRef.current.add(questionId);
-          } catch { /* legacy streams may not send JSON terminal envelopes */ }
-          break;
-        case "result":
-          // Always route through legacy adapter (C1×S0, issue #750).
-          // Adapter is guaranteed initialized at generate() start; C0 arrival-order
-          // fallback deliberately removed — no index-by-arrival-order in C1.
-          try {
-            const nextAdapter = applyLegacyEvent(legacyAdapterRef.current!, "result", data);
-            legacyAdapterRef.current = nextAdapter;
-            setLegacyAdapter(nextAdapter);
-            rebuildDisplayResultsFromAdapter(nextAdapter);
-          } catch { /* ignore malformed results */ }
-          break;
-        case "error": {
-          const errPayload = parseErrorPayload(data ?? "");
-          const errLang = useLangStore.getState().lang;
-          const errMessages = MESSAGES[errLang] ?? MESSAGES["en-US"];
-          const localizedErrMsg = errPayload.failureClass
-            ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
-            : errPayload.message;
-          setErrorMessage(localizedErrMsg);
-          setErrorFailureClass(errPayload.failureClass);
-          setStatus("error");
-          if (startedRef.current) {
-            setResultsCompletion("error");
-            setTerminalEvidence(false);
-          }
-          setFinishedAt(Date.now());
-          endOperation("failed");
-          break;
-        }
-        case "done": {
-          // Update legacy adapter with "done" event if active
-          if (legacyAdapterRef.current) {
-            const doneAdapter = applyLegacyEvent(legacyAdapterRef.current, "done", data);
-            legacyAdapterRef.current = doneAdapter;
-            setLegacyAdapter(doneAdapter);
-          }
-          const expected = expectedQuestionTotalRef.current;
-          const hasTerminalEvidence = expected === null
-            ? terminalQuestionKeysRef.current.size > 0
-            : expected > 0 && terminalQuestionKeysRef.current.size >= expected;
-          setTerminalEvidence(hasTerminalEvidence);
-          setResultsCompletion(hasTerminalEvidence ? "settled" : "unknown");
-          setStatus("idle");
-          setFinishedAt(Date.now());
-          endOperation("completed");
-          controller.abort();
-          controllerRef.current = null;
-          break;
-        }
-      }
-    }
+      if (activeRef.current === run) activeRef.current = null;
+      setErrorMessage(message);
+      setStatus("error");
+      setFinishedAt(Date.now());
+      settleAdmission({ outcome: "rejected", reason: message });
+      endOperation("failed");
+    };
 
     // Preflight: ensure we have a current release status before submission.
     // Trigger a network check for the initial "checking" state and retry an
@@ -1397,6 +1299,7 @@ export function useGenerate(): UseGenerateReturn {
     if (releaseStatus === "checking" || releaseStatus === "unavailable") {
       await useReleaseStore.getState().checkNow();
     }
+    if (activeRef.current !== run) return admissionPromise;
     const preflightStatus = useReleaseStore.getState().status;
     if (preflightStatus === "update-required" || preflightStatus === "paused" || preflightStatus === "unavailable") {
       const msgKey =
@@ -1408,207 +1311,180 @@ export function useGenerate(): UseGenerateReturn {
       const msg = MESSAGES["zh-TW"][msgKey] ?? msgKey;
       setAdmission("idle");
       setAdmissionError(msg);
+      activeRef.current = null;
       setErrorMessage(msg);
       setStatus("error");
       setFinishedAt(Date.now());
       settleAdmission({ outcome: "rejected", reason: msg });
-      controller.abort();
-      controllerRef.current = null;
       return admissionPromise;
     }
     operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
-    fetchEventSource("/api/generate", {
-      method: "POST",
-      body: JSON.stringify({ ...params, stream_version: 2 }),
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Frontend-Build-ID": __BUILD_ID__,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      openWhenHidden: true,
-      async onopen(res) {
-        if (controllerRef.current !== controller) return;
-        if (!res.ok) {
-          if (res.status === 401) {
-            // Classify as credential expiry — recovery snapshot is preserved
-            // so the teacher can restore after re-authenticating (#776).
-            const authState = useAuthStore.getState();
-            const userId = authState.user?.id ?? null;
-            if (userId !== null) {
-              saveSignoutReason("session_expired", userId);
-            }
-            const currentPath =
-              typeof window !== "undefined" ? window.location.pathname : null;
-            if (currentPath !== null) {
-              saveReturnDestination(currentPath);
-            }
-            authState.logout();
-            const msg = "Session expired — please sign in again";
-            setErrorMessage(msg);
-            setStatus("error");
-            setFinishedAt(Date.now());
-            settleAdmission({ outcome: "rejected", reason: msg });
-            endOperation("failed");
-            throw new FatalStreamError(msg);
-          }
-          let msg = `Stream open failed: HTTP ${res.status}`;
-          try {
-            const body = await res.json() as unknown;
-            if (
-              body !== null &&
-              typeof body === "object" &&
-              "detail" in body
-            ) {
-              msg = formatHttpErrorDetail((body as Record<string, unknown>).detail) ?? msg;
-            }
-          } catch {
-            // non-JSON or unreadable body — keep the generic message
-          }
-          if (controllerRef.current !== controller) return;
-          setErrorMessage(msg);
-          setStatus("error");
-          setFinishedAt(Date.now());
-          settleAdmission({ outcome: "rejected", reason: msg });
-          endOperation("failed");
-          throw new FatalStreamError(msg);
-        }
-      },
-      onmessage(ev) {
-        if (controllerRef.current !== controller) return;
-        streamContext.messageCount += 1;
-        streamContext.lastEventType = ev.event || "none";
 
-        // Decode through the connection's decoder
-        const decoded = decoder.decode(ev.event ?? "", ev.data ?? "");
-        for (const d of decoded) {
-          if (d.kind === "mode" && d.mode === "unsupported") {
-            // Unknown protocol or bad manifest: abort, set error
-            const reasonKey = d.reason === "unknown_protocol"
-              ? "stream.unsupported_unknown_protocol"
-              : d.reason === "invalid_manifest"
-                ? "stream.unsupported_invalid_manifest"
-                : "stream.unsupported_missing_started";
-            const msg = MESSAGES["zh-TW"][reasonKey] ?? reasonKey;
-            setErrorMessage(msg);
-            setStatus("error");
-            if (startedRef.current) {
-              setResultsCompletion("error");
-              setTerminalEvidence(false);
-            }
-            setFinishedAt(Date.now());
-            settleAdmission({ outcome: "rejected", reason: reasonKey });
-            endOperation("failed");
-            controller.abort();
-            controllerRef.current = null;
-            return;
-          }
+    let response: Response;
+    try {
+      response = await fetch("/api/generate", {
+        method: "POST",
+        body: JSON.stringify({
+          ...params,
+          stream_version: DETACHED_RUN_PROTOCOL_VERSION,
+          submission_key: submissionKey,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Frontend-Build-ID": __BUILD_ID__,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    } catch (err) {
+      if (activeRef.current !== run) return admissionPromise;
+      const message = err instanceof Error ? err.message : String(err);
+      rejectSubmission(message, err instanceof Error ? err : undefined);
+      return admissionPromise;
+    }
+    if (activeRef.current !== run) return admissionPromise;
 
-          if (d.kind === "degraded") {
-            setEvidence((prev) => {
-              if (!prev) return prev;
-              const next = applyDegraded(prev, d.reason);
-              evidenceRef.current = next;
-              return next;
-            });
-            continue;
-          }
+    if (!response.ok) {
+      // Any HTTP error response (4xx/5xx) clears the submission key — the intent
+      // is over.  Network errors (catch above) keep it for transparent retry.
+      submissionKeyRef.current = null;
 
-          if (d.kind === "v2") {
-            // V2 mode: route decoded event
-            handleV2Event(d.event.name, d.event.context, d.event.payload);
-          } else if (d.kind === "legacy") {
-            // Legacy mode: use existing switch handler
-            handleLegacyEvent(d.name, d.data);
-          } else if (d.kind === "held") {
-            if (decoder.mode === "awaiting-start") {
-              // Event held pending started: immediately process as legacy so existing
-              // tests (which don't send started first) continue to work.
-              handleLegacyEvent(ev.event ?? "", ev.data ?? "");
-            } else if (decoder.mode === "v2" && gapTimerRef.current === null) {
-              // Arm a timer that calls checkDeadline() if no further event fills
-              // the gap within the 2 s bound.  If the gap fills before the timer
-              // fires (normal case) the timer is cleared by the event handler.
-              // If gap 2 opens after gap 1's timer fires without degradation, we
-              // re-arm for the remaining time so the new gap also expires correctly.
-              function fireGapTimer() {
-                gapTimerRef.current = null;
-                if (controllerRef.current !== controller) return;
-                const timeoutEvents = decoder.checkDeadline();
-                for (const te of timeoutEvents) {
-                  if (te.kind === "degraded") {
-                    setEvidence((prev) => {
-                      if (!prev) return prev;
-                      const next = applyDegraded(prev, te.reason);
-                      evidenceRef.current = next;
-                      return next;
-                    });
-                  } else if (te.kind === "v2") {
-                    handleV2Event(te.event.name, te.event.context, te.event.payload);
-                  }
-                }
-                // Re-arm if the gap was not resolved (no degradation occurred) but
-                // a new or remaining gap is still open.  Covers the case where gap 1
-                // fills and gap 2 opens before this timer fires.
-                const remaining = decoder.msUntilDeadline();
-                if (remaining !== null && gapTimerRef.current === null) {
-                  gapTimerRef.current = setTimeout(fireGapTimer, remaining + 1);
-                }
-              }
-              gapTimerRef.current = setTimeout(fireGapTimer, SEQ_BUFFER_MAX_AGE_MS + 1);
-            }
-          }
-          // ignore: no action
-        }
-      },
-      onerror(err) {
-        if (controllerRef.current !== controller) return;
-        if (gapTimerRef.current !== null) {
-          clearTimeout(gapTimerRef.current);
-          gapTimerRef.current = null;
-        }
-        const message = err instanceof Error ? err.message : String(err);
-        setErrorMessage(message);
-        setStatus("error");
-        if (startedRef.current) {
-          const previous = evidenceRef.current;
-          if (previous) {
-            const closed = closeRun(previous);
-            evidenceRef.current = closed;
-            setEvidence(closed);
-          }
-          setResultsCompletion("error");
-          setTerminalEvidence(false);
-        }
-        setFinishedAt(Date.now());
-        settleAdmission({ outcome: "rejected", reason: message });
-        endOperation("failed");
-        throw err instanceof Error ? err : new FatalStreamError(String(err));
-      },
-    }).catch((err: unknown) => {
-      if (controllerRef.current !== controller) return;
-      if (err instanceof Error && err.name !== "AbortError" && isSentryEnabled()) {
-        Sentry.captureException(err, {
-          tags: {
-            source: "fetchEventSource",
-            last_event_type: streamContext.lastEventType,
-            navigator_online: String(navigator.onLine),
-          },
-          contexts: {
-            stream: {
-              elapsed_ms: Date.now() - streamContext.startedAt,
-              message_count: streamContext.messageCount,
-            },
-          },
-        });
+      if (response.status === 401) {
+        // Classify as credential expiry — recovery snapshot is preserved
+        // so the teacher can restore after re-authenticating (#776).
+        const authState = useAuthStore.getState();
+        const userId = authState.user?.id ?? null;
+        if (userId !== null) saveSignoutReason("session_expired", userId);
+        const currentPath = typeof window !== "undefined" ? window.location.pathname : null;
+        if (currentPath !== null) saveReturnDestination(currentPath);
+        authState.logout();
+        rejectSubmission("Session expired — please sign in again");
+        return admissionPromise;
       }
-      if (controllerRef.current === controller) {
-        controllerRef.current = null;
+      let message = `Submit failed: HTTP ${response.status}`;
+      let errorCode: string | undefined;
+      try {
+        const body = await response.json() as unknown;
+        if (body !== null && typeof body === "object") {
+          const b = body as Record<string, unknown>;
+          if (typeof b.code === "string") errorCode = b.code;
+          if ("detail" in b) {
+            message = (typeof b.detail === "string" ? b.detail : null)
+              ?? formatHttpErrorDetail(b.detail) ?? message;
+          }
+        }
+      } catch {
+        // non-JSON or unreadable body — keep the generic message
       }
-      // Stream terminated (abort or fatal error). State already updated.
-    });
+      if (activeRef.current !== run) return admissionPromise;
+      // issue #912: 429 queue-limit — show the readable message but keep the
+      // form usable (status "error" keeps the form enabled; NOT "generating").
+      // The spec says NO auto-resubmit, which is guaranteed because
+      // submissionKeyRef is cleared (next press generates a new key).
+      void errorCode; // used by tests for asserting code field
+      const displayMessage = errorCode === "queue_limit_reached"
+        ? localMessage("generate.queue_limit")
+        : message;
+      rejectSubmission(displayMessage);
+      return admissionPromise;
+    }
+    // 202 accepted: clear the submission key — the run is durably created.
+    submissionKeyRef.current = null;
+
+    let accepted;
+    try {
+      accepted = parseAcceptedRun(await response.json() as unknown);
+    } catch {
+      accepted = { ok: false as const, reason: "invalid_manifest" as const };
+    }
+    if (activeRef.current !== run) return admissionPromise;
+    if (!accepted.ok) {
+      const reasonKey = accepted.reason === "unknown_protocol"
+        ? "stream.unsupported_unknown_protocol"
+        : "stream.unsupported_invalid_manifest";
+      rejectSubmission(MESSAGES["zh-TW"][reasonKey] ?? reasonKey);
+      return admissionPromise;
+    }
+
+    run.runId = accepted.run.run_id;
+    // Store manifest for pre-seeding the live decoder (issue #909 §b)
+    acceptedManifestRef.current = {
+      runId: accepted.run.run_id,
+      total: accepted.run.total,
+      manifest: accepted.run.questions.map((q) => ({ index: q.index, questionId: q.question_id })),
+    };
+    const initial = evidenceFromAccepted(accepted.run);
+    evidenceRef.current = initial;
+    setEvidence(initial);
+    setResults([]);
+    setDisplayResults([]);
+    setGenerationLogId(accepted.run.run_id);
+    setRunId(accepted.run.run_id);
+    shownRunRef.current = accepted.run.run_id;
+    setResultsCompletion(null);
+    setTerminalEvidence(false);
+    setStatus("generating");
+    settleAdmission({ outcome: "admitted", runId: accepted.run.run_id });
+    startPolling(run);
     return admissionPromise;
-  }, [endOperation, settleAdmission]);
+  }, [endOperation, newRun, settleAdmission, startPolling]);
+
+  const resume = useCallback(async (id: string): Promise<ResumeOutcome> => {
+    const existing = activeRef.current;
+    if (existing !== null) {
+      return existing.runId === id
+        ? { outcome: "resumed" }
+        : { outcome: "failed", reason: "generation already in progress" };
+    }
+    // Already showing this run (e.g. it just ended after being submitted here).
+    if (shownRunRef.current === id) return { outcome: "resumed" };
+    const run = newRun(id, true);
+    activeRef.current = run;
+    clearRunState();
+    setAdmission("idle");
+    setAdmissionError(null);
+    setStatus("generating");
+    operationRef.current = useWorkspaceStore.getState().beginOperation("generation", "generate.results");
+
+    const first = await pollOnce(run);
+    if (activeRef.current !== run) return { outcome: "failed", reason: "aborted" };
+    switch (first.kind) {
+      case "not_found":
+        stopWatching();
+        endOperation("failed");
+        clearRunState();
+        setStatus("idle");
+        return { outcome: "not_found" };
+      case "fatal":
+        failWatching(first.message);
+        return { outcome: "failed", reason: first.message };
+      case "applied":
+        if (first.ended) {
+          stopWatching();
+        } else {
+          startPolling(run);
+        }
+        return { outcome: "resumed" };
+      default:
+        // A first read that failed transiently is retried on the normal cadence.
+        startPolling(run);
+        return { outcome: "resumed" };
+    }
+  }, [clearRunState, endOperation, failWatching, newRun, pollOnce, startPolling, stopWatching]);
+
+  // issue #910: cancel the current run on the server.
+  const cancelRun = useCallback(async (): Promise<boolean> => {
+    const currentRunId = runId ?? activeRef.current?.runId;
+    if (!currentRunId) return false;
+    setCancelRequested(true);  // optimistic: show 取消中 immediately
+    try {
+      await apiCancelRun(currentRunId);
+      return true;  // keep cancelRequested=true (sticky)
+    } catch (err) {
+      setCancelRequested(false);  // revert on error
+      if (err instanceof ApiError && err.status === 404) return false;
+      throw err;
+    }
+  }, [runId, setCancelRequested]);
 
   return {
     admission,
@@ -1619,7 +1495,6 @@ export function useGenerate(): UseGenerateReturn {
     results,
     displayResults,
     evidence,
-    legacyAdapter,
     llmCalls,
     agentLanes,
     errorMessage,
@@ -1627,10 +1502,16 @@ export function useGenerate(): UseGenerateReturn {
     startedAt,
     finishedAt,
     generationLogId,
+    runId,
     subQuestionTotal,
     resultsCompletion,
     terminalEvidence,
+    pollReadFailed: pollReadFailCount >= 3,
+    cancelRequested,
+    queuePosition,
     generate,
+    resume,
     reset,
+    cancelRun,
   };
 }

@@ -16,10 +16,13 @@ import threading
 import uuid
 from collections.abc import Awaitable, Callable
 from concurrent.futures import CancelledError, Future
+from datetime import datetime, timezone
 from typing import Any
 
 import sentry_sdk
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as _pg_insert
+from sqlalchemy.dialects.sqlite import insert as _sqlite_insert
 
 from server.generate.exchange_recorder import ExchangeRecorder
 from server.generate.marshalling import extract_image_files, strip_image_base64
@@ -29,6 +32,28 @@ logger = logging.getLogger(__name__)
 
 # Bound worker waiting without cancelling an exchange that may still commit.
 EXCHANGE_WRITE_TIMEOUT_SECONDS = 10.0
+
+
+def _session_dialect_name(session: Any) -> str | None:
+    """Return the SQL dialect name for *session* without any DB connection.
+
+    Works for real ``AsyncSession`` instances created by ``async_sessionmaker``:
+    reads ``session.bind`` (set to the ``AsyncEngine``), which exposes
+    ``.dialect.name`` (e.g. ``"sqlite"`` or ``"postgresql"``).  Falls back to
+    ``session.sync_session.bind`` for SQLAlchemy 2.x where ``AsyncSession.bind``
+    delegates to the underlying sync session's engine.  Returns ``None`` for
+    fake/injected sessions used in unit tests (no ``bind`` attribute), so the
+    caller falls back to the plain ORM path without any exception handling.
+    """
+    bind = getattr(session, "bind", None)
+    if bind is None:
+        sync = getattr(session, "sync_session", None)
+        if sync is None:
+            return None
+        bind = getattr(sync, "bind", None)
+        if bind is None:
+            return None
+    return getattr(getattr(bind, "dialect", None), "name", None)
 
 # Maximum number of attempts when saving the per-question generation record in
 # the worker thread before publishing RESULT (issue #904).  Each failure after
@@ -314,32 +339,87 @@ async def _insert_generation_record(
 ) -> uuid.UUID:
     """Build and insert one GenerationRecord row; raises on any failure.
 
+    Insert-or-ignore semantics (issue #907): when generation_log_id is non-NULL
+    and a row with the same (generation_log_id, question_id) already exists, the
+    insert is silently ignored and the existing row's id is returned.  The
+    first-saved row wins; its content is never overwritten.  NULL
+    generation_log_id values are always distinct (SQL NULL semantics), so
+    rows without a generation log never trigger the conflict path.
+
     This is the single source of truth for record construction.  Callers that
     want best-effort semantics should wrap calls in try/except (see
     ``persist_generation_record``).  Callers that want retry semantics should
     call this inside a loop (see
     ``persist_generation_record(..., max_attempts=..., report_exhaustion=True)``).
     """
-    record = GenerationRecord(
-        user_id=user_id,
-        generation_log_id=generation_log_id,
-        parent_record_id=parent_record_id,
-        subject=subject,
-        question_id=payload.get("id", ""),
-        params_json=(
-            params.model_dump(mode="json")
-            if hasattr(params, "model_dump")
-            else dict(params)
-        ),
-        annotations_json=annotations_json,
-        question_json=strip_image_base64(payload),
-        verification_trail_json=verification_trail_json,
-        figure_policy_trail_json=figure_policy_trail_json,
-        reference_example_record_json=reference_example_record_json,
-        image_files=extract_image_files(payload),
-        status="completed",
+    record_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    question_id_value = payload.get("id", "")
+    params_json = (
+        params.model_dump(mode="json")
+        if hasattr(params, "model_dump")
+        else dict(params)
     )
+
     async with session_factory() as session:
+        # Detect the SQL dialect to select the correct insert-or-ignore strategy.
+        # Uses the no-await helper so a transient connection error cannot silently
+        # fall through to the non-idempotent ORM path.  Fake session factories used
+        # in unit tests have no bind → returns None → ORM fallback as before.
+        dialect_name: str | None = _session_dialect_name(session)
+
+        values: dict[str, Any] = dict(
+            id=record_id,
+            user_id=user_id,
+            generation_log_id=generation_log_id,
+            parent_record_id=parent_record_id,
+            subject=subject,
+            question_id=question_id_value,
+            params_json=params_json,
+            annotations_json=annotations_json,
+            question_json=strip_image_base64(payload),
+            verification_trail_json=verification_trail_json,
+            figure_policy_trail_json=figure_policy_trail_json,
+            reference_example_record_json=reference_example_record_json,
+            image_files=extract_image_files(payload),
+            status="completed",
+            created_at=now,
+        )
+
+        if dialect_name in ("sqlite", "postgresql"):
+            # Use a dialect-specific INSERT … ON CONFLICT DO NOTHING to enforce
+            # the uq_generation_records_log_question constraint without raising.
+            _dialect_insert = (
+                _sqlite_insert if dialect_name == "sqlite" else _pg_insert
+            )
+            stmt = (
+                _dialect_insert(GenerationRecord)
+                .values(**values)
+                .on_conflict_do_nothing(
+                    index_elements=["generation_log_id", "question_id"],
+                )
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+
+            if result.rowcount == 0:
+                # The insert was silently ignored: a row with the same
+                # (generation_log_id, question_id) already exists.
+                # generation_log_id must be non-NULL here because NULLs never
+                # produce a conflict under SQL NULL semantics.
+                existing = await session.execute(
+                    select(GenerationRecord.id).where(
+                        GenerationRecord.generation_log_id == generation_log_id,
+                        GenerationRecord.question_id == question_id_value,
+                    )
+                )
+                return existing.scalar_one()
+
+            return record_id
+
+        # Unknown or injected test dialect: fall back to plain ORM add.
+        # This path also handles the fake session factories used in unit tests.
+        record = GenerationRecord(**values)
         session.add(record)
         await session.commit()
         return record.id
