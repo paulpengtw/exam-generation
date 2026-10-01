@@ -20,7 +20,7 @@ from server.config import ServerConfig
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
-from tests.server.generate_test_utils import complete_math_query_params
+from tests.server.generate_test_utils import complete_math_query_params, fake_acceptance
 
 
 def _make_app_and_token(allowed: tuple[str, ...] = ()):
@@ -79,10 +79,10 @@ def test_generate_route_accepts_allowlisted_models_and_forwards_to_params() -> N
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -94,11 +94,11 @@ def test_generate_route_accepts_allowlisted_models_and_forwards_to_params() -> N
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].model_plan == "claude-opus-4-6"
     assert captured["params"].model_execute == "claude-haiku-4-6"
 
@@ -114,10 +114,10 @@ def test_generate_route_rejects_unlisted_model_execute_with_422() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -126,7 +126,7 @@ def test_generate_route_rejects_unlisted_model_execute_with_422() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -146,10 +146,10 @@ def test_generate_route_absent_overrides_defaults_to_none() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             response = client.get(
@@ -158,11 +158,11 @@ def test_generate_route_absent_overrides_defaults_to_none() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].model_plan is None
     assert captured["params"].model_execute is None
 
@@ -216,10 +216,10 @@ def test_generate_route_empty_string_model_execute_treated_as_absent() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             # Empty string in query param should not trigger 422
@@ -229,9 +229,9 @@ def test_generate_route_empty_string_model_execute_treated_as_absent() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
     # Empty string should be treated as absent (not cause allowlist rejection)
-    assert response.status_code == 200
+    assert response.status_code == 202

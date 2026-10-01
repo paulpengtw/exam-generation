@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -30,8 +31,8 @@ _MATH_FIXTURE: dict[str, Any] = {
 def _wire_payload(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode resolver lists that the GET route models keep as JSON strings."""
     completed = dict(payload)
-    # Stream v2 gate: inject stream_version=2 if not already present (#742)
-    completed.setdefault("stream_version", 2)
+    # Submission protocol gate: detached-run 受理 is version 3 (#908)
+    completed.setdefault("stream_version", 3)
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:
@@ -44,6 +45,21 @@ def _wire_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(configs, list):
         completed["subquestion_configs"] = json.dumps(configs, ensure_ascii=False)
     return completed
+
+
+def fake_acceptance(params: GenerateParams, *_args: Any, **_kwargs: Any) -> Any:
+    """Stand-in result for ``accept_run`` in route tests that only check admission."""
+    from server.generate.run import AcceptedRun
+
+    run_id = str(uuid.uuid4())
+    total = max(1, params.count)
+    return AcceptedRun(
+        run_id=run_id,
+        total=total,
+        questions=[
+            {"index": i, "question_id": f"q_{run_id}_{i + 1:03d}"} for i in range(total)
+        ],
+    )
 
 
 def complete_math_query_params(**overrides: Any) -> dict[str, Any]:

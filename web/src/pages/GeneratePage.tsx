@@ -47,6 +47,7 @@ import {
   startTabCollisionListener,
   resetTabIdForCollision,
 } from "../lib/recovery/storage";
+import { useHistoryBadge } from "../lib/useHistoryBadge";
 
 export interface GeneratePageProps {
   subject?: "math" | "social_studies" | "natural_sciences";
@@ -121,6 +122,7 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   const t = useT();
   const user = useAuthStore((s) => s.user);
   const logoutExplicit = useAuthStore((s) => s.logoutExplicit);
+  const historyBadge = useHistoryBadge(user?.id);
   const {
     status,
     progressLines,
@@ -139,8 +141,40 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     restoreResults: restoreSavedResults,
     reset,
     evidence: runEvidence,
-    legacyAdapter: legacyAdapterState,
+    runId,
+    resume,
+    pollReadFailed,
+    cancelRequested,
+    queuePosition,
+    cancelRun,
   } = useGenerate();
+  // A detached run is addressed by `?run=<id>` (issue #908): closing the page
+  // and reopening that URL resumes watching the same run.
+  const runParam = new URLSearchParams(location.search ?? "").get("run");
+  const [runNotFound, setRunNotFound] = useState(false);
+  const setRunParam = useCallback((id: string | null) => {
+    const next = new URLSearchParams(location.search ?? "");
+    if (id === null) next.delete("run");
+    else next.set("run", id);
+    const search = next.toString();
+    navigate({ search: search === "" ? "" : `?${search}` }, { replace: true });
+  }, [navigate, location.search]);
+  useEffect(() => {
+    // Only ever adds the param; clearing is explicit (reset / unknown run).
+    if (typeof runId === "string" && runId !== runParam) setRunParam(runId);
+  }, [runId, runParam, setRunParam]);
+  useEffect(() => {
+    if (runParam === null) return;
+    let cancelled = false;
+    void resume(runParam).then((outcome) => {
+      if (cancelled || outcome.outcome !== "not_found") return;
+      setRunNotFound(true);
+      setRunParam(null);
+    });
+    return () => { cancelled = true; };
+    // Resume is keyed on the URL param alone; resume() is idempotent per run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runParam]);
   // Recovery must be resolved before ParamForm mounts. Otherwise its schema,
   // model, draft, and default effects can observe an empty form and replace a
   // confirmation that is still being restored. The layout gate also means a
@@ -243,7 +277,9 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
   useEffect(() => () => {
     if (handoffTimerRef.current !== null) clearTimeout(handoffTimerRef.current);
   }, []);
-  const [requestedTotal, setRequestedTotal] = useState(0);
+  const [requestedTotalInput, setRequestedTotal] = useState(0);
+  // A reopened run has no form submission in this tab: its size is the manifest's.
+  const requestedTotal = requestedTotalInput > 0 ? requestedTotalInput : (runEvidence?.total ?? 0);
   const [submittedSubQuestionCount, setSubmittedSubQuestionCount] =
     useState<number | null>(null);
   const evidence = useMemo(
@@ -251,9 +287,8 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       llmCalls,
       submittedSubQuestionCount ?? subQuestionTotal,
       runEvidence,
-      legacyAdapterState,
     ),
-    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal, legacyAdapterState],
+    [llmCalls, runEvidence, submittedSubQuestionCount, subQuestionTotal],
   );
   const [hasUnsubmittedInput, setHasUnsubmittedInput] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -374,11 +409,14 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }
     setRequestedTotal(params.count);
     setSubmittedSubQuestionCount(generateParams.sub_question_count ?? null);
+    setRunNotFound(false);
     return generate(generateParams);
   };
 
   const handleReset = () => {
     reset();
+    setRunParam(null);
+    setRunNotFound(false);
     setRequestedTotal(0);
     setSubmittedSubQuestionCount(null);
   };
@@ -391,6 +429,20 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
     }[target];
     targetRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+
+  // issue #910: cancel control.
+  // 取消中 is shown while the request is pending OR while the server reports cancel_requested
+  // (so it survives a page reopen while the server still processes cancellation).
+  const cancelFeedback = useActionFeedback<void>({
+    action: async () => {
+      const ok = await cancelRun();
+      if (!ok) throw new Error("cancel_404");
+    },
+    genericError: t("generate.cancel_error"),
+    successState: "idle",
+  });
+  // True during optimistic pending OR while server confirms cancellation.
+  const isCancelling = cancelFeedback.state === "pending" || cancelRequested;
 
   const jsonFeedback = useActionFeedback({
     action: async () => {
@@ -626,9 +678,15 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
             <button
               type="button"
               onClick={() => handleNavigation("/history")}
-              className="rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+              className="relative rounded border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
             >
               {t("history.nav_link")}
+              {historyBadge && (
+                <span
+                  aria-label={t("history.badge_label")}
+                  className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500"
+                />
+              )}
             </button>
             {user && (
               <span className="hidden max-w-[12rem] truncate text-gray-700 sm:inline">
@@ -647,6 +705,11 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
       </header>
 
       <main className="mx-auto max-w-5xl space-y-6 px-3 pt-4 pb-20 sm:px-4 sm:pt-6">
+        {runNotFound ? (
+          <div role="alert" data-testid="run-not-found" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            {t("generate.run_not_found")}
+          </div>
+        ) : null}
         {resultsRestoreError ? (
           <div role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
             <span>{t("recovery.results_restore_failed")}</span>{" "}
@@ -696,6 +759,40 @@ export default function GeneratePage({ subject = "math" }: GeneratePageProps) {
               requestedTotal={requestedTotal}
               completedCount={results.length}
             />
+            {pollReadFailed && (
+              <div role="status">{t("generate.run_read_unavailable")}</div>
+            )}
+            {/* issue #912: queue position — shown while the run is queued */}
+            {status === "generating" && queuePosition != null && (
+              <div
+                role="status"
+                data-testid="queue-position-notice"
+                className="mt-2 text-sm text-amber-700"
+              >
+                {t("generate.queue_position").replace("{k}", String(queuePosition))}
+              </div>
+            )}
+            {/* issue #910: cancel button — shown while the run is active */}
+            {status === "generating" && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="cancel-run-btn"
+                  disabled={isCancelling}
+                  onClick={() => cancelFeedback.run()}
+                  className="rounded border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isCancelling ? t("generate.btn_cancel_pending") : t("generate.btn_cancel")}
+                </button>
+                {cancelFeedback.reason && (
+                  <InlineFailureNotice
+                    reason={cancelFeedback.reason}
+                    onRetry={cancelFeedback.retry}
+                    onDismiss={cancelFeedback.dismiss}
+                  />
+                )}
+              </div>
+            )}
           </section>
         )}
 

@@ -1,4 +1,3 @@
-import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouteObject, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,16 +7,10 @@ const getAvailableModelsMock = vi.hoisted(() => vi.fn());
 const planCoreQuestionsMock = vi.hoisted(() => vi.fn());
 const previewGenerateMock = vi.hoisted(() => vi.fn());
 const resolveGenerateMock = vi.hoisted(() => vi.fn());
-const fetchEventSourceMock = vi.hoisted(() =>
-  vi.fn<(input: RequestInfo, init: FetchEventSourceInit) => Promise<void>>(),
-);
 
 vi.stubGlobal("__BUILD_ID__", "test-build-abc");
 vi.stubGlobal("__BUILD_ENVIRONMENT__", "test");
 
-vi.mock("@microsoft/fetch-event-source", () => ({
-  fetchEventSource: fetchEventSourceMock,
-}));
 vi.mock("@sentry/react", () => ({ captureException: vi.fn() }));
 vi.mock("../sentry", () => ({ isSentryEnabled: () => false }));
 vi.mock("../api/client", async (importActual) => {
@@ -44,6 +37,7 @@ import { useAuthStore } from "../store/authStore";
 import { ReleaseState, useReleaseStore, resetReleaseDetector } from "../lib/release/releaseStore";
 import { resetWorkspaceStoreForTests } from "../lib/workspace/workspaceStore";
 import { resetRecoveryStoreForTests } from "../lib/recovery/recoveryStore";
+import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
 
 const MATH_SCHEMA = {
   學習階段: "第四學習階段",
@@ -98,6 +92,8 @@ function renderPage() {
   return render(<RouterProvider router={router} />);
 }
 
+let server: FakeRunServer;
+
 describe("GeneratePage build-admission confirmation flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -126,10 +122,11 @@ describe("GeneratePage build-admission confirmation flow", () => {
       drawn: [],
       cleared: [],
     }));
-    fetchEventSourceMock.mockResolvedValue(undefined);
+    server = installFakeRunServer();
   });
 
   afterEach(() => {
+    server.restore();
     vi.restoreAllMocks();
     resetReleaseDetector();
     resetRecoveryStoreForTests();
@@ -158,13 +155,14 @@ describe("GeneratePage build-admission confirmation flow", () => {
       .toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Review settings|發送前確認設定/i })).toBeInTheDocument();
     expect(confirmButton).not.toBeDisabled();
-    expect(fetchEventSourceMock).not.toHaveBeenCalled();
+    expect(server.submits()).toHaveLength(0);
 
     setRelease("current");
     await act(async () => {
       confirmButton.click();
     });
 
-    await waitFor(() => expect(fetchEventSourceMock).toHaveBeenCalledOnce());
+    await waitFor(() => expect(server.submits()).toHaveLength(1));
+    expect(server.submits()[0].body).toMatchObject({ stream_version: 3 });
   });
 });

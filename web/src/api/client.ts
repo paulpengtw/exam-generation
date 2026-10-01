@@ -356,6 +356,46 @@ export async function getHistoryDetail(id: string): Promise<HistoryDetail> {
   return (await res.json()) as HistoryDetail;
 }
 
+/** Summary row from `GET /api/runs` (all of the owner's runs, newest first). */
+export interface RunListItem {
+  run_id: string;
+  status: string;
+  subject: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  queue_position: number | null;
+  cancel_requested: boolean;
+}
+
+/**
+ * List all of the authenticated owner's runs (`GET /api/runs`), newest first.
+ * Each row includes `queue_position` (non-null only when status === "queued")
+ * and `cancel_requested`.
+ */
+export async function listRuns(opts: { signal?: AbortSignal } = {}): Promise<RunListItem[]> {
+  const res = await apiFetch("/api/runs", { signal: opts.signal });
+  return (await res.json()) as RunListItem[];
+}
+
+/**
+ * Read the persisted state of a detached 生成執行 (`GET /api/runs/{id}`).
+ * Owner-only: any other caller (or an unknown id) gets `ApiError` status 404.
+ * The body is returned unparsed; `parseRunSnapshot` validates its shape.
+ */
+export async function getRun(runId: string): Promise<unknown> {
+  const res = await apiFetch(`/api/runs/${encodeURIComponent(runId)}`);
+  return (await res.json()) as unknown;
+}
+
+/**
+ * Request cancellation of a 生成執行 (`POST /api/runs/{id}/cancel`).
+ * Owner-only; a non-owner or unknown id gets `ApiError` status 404.
+ * Idempotent: succeeds even if the run is already ended or already cancelled.
+ */
+export async function cancelRun(runId: string): Promise<void> {
+  await apiFetch(`/api/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+}
+
 export async function downloadHistoryJson(id: string, signal?: AbortSignal): Promise<Blob> {
   const res = await apiFetch(`/api/history/${encodeURIComponent(id)}/download`, { signal });
   return await res.blob();
