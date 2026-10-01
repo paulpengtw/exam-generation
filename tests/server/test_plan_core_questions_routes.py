@@ -355,7 +355,10 @@ def test_planning_targets_short_response_correction_within_two_calls(
     if corrected:
         assert response.json()["candidates"] == candidates
     else:
-        assert response.json() == {"detail": "Planner upstream returned malformed candidates"}
+        assert response.json() == {
+                "detail": "Planner upstream returned malformed candidates",
+                "code": "PLANNER_MALFORMED_OUTPUT",
+            }
 
 
 def test_plan_core_questions_math_happy_path(monkeypatch) -> None:
