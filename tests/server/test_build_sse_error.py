@@ -1,8 +1,6 @@
 """Tests for build_sse_error optional kwargs — issue #946."""
 from __future__ import annotations
 
-import pytest
-
 from server.generate.models import build_sse_error
 
 

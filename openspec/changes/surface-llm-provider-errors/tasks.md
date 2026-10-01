@@ -45,7 +45,7 @@
 ## 7. Verification and follow-up
 
 - [x] 7.1 Run `choom -n 500 -- uv run pytest tests/test_llm_error_classifier.py tests/server/test_build_sse_error.py tests/server/test_generate_routes.py tests/server/test_generation_publisher.py tests/server/test_747_independent_termination.py` (one lane) and verify all pass. **Result: 167 passed in 119s.**
-- [ ] 7.2 Run `choom -n 500 -- uv run pytest tests/server/` (one lane) and verify all pass.
+- [x] 7.2 Run `choom -n 500 -- uv run pytest tests/server/` (one lane) and verify all pass. **Result: 1124 passed in 524s.** `test_planner_streams_thinking_and_persists_before_generation` confirmed pre-existing flaky on `origin/staging` (1/5 isolation runs failed there vs 0/5 on branch); not a #946 regression.
 - [x] 7.3 Run `choom -n 500 -- npm --prefix web test` in a separate lane (not concurrent with 7.2) and verify all pass, including new tests in `useGenerate.test.ts`, `modificationStream.failure-class.test.ts`, and the i18n parity test. **Result: 190 test files, 2128 tests passed.**
 - [x] 7.4 Run `uv run ruff check src/ server/` and verify clean. **Result: All checks passed.**
 - [x] 7.5 Run `openspec validate surface-llm-provider-errors --strict` and verify no errors. **Result: valid.**

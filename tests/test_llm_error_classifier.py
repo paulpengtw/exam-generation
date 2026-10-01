@@ -11,14 +11,10 @@ Ten stable codes:
 """
 from __future__ import annotations
 
-import dataclasses
 import types
 from typing import Any
 
-import pytest
-
 from src.llm_client import ProviderErrorDetail, classify_provider_error
-
 
 # ---------------------------------------------------------------------------
 # Helpers — build fake exception objects
@@ -87,7 +83,9 @@ def test_auth_config_gemini_invalid_argument_key_message():
     # Gemini compat 400 INVALID_ARGUMENT with API key mention
     exc = _exc(
         status_code=400,
-        body=[{"error": {"code": 400, "message": "API key not valid", "status": "INVALID_ARGUMENT"}}],
+        body=[{"error": {
+            "code": 400, "message": "API key not valid", "status": "INVALID_ARGUMENT",
+        }}],
     )
     assert classify_provider_error(exc) == "auth_config"
 
@@ -160,7 +158,9 @@ def test_rate_limited_gemini_resource_exhausted():
     # Gemini compat 429 RESOURCE_EXHAUSTED
     exc = _exc(
         status_code=429,
-        body=[{"error": {"code": 429, "message": "Resource has been exhausted", "status": "RESOURCE_EXHAUSTED"}}],
+        body=[{"error": {
+            "code": 429, "message": "Resource has been exhausted", "status": "RESOURCE_EXHAUSTED",
+        }}],
     )
     assert classify_provider_error(exc) == "rate_limited"
 
