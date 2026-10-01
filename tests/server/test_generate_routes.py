@@ -1995,6 +1995,12 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
     assert "message" in data
     assert "Traceback (most recent call last)" not in data["message"]
     assert '  File "' not in data["message"]
+    # issue #946: failure_class must be a recognized taxonomy code
+    assert "failure_class" in data, f"failure_class missing from error payload: {data!r}"
+    from src.llm_client import _TAXONOMY_CODES
+    assert data["failure_class"] in _TAXONOMY_CODES, (
+        f"unexpected failure_class {data['failure_class']!r}"
+    )
 
 
 

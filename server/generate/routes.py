@@ -597,6 +597,7 @@ def _check_generation_admission(params: GenerateParams, config: ServerConfig) ->
     _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
 
 
+
 @router.post("/plan-core-questions", response_model=PlanCoreQuestionsResponse)
 @limiter.limit("30/hour", key_func=jwt_user_key)
 async def plan_core_questions_endpoint(
@@ -663,11 +664,13 @@ async def plan_core_questions_endpoint(
         import sentry_sdk as _sentry
         _sentry.capture_exception(exc)
         if is_provider_failure:
+            _pfc = getattr(exc, "failure_class", None) or "unknown"
             return JSONResponse(
                 status_code=502,
                 content={
                     "detail": "Planner provider call failed",
                     "code": "PLANNER_PROVIDER_ERROR",
+                    "failure_class": _pfc,
                 },
             )
         return JSONResponse(

@@ -581,3 +581,129 @@ def test_plan_core_questions_absent_override_keeps_defaults(monkeypatch) -> None
     # Defaults from SrcConfig.from_env() — not user-supplied.
     assert captured["model_plan"] == "claude-opus-4-6"
     assert captured["model_execute"] == "gemini-3.1-pro-preview"
+
+
+# ---------------------------------------------------------------------------
+# issue #946 — Task 3.5: failure_class in 502 responses
+# ---------------------------------------------------------------------------
+
+def test_plan_core_questions_provider_failure_includes_failure_class(monkeypatch) -> None:
+    """Provider exception during planning → 502 with failure_class field (#946 task 3.5).
+
+    Scenario A: Anthropic credit/spend limit → failure_class="quota_billing_exhausted".
+    The planner wraps the provider exception in CandidateValidationError(stage="provider_call",
+    failure_class=<classified>). The route handler reads it and exposes it in the 502 body.
+    """
+    from src.common.planner import CandidateValidationError
+
+    app, token, engine = _make_app_and_token()
+
+    def fake_plan(client, topic, **kwargs):
+        # Simulate: classify_provider_error(anthropic_credit_error) → "quota_billing_exhausted"
+        raise CandidateValidationError(
+            "provider_call",
+            expected_count=3,
+            attempt=1,
+            failure_class="quota_billing_exhausted",
+        )
+
+    monkeypatch.setattr("src.social_studies.planner.plan_core_questions", fake_plan)
+
+    try:
+        with TestClient(app) as c:
+            response = c.post(
+                "/api/plan-core-questions",
+                json={"topic": "民主政治"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body.get("failure_class") == "quota_billing_exhausted"
+    assert body.get("code") == "PLANNER_PROVIDER_ERROR"
+    # No raw provider error body text (e.g. exception class names or provider-specific codes)
+    # must appear in the response — only our sanitized fields (detail, code, failure_class)
+    for forbidden in ("APIError", "credit_balance", "enforced_spend", "AuthenticationError"):
+        assert forbidden not in response.text, (
+            f"Raw provider text leaked: {forbidden!r} found in {response.text!r}"
+        )
+
+
+def test_plan_core_questions_provider_failure_gemini_auth_config(monkeypatch) -> None:
+    """Gemini invalid-key error → failure_class="auth_config" in 502 body (#946 task 3.5).
+
+    Scenario B: Gemini INVALID_ARGUMENT (bad API key) → failure_class="auth_config".
+    """
+    from src.common.planner import CandidateValidationError
+
+    app, token, engine = _make_app_and_token()
+
+    def fake_plan(client, topic, **kwargs):
+        # Simulate: classify_provider_error(gemini_invalid_arg_key_error) → "auth_config"
+        raise CandidateValidationError(
+            "provider_call",
+            expected_count=3,
+            attempt=1,
+            failure_class="auth_config",
+        )
+
+    monkeypatch.setattr("src.social_studies.planner.plan_core_questions", fake_plan)
+
+    try:
+        with TestClient(app) as c:
+            response = c.post(
+                "/api/plan-core-questions",
+                json={"topic": "歷史事件"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body.get("failure_class") == "auth_config"
+    assert body.get("code") == "PLANNER_PROVIDER_ERROR"
+    # No raw Gemini error text (exception class names or provider-specific status codes)
+    for forbidden in ("APIStatusError", "INVALID_ARGUMENT", "API_KEY_INVALID"):
+        assert forbidden not in response.text, (
+            f"Raw provider text leaked: {forbidden!r} found in {response.text!r}"
+        )
+
+
+def test_plan_core_questions_malformed_output_502_has_no_failure_class(monkeypatch) -> None:
+    """Non-provider 502 (malformed output) should NOT have failure_class field (#946 task 3.5)."""
+    from src.common.planner import CandidateValidationError
+
+    app, token, engine = _make_app_and_token()
+
+    def fake_plan(client, topic, **kwargs):
+        # Simulate malformed JSON output (not a provider call failure)
+        raise CandidateValidationError(
+            "response_shape",
+            expected_count=3,
+            attempt=2,
+        )
+
+    monkeypatch.setattr("src.social_studies.planner.plan_core_questions", fake_plan)
+
+    try:
+        with TestClient(app) as c:
+            response = c.post(
+                "/api/plan-core-questions",
+                json={"topic": "地理"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    finally:
+        limiter.reset()
+        asyncio.run(engine.dispose())
+
+    assert response.status_code == 502
+    body = response.json()
+    # Non-provider failures must NOT leak failure_class — only provider failures include it
+    assert "failure_class" not in body, (
+        f"failure_class must not appear in non-provider 502: {body!r}"
+    )

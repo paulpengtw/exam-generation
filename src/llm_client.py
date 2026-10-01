@@ -243,6 +243,266 @@ def extract_provider_error(
 
 
 # ---------------------------------------------------------------------------
+# Failure-class taxonomy — issue #946
+# ---------------------------------------------------------------------------
+
+_TAXONOMY_CODES = frozenset({
+    "auth_config",
+    "quota_billing_exhausted",
+    "rate_limited",
+    "overloaded",
+    "timeout",
+    "connection",
+    "context_length",
+    "content_filtered",
+    "malformed_response",
+    "unknown",
+})
+
+# Exception class names (as strings) that map to specific codes regardless of
+# HTTP status or body — handles cases where exc lacks status_code/body.
+_CLASS_NAME_MAP: dict[str, str] = {
+    "APITimeoutError": "timeout",
+    "Timeout": "timeout",
+    "TimeoutError": "timeout",
+    "APIConnectionError": "connection",
+    "ConnectionError": "connection",
+    "ContentFilterFinishReasonError": "content_filtered",
+}
+
+# provider_error_code values → quota_billing_exhausted
+_QUOTA_CODES: frozenset[str] = frozenset({
+    "enforced_spend_limit_reached",
+    "credit_balance_exhausted",
+    "billing_not_active",
+    "insufficient_quota",
+    "payment_required",
+})
+
+# provider_error_type values → quota_billing_exhausted
+_QUOTA_TYPES: frozenset[str] = frozenset({
+    "billing_error",
+    "insufficient_quota",
+    "payment_required",
+})
+
+# provider_error_type values → rate_limited
+_RATE_LIMIT_TYPES: frozenset[str] = frozenset({
+    "rate_limit_error",
+    "requests",
+    "tokens",
+})
+
+# provider_error_status (gRPC) values → rate_limited
+_RATE_LIMIT_STATUSES: frozenset[str] = frozenset({
+    "RESOURCE_EXHAUSTED",
+})
+
+# provider_error_status (gRPC) values → auth_config
+_AUTH_STATUSES: frozenset[str] = frozenset({
+    "UNAUTHENTICATED",
+    "PERMISSION_DENIED",
+})
+
+# provider_error_type values → auth_config
+_AUTH_TYPES: frozenset[str] = frozenset({
+    "authentication_error",
+    "permission_error",
+    "api_key_error",
+})
+
+# provider_error_type values → context_length
+_CONTEXT_TYPES: frozenset[str] = frozenset({
+    "request_too_large",
+    "context_window_exceeded",
+    "max_tokens_exceeded",
+})
+
+# provider_error_code values → context_length
+_CONTEXT_CODES: frozenset[str] = frozenset({
+    "context_window_exceeded",
+    "max_tokens_exceeded",
+    "request_too_large",
+})
+
+# provider_error_type values → overloaded
+_OVERLOADED_TYPES: frozenset[str] = frozenset({
+    "overloaded_error",
+    "server_overloaded",
+})
+
+# HTTP statuses that are strictly 5xx "server fault" → malformed_response
+_SERVER_FAULT_STATUSES: frozenset[int] = frozenset({500, 501, 502, 503, 504, 505})
+
+# provider_message substrings → auth_config (case-insensitive)
+_AUTH_MESSAGE_KEYWORDS: tuple[str, ...] = (
+    "api key",
+    "api_key",
+    "apikey",
+    "authentication",
+    "invalid key",
+    "not valid",
+    "unauthorized",
+)
+
+
+def classify_provider_error(
+    exc: Exception | None,
+    *,
+    detail: ProviderErrorDetail | None = None,
+) -> str:
+    """Classify a provider exception into one of ten stable taxonomy codes.
+
+    Returns one of::
+
+        auth_config | quota_billing_exhausted | rate_limited | overloaded |
+        timeout | connection | context_length | content_filtered |
+        malformed_response | unknown
+
+    The function **never raises** for any input.
+
+    When *detail* is provided it is used directly (it was already extracted by
+    :func:`extract_provider_error`).  Otherwise *exc* is inspected by class
+    name first (fast-path for timeout/connection/content-filter) and then by
+    extracting a :class:`ProviderErrorDetail` with dummy provider/model values.
+
+    The classification follows the precedence below (first match wins):
+
+    1. Exception class name (timeout, connection, content_filtered)
+    2. HTTP status (401/403 → auth, 402 → quota, 413/request_too_large → context)
+    3. provider_error_type / provider_error_code / provider_error_status
+    4. provider_message keywords (auth hints in Gemini INVALID_ARGUMENT 400)
+    5. 5xx → malformed_response
+    6. Fallback: unknown
+    """
+    try:
+        # ------------------------------------------------------------------
+        # Step 1: exception class-name fast-path
+        # ------------------------------------------------------------------
+        if exc is not None:
+            cls_name = type(exc).__name__
+            if cls_name in _CLASS_NAME_MAP:
+                return _CLASS_NAME_MAP[cls_name]
+            # Check MRO for base class names
+            for base in type(exc).__mro__:
+                if base.__name__ in _CLASS_NAME_MAP:
+                    return _CLASS_NAME_MAP[base.__name__]
+
+        # ------------------------------------------------------------------
+        # Step 2: obtain a ProviderErrorDetail
+        # ------------------------------------------------------------------
+        if detail is None:
+            if exc is None:
+                return "unknown"
+            try:
+                detail = extract_provider_error(exc, provider="unknown", model="unknown")
+            except Exception:
+                return "unknown"
+
+        status = detail.http_status
+        etype = detail.provider_error_type or ""
+        ecode = detail.provider_error_code or ""
+        estatus = detail.provider_error_status or ""
+        msg = (detail.provider_message or "").lower()
+
+        # ------------------------------------------------------------------
+        # Step 3: HTTP 401 / 403 → auth_config
+        # ------------------------------------------------------------------
+        if status in (401, 403):
+            return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 4: HTTP 402 → quota_billing_exhausted
+        # ------------------------------------------------------------------
+        if status == 402:
+            return "quota_billing_exhausted"
+
+        # ------------------------------------------------------------------
+        # Step 5: HTTP 413 → context_length
+        # ------------------------------------------------------------------
+        if status == 413:
+            return "context_length"
+
+        # ------------------------------------------------------------------
+        # Step 6: HTTP 529 → overloaded
+        # ------------------------------------------------------------------
+        if status == 529:
+            return "overloaded"
+
+        # ------------------------------------------------------------------
+        # Step 7: Check error_type / error_code for auth
+        # ------------------------------------------------------------------
+        if etype in _AUTH_TYPES or estatus in _AUTH_STATUSES:
+            return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 8: Check for quota / billing by type or code
+        # ------------------------------------------------------------------
+        if etype in _QUOTA_TYPES or ecode in _QUOTA_CODES:
+            # Distinguish from pure 429 rate-limit: only quota when the code
+            # or type is explicitly billing/quota — not just any 429.
+            if ecode == "credit_balance_exhausted" or etype in _QUOTA_TYPES:
+                return "quota_billing_exhausted"
+            if ecode in _QUOTA_CODES:
+                return "quota_billing_exhausted"
+
+        # ------------------------------------------------------------------
+        # Step 9: 429 — distinguish rate_limit vs quota
+        # ------------------------------------------------------------------
+        if status == 429:
+            # Quota codes/types take precedence; remaining 429s are rate_limited
+            if etype in _QUOTA_TYPES or ecode in _QUOTA_CODES:
+                return "quota_billing_exhausted"
+            if estatus in _RATE_LIMIT_STATUSES:
+                return "rate_limited"
+            if etype in _RATE_LIMIT_TYPES:
+                return "rate_limited"
+            # Default 429 → rate_limited
+            return "rate_limited"
+
+        # ------------------------------------------------------------------
+        # Step 10: rate_limit_error type without 429
+        # ------------------------------------------------------------------
+        if etype in _RATE_LIMIT_TYPES or estatus in _RATE_LIMIT_STATUSES:
+            return "rate_limited"
+
+        # ------------------------------------------------------------------
+        # Step 11: overloaded type
+        # ------------------------------------------------------------------
+        if etype in _OVERLOADED_TYPES:
+            return "overloaded"
+
+        # ------------------------------------------------------------------
+        # Step 12: context_length type/code
+        # ------------------------------------------------------------------
+        if etype in _CONTEXT_TYPES or ecode in _CONTEXT_CODES:
+            return "context_length"
+
+        # ------------------------------------------------------------------
+        # Step 13: INVALID_ARGUMENT 400 + auth keyword in message → auth_config
+        # ------------------------------------------------------------------
+        if status == 400 and estatus == "INVALID_ARGUMENT":
+            for kw in _AUTH_MESSAGE_KEYWORDS:
+                if kw in msg:
+                    return "auth_config"
+
+        # ------------------------------------------------------------------
+        # Step 14: 5xx server fault → malformed_response
+        # ------------------------------------------------------------------
+        if status is not None and status in _SERVER_FAULT_STATUSES:
+            return "malformed_response"
+
+        # ------------------------------------------------------------------
+        # Step 15: fallback
+        # ------------------------------------------------------------------
+        return "unknown"
+
+    except Exception:
+        # Safety net — never crash the caller.
+        return "unknown"
+
+
+# ---------------------------------------------------------------------------
 
 # Observer ids that have already emitted a failure warning (once-per-observer
 # suppression — avoids log spam on repeated observer failures).

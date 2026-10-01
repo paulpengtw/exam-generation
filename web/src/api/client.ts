@@ -65,14 +65,23 @@ export class ApiError extends Error {
   code?: string;
   /** Field-addressed resolver errors parsed from an array-valued `detail` (#835). */
   errors?: ResolverFieldErrorLike[];
+  /** issue #946 — failure taxonomy code from structured error response bodies. */
+  failureClass?: string | null;
 
-  constructor(status: number, detail: string, code?: string, errors?: ResolverFieldErrorLike[]) {
+  constructor(
+    status: number,
+    detail: string,
+    code?: string,
+    errors?: ResolverFieldErrorLike[],
+    failureClass?: string | null,
+  ) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.code = code;
     this.errors = errors;
+    this.failureClass = failureClass ?? null;
   }
 }
 
@@ -82,9 +91,23 @@ function parseResolverFieldErrors(detail: unknown): ResolverFieldErrorLike[] | u
   return detail.every(isResolverFieldErrorLike) ? detail : undefined;
 }
 
+/** Recognized taxonomy codes for issue #946. */
+const _TAXONOMY_CODES_CLIENT = new Set([
+  "auth_config",
+  "quota_billing_exhausted",
+  "rate_limited",
+  "overloaded",
+  "timeout",
+  "connection",
+  "context_length",
+  "content_filtered",
+  "malformed_response",
+  "unknown",
+]);
+
 async function extractError(
   res: Response,
-): Promise<{ detail: string; code?: string; errors?: ResolverFieldErrorLike[] }> {
+): Promise<{ detail: string; code?: string; errors?: ResolverFieldErrorLike[]; failureClass?: string | null }> {
   try {
     const body = await res.json() as unknown;
     if (body && typeof body === "object") {
@@ -95,12 +118,17 @@ async function extractError(
           ? payload.detail
           : undefined;
       const code = typeof payload.error === "string" ? payload.error : undefined;
-      if (detail) return { detail, code };
+      // issue #946: extract failure_class when present and recognized
+      const failureClass =
+        typeof payload.failure_class === "string" && _TAXONOMY_CODES_CLIENT.has(payload.failure_class)
+          ? payload.failure_class
+          : null;
+      if (detail) return { detail, code, failureClass };
       // #835: keep the string path above unchanged; additionally surface a
       // non-string (array) `detail` as parsed field errors instead of
       // discarding it, so callers can format it readably.
       const errors = parseResolverFieldErrors(payload.detail);
-      if (errors) return { detail: `Request failed with status ${res.status}`, errors };
+      if (errors) return { detail: `Request failed with status ${res.status}`, errors, failureClass };
     }
   } catch {
     // ignore
@@ -132,7 +160,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
       authState.logout();
     }
     const error = await extractError(res);
-    throw new ApiError(res.status, error.detail, error.code, error.errors);
+    throw new ApiError(res.status, error.detail, error.code, error.errors, error.failureClass);
   }
   return res;
 }

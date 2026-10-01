@@ -23,6 +23,7 @@ vi.mock("@microsoft/fetch-event-source", () => ({
 
 import {
   buildQueryString,
+  parseErrorPayload,
   RUN_POLL_HIDDEN_MS,
   RUN_POLL_VISIBLE_MS,
   useGenerate,
@@ -1010,6 +1011,212 @@ describe("buildQueryString — effort_verify / effort_correct overrides", () => 
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// issue #946 — parseErrorPayload (task 6.1)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — parseErrorPayload (issue #946)", () => {
+  it("extracts failure_class when it is a recognized taxonomy code", () => {
+    const raw = JSON.stringify({
+      code: "generation_failed",
+      message: "backend message",
+      failure_class: "rate_limited",
+    });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBe("rate_limited");
+    expect(result.message).toBe("backend message");
+  });
+
+  it("returns failureClass=null when failure_class is absent", () => {
+    const raw = JSON.stringify({ code: "generation_failed", message: "some error" });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("some error");
+  });
+
+  it("returns failureClass=null when failure_class is an unrecognized string", () => {
+    const raw = JSON.stringify({ message: "err", failure_class: "not_a_real_code" });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+  });
+
+  it("falls back to raw string as message when not JSON", () => {
+    const raw = "plain error text";
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("plain error text");
+  });
+
+  it("handles empty string", () => {
+    const result = parseErrorPayload("");
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("Unknown error");
+  });
+
+  it("recognizes all 10 taxonomy codes", () => {
+    const codes = [
+      "auth_config", "quota_billing_exhausted", "rate_limited", "overloaded",
+      "timeout", "connection", "context_length", "content_filtered",
+      "malformed_response", "unknown",
+    ];
+    for (const code of codes) {
+      const raw = JSON.stringify({ message: "err", failure_class: code });
+      const result = parseErrorPayload(raw);
+      expect(result.failureClass).toBe(code);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #946 — case "error" localization (task 6.2/6.3)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — case 'error' localization (issue #946)", () => {
+  beforeEach(() => {
+    fetchEventSourceMock.mockClear();
+    // Default: open stream and stay open (no events until test delivers them)
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+    });
+  });
+
+  it("localizes errorMessage when failure_class is a recognized code (en-US)", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("en-US");
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+    try {
+      const { result } = await startRun(1, runSnapshot(
+        [waitingQuestion("q-1")], { live_events_available: true },
+      ));
+      await flush(RUN_POLL_VISIBLE_MS + 10);
+      await flush(); // let fetchEventSource settle
+
+      // Real wire shape: full v2 envelope with payload containing failure fields.
+      // Run-level error has no context.question_id.
+      await act(async () => {
+        capturedOnMessage?.({
+          event: "error",
+          data: JSON.stringify({
+            event: "error",
+            payload: {
+              code: "stream_failed",
+              message: "Rate limited by provider",
+              failure_class: "rate_limited",
+            },
+          }),
+        });
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+
+      expect(result.current.status).toBe("error");
+      expect(result.current.errorFailureClass).toBe("rate_limited");
+      // Must contain the localized label (not the raw backend string)
+      expect(result.current.errorMessage).toContain("Rate limited");
+      expect(result.current.errorMessage).not.toBe("Rate limited by provider");
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
+  });
+
+  it("falls back to raw message when failure_class is absent", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")], { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+
+    // Real wire shape: run-level error with no context and no failure_class in payload
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          payload: {
+            code: "stream_failed",
+            message: "Raw backend error text",
+          },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorFailureClass).toBeNull();
+    expect(result.current.errorMessage).toBe("Raw backend error text");
+  });
+
+  it("preserves draft content already received when error event arrives (#938)", async () => {
+    let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+
+    const { result } = await startRun(1, runSnapshot(
+      [waitingQuestion("q-1")], { live_events_available: true },
+    ));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush();
+
+    // Deliver a v2 result event (draft) via the live stream
+    const resultEvent = {
+      event: "result",
+      data: JSON.stringify({
+        event: "result",
+        context: { run_id: "run-1", question_id: "q-1", event_seq: 2, content_revision: 1 },
+        payload: {
+          id: "q-1",
+          情境: ["個人"],
+          題型種類: "單一題",
+          題型: "選擇題",
+          題目: ["Draft question text"],
+          正確解題分析: ["answer"],
+        },
+      }),
+    };
+
+    await act(async () => {
+      capturedOnMessage?.(resultEvent);
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Sanity: at least one result visible before error
+    expect(result.current.results.length).toBeGreaterThan(0);
+
+    // Now a run-level error event arrives (real wire shape: envelope with payload)
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          payload: {
+            code: "stream_failed",
+            message: "Connection lost",
+            failure_class: "connection",
+          },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Status is error
+    expect(result.current.status).toBe("error");
+    // Content received before the error must STILL be visible (#938 requirement)
+    expect(result.current.results.length).toBeGreaterThan(0);
+    expect(result.current.errorMessage).toBeTruthy();
+  });
+});
 
 describe("buildQueryString — text_word_limit serialization", () => {
   it("serializes text_word_limit when set", () => {
