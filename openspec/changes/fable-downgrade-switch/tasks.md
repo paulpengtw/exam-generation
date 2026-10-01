@@ -12,7 +12,7 @@
 - [x] 2.3 Write a failing test, then apply the same guard in `LLMClient.generate_with_tools()`; verify the web-search request names `claude-opus-4-6` when the verify tier is a Fable model
 - [x] 2.4 Emit one WARNING per substituted call naming both ids; verify with `caplog` that the entry exists and contains no prompt text
 - [x] 2.5 Add a switch-off regression test asserting the SDK kwargs and emitted events for a `claude-fable-5` call are equal to those captured before the guard; verify it passes
-- [ ] 2.6 Add a guard-coverage test that scans `src/llm_client.py` for SDK dispatch calls (`messages.create`, `messages.stream`, `chat.completions.create`, `images.generate`) and fails when a site is neither guarded nor on an explicit exemption list; verify it passes and fails when a guard is removed
+- [x] 2.6 Add a guard-coverage test that scans `src/llm_client.py` for SDK dispatch calls (`messages.create`, `messages.stream`, `chat.completions.create`, `images.generate`) and fails when a site is neither guarded nor on an explicit exemption list; verify it passes and fails when a guard is removed
 
 ## 3. Recording the requested and ran models
 
