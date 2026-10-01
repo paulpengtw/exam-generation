@@ -313,6 +313,13 @@ export interface HistoryDetail {
   verification_trail: VerificationTrailEntry[] | null;
   figure_policy_trail: FigurePolicyTrailEntry[] | null;
   reference_example_record: { disabled?: boolean; entries: unknown[] } | null;
+  /**
+   * Sidecar annotations for this record. For generation records, the
+   * `terminal_delivery` sub-key holds `{delivery_status, missing, termination_reason}`
+   * computed at save time (issue #939). Absent on old records — fall back to
+   * `delivery_status: "complete"` and `missing: []`.
+   */
+  annotations_json: Record<string, unknown> | null;
 }
 
 export interface ListHistoryOpts {

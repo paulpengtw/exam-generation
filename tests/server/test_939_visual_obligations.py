@@ -409,3 +409,201 @@ class TestSubquestionOrderPreserved:
             f"Subquestion slots not in manifest order: {indices}"
         )
         assert len(subquestion_slots) == SLOT_COUNT
+
+
+# ---------------------------------------------------------------------------
+# History persistence: terminal delivery stored in annotations_json (issue #939)
+# ---------------------------------------------------------------------------
+
+class TestHistoryPersistenceTerminalDelivery:
+    """Verify that missing-slot state is correctly pre-computed for History records.
+
+    These tests exercise the *same* _compute_expected_delivered_missing +
+    _compute_delivery_status path that service.py calls before persist_generation_record,
+    checking that:
+    - A complete question (all images delivered) produces delivery_status="complete".
+    - A partial question (some images missing) produces delivery_status="partial".
+    - The missing list round-trips through a plain dict (as annotations_json stores it).
+    """
+
+    def test_complete_question_produces_complete_delivery_status(
+        self,
+        output_dir: pathlib.Path,
+    ) -> None:
+        """A question with all images delivered produces delivery_status='complete'."""
+        q_id = "q_HIST_COMPLETE"
+        # One subquestion with a valid PNG on disk
+        sq_id = f"{q_id}-sq001"
+        png_path = output_dir / f"{q_id}_sq1.png"
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+        sq = SimpleNamespace(
+            id=sq_id,
+            chart_spec=_chart_spec(),
+            image_spec=None,
+            圖片=f"{q_id}_sq1.png",
+        )
+        question = SimpleNamespace(
+            chart_spec=None,
+            image_spec=None,
+            圖片=None,
+            verification=None,
+            subquestions=[sq],
+        )
+        config = _config_with_visual()
+        announced = [{"subquestion_index": 0, "id": sq_id, "序號": 1}]
+        resolution = _QuestionPositionResolution(
+            announced_slots=announced,
+            verification_trail=None,
+            resolved_subquestion_configs=[config],
+            resolved_subquestion_count=1,
+            has_per_question_resolution=True,
+        )
+        params = _flat_params(sub_question_count=1, subquestion_configs=[config])
+        _expected, _delivered, missing = _compute_expected_delivered_missing(
+            question_id=q_id,
+            question=question,
+            params=params,
+            output_dir=output_dir,
+            has_final=True,
+            termination_reason="normal",
+            resolution=resolution,
+        )
+        delivery_status = _compute_delivery_status(
+            has_final=True,
+            termination_reason="normal",
+            missing=missing,
+        )
+        assert delivery_status == "complete"
+        assert missing == []
+        # Simulate what annotations_json stores and verify round-trip
+        annotations: dict = {
+            "terminal_delivery": {
+                "delivery_status": delivery_status,
+                "missing": missing,
+                "termination_reason": "normal",
+            }
+        }
+        assert annotations["terminal_delivery"]["delivery_status"] == "complete"
+        assert annotations["terminal_delivery"]["missing"] == []
+
+    def test_partial_question_missing_subquestion_slot(
+        self,
+        output_dir: pathlib.Path,
+    ) -> None:
+        """A question with a dropped subquestion produces delivery_status='partial'.
+
+        This is the NS/SS case from issue #937: one 子題 slot fails to generate.
+        The slot is in expected but not delivered → missing.
+        """
+        q_id = "q_HIST_PARTIAL_SQ"
+        sq_id_delivered = f"{q_id}-sq001"
+        sq_id_missing = f"{q_id}-sq002"
+        png_path = output_dir / f"{q_id}_sq1.png"
+        png_path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        # Only sq1 exists in the question (sq2 was dropped)
+        sq1 = SimpleNamespace(
+            id=sq_id_delivered,
+            chart_spec=_chart_spec(),
+            image_spec=None,
+            圖片=f"{q_id}_sq1.png",
+        )
+        question = SimpleNamespace(
+            chart_spec=None,
+            image_spec=None,
+            圖片=None,
+            verification=None,
+            subquestions=[sq1],
+        )
+        config_visual = _config_with_visual()
+        # Both slots were announced (planned) but only sq1 was delivered
+        announced = [
+            {"subquestion_index": 0, "id": sq_id_delivered, "序號": 1},
+            {"subquestion_index": 1, "id": sq_id_missing, "序號": 2},
+        ]
+        resolution = _QuestionPositionResolution(
+            announced_slots=announced,
+            verification_trail=None,
+            resolved_subquestion_configs=[config_visual, config_visual],
+            resolved_subquestion_count=2,
+            has_per_question_resolution=True,
+        )
+        params = _flat_params(
+            sub_question_count=2,
+            subquestion_configs=[config_visual, config_visual],
+        )
+        _expected, _delivered, missing = _compute_expected_delivered_missing(
+            question_id=q_id,
+            question=question,
+            params=params,
+            output_dir=output_dir,
+            has_final=True,
+            termination_reason="normal",
+            resolution=resolution,
+        )
+        delivery_status = _compute_delivery_status(
+            has_final=True,
+            termination_reason="normal",
+            missing=missing,
+        )
+        assert delivery_status == "partial"
+        sq_missing = [s for s in missing if s["kind"] == "subquestion"]
+        assert any(s["subquestion_id"] == sq_id_missing for s in sq_missing), (
+            f"Missing slot for {sq_id_missing} not found in {missing}"
+        )
+        # Verify annotations_json round-trip
+        annotations: dict = {
+            "terminal_delivery": {
+                "delivery_status": delivery_status,
+                "missing": missing,
+                "termination_reason": "normal",
+            }
+        }
+        assert annotations["terminal_delivery"]["delivery_status"] == "partial"
+        assert len(annotations["terminal_delivery"]["missing"]) >= 1
+
+    def test_partial_question_missing_visual_slot(
+        self,
+        six_slot_question: SimpleNamespace,
+        resolution: _QuestionPositionResolution,
+        output_dir: pathlib.Path,
+    ) -> None:
+        """A question with failed image renders produces delivery_status='partial'.
+
+        This reuses the six-slot scenario (slots 3 and 5 missing) and verifies
+        the annotations_json structure that service.py would write.
+        """
+        params = _flat_params(sub_question_count=SLOT_COUNT)
+        _expected, _delivered, missing = _compute_expected_delivered_missing(
+            question_id=QUESTION_ID,
+            question=six_slot_question,
+            params=params,
+            output_dir=output_dir,
+            has_final=True,
+            termination_reason="normal",
+            resolution=resolution,
+        )
+        delivery_status = _compute_delivery_status(
+            has_final=True,
+            termination_reason="normal",
+            missing=missing,
+        )
+        # Simulate what annotations_json would store
+        annotations: dict = {
+            "terminal_delivery": {
+                "delivery_status": delivery_status,
+                "missing": missing,
+                "termination_reason": "normal",
+            }
+        }
+        assert annotations["terminal_delivery"]["delivery_status"] == "partial"
+        image_missing = [
+            s for s in annotations["terminal_delivery"]["missing"]
+            if s["kind"] == "image"
+        ]
+        assert len(image_missing) >= 2, (
+            "Six-slot scenario should have at least 2 missing image slots"
+        )
+        # Both missing slots should have a 'reason' field
+        for slot in image_missing:
+            assert "reason" in slot, f"Missing slot has no reason: {slot}"

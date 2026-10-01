@@ -249,6 +249,7 @@ async def get_history_detail(
         "verification_trail": row.verification_trail_json,
         "figure_policy_trail": row.figure_policy_trail_json,
         "reference_example_record": row.reference_example_record_json,
+        "annotations_json": row.annotations_json,
     }
 
 

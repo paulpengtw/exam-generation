@@ -787,6 +787,56 @@ def _worker_one_body(
                 "disabled": bool(ctx.params.disable_reference_fewshot),
                 "entries": setup.reference_example_entries,
             }
+            # Pre-compute terminal delivery info for History persistence (issue #939).
+            # All inputs needed by _compute_expected_delivered_missing are available
+            # at this point (slot manifest is sealed by the ledger.commit above).
+            # Storing it in annotations_json lets captureFromHistory/
+            # captureFromHistorySnapshot read the real missing-slot state instead of
+            # hard-coding "complete"; old records without this key fall back gracefully.
+            try:
+                _term_resolution = _QuestionPositionResolution(
+                    announced_slots=ctx.snapshot_ledger.get_slot_manifest(question_id),
+                    verification_trail=setup.verification_trail,
+                    resolved_subquestion_configs=(
+                        getattr(rng_params, "subquestion_configs", None)
+                        if rng_params is not None
+                        else None
+                    ),
+                    resolved_subquestion_count=(
+                        getattr(rng_params, "sub_question_count", None)
+                        if rng_params is not None
+                        else None
+                    ),
+                    has_per_question_resolution=rng_params is not None,
+                )
+                _, _, _term_missing = _compute_expected_delivered_missing(
+                    question_id=question_id,
+                    question=question,
+                    params=ctx.params,
+                    output_dir=ctx.config.output_dir,
+                    has_final=True,
+                    termination_reason="normal",
+                    resolution=_term_resolution,
+                )
+                _term_delivery_status = _compute_delivery_status(
+                    has_final=True,
+                    termination_reason="normal",
+                    missing=_term_missing,
+                )
+                _annotations_json: dict[str, Any] = {
+                    "terminal_delivery": {
+                        "delivery_status": _term_delivery_status,
+                        "missing": _term_missing,
+                        "termination_reason": "normal",
+                    }
+                }
+            except Exception as _term_exc:  # noqa: BLE001 — best effort; generation never fails
+                logger.warning(
+                    "terminal delivery pre-compute failed for %s: %s",
+                    question_id,
+                    type(_term_exc).__name__,
+                )
+                _annotations_json = {}
             _save_coro = persist_generation_record(
                 user_id=ctx.user_id,
                 generation_log_id=ctx.generation_log_id,
@@ -794,6 +844,7 @@ def _worker_one_body(
                 params=ctx.params,
                 payload=_result_payload,
                 session_factory=ctx.session_factory,
+                annotations_json=_annotations_json if _annotations_json else None,
                 verification_trail_json=(
                     setup.verification_trail if setup.verification_trail else None
                 ),

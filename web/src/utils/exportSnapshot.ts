@@ -504,6 +504,58 @@ export function captureBatchSnapshots(input: BatchSnapshotInput): [QuestionSnaps
 // ---------------------------------------------------------------------------
 
 /**
+ * Extract terminal delivery info from a history record's annotations_json.
+ *
+ * Issue #939: generation records now store `annotations_json.terminal_delivery`
+ * with the real `delivery_status` and `missing` slots computed at save time.
+ * Old records without this key fall back to `delivery_status: "complete"` and
+ * `missing: []` — identical to the previous hard-coded behaviour.
+ */
+function terminalDeliveryFromAnnotations(detail: HistoryDetail): {
+  deliveryStatus: ExportMeta["delivery_status"];
+  missing: GenerationSlotReference[];
+  terminationReason: ExportMeta["termination_reason"];
+} {
+  const td = (detail.annotations_json as Record<string, unknown> | null | undefined)
+    ?.["terminal_delivery"] as Record<string, unknown> | undefined;
+  return {
+    deliveryStatus: (td?.["delivery_status"] as ExportMeta["delivery_status"]) ?? "complete",
+    missing: Array.isArray(td?.["missing"])
+      ? (td["missing"] as GenerationSlotReference[])
+      : [],
+    terminationReason:
+      (td?.["termination_reason"] as ExportMeta["termination_reason"]) ?? "normal",
+  };
+}
+
+/**
+ * Build a synthetic QuestionTerminalPayload from stored annotations so that
+ * captureImageSources can recognise known-missing image slots in History records.
+ * Returns null when there are no missing slots (saves allocation for the common case).
+ */
+function syntheticTerminalFromAnnotations(
+  detail: HistoryDetail,
+  questionId: string,
+): QuestionTerminalPayload | null {
+  const { missing } = terminalDeliveryFromAnnotations(detail);
+  if (missing.length === 0) return null;
+  // Ensure question_id is populated on each slot for the captureImageSources helper.
+  const taggedMissing = missing.map((s) =>
+    s.question_id ? s : { ...s, question_id: questionId },
+  );
+  return {
+    termination_reason: "normal",
+    has_final: true,
+    final_revision: null,
+    delivery_status: "partial",
+    expected: [],
+    delivered: [],
+    missing: taggedMissing,
+    review: { status: "unknown" },
+  };
+}
+
+/**
  * Build an `_export` annotation for a history detail record (persisted result).
  * History records are always final (isFinal = true).
  */
@@ -515,6 +567,8 @@ export function captureFromHistory(
 
   const question = detail.question_json as unknown as ExamQuestion;
   const captured = captureQuestion(question);
+  const { deliveryStatus, missing, terminationReason } =
+    terminalDeliveryFromAnnotations(detail);
 
   const exportMeta = buildExportMeta({
     exportedAt,
@@ -523,9 +577,9 @@ export function captureFromHistory(
     index: null, // single record; order is not meaningful
     contentRevision: null, // persisted records have no revision field
     processing: "ended", // persisted = completed run
-    terminationReason: "normal",
-    deliveryStatus: "complete",
-    missing: [],
+    terminationReason,
+    deliveryStatus,
+    missing,
     review: { status: "unknown", content_revision: null },
   });
 
@@ -545,6 +599,8 @@ export function captureFromHistorySnapshot(
 
   const question = detail.question_json as unknown as ExamQuestion;
   const captured = captureQuestion(question);
+  const { deliveryStatus, missing, terminationReason } =
+    terminalDeliveryFromAnnotations(detail);
 
   const exportMeta = buildExportMeta({
     exportedAt,
@@ -553,15 +609,19 @@ export function captureFromHistorySnapshot(
     index: null,
     contentRevision: null,
     processing: "ended",
-    terminationReason: "normal",
-    deliveryStatus: "complete",
-    missing: [],
+    terminationReason,
+    deliveryStatus,
+    missing,
     review: { status: "unknown", content_revision: null },
   });
 
   const exported: ExportedQuestion = { ...captured, _export: exportMeta };
-  // History records have no live terminal payload; no known-missing image slots.
-  const imageSources = captureImageSources(captured, null, null);
+  // Build a synthetic terminal for captureImageSources to detect known-missing slots.
+  const syntheticTerminal = syntheticTerminalFromAnnotations(
+    detail,
+    question.id ?? detail.question_id ?? "",
+  );
+  const imageSources = captureImageSources(captured, null, syntheticTerminal);
   return { exported, captured, isDraft: false, index: null, imageSources };
 }
 
