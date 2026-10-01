@@ -21,7 +21,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Store the completed reference example record and its incremental generation-log staging copy."""
+    """Store the completed reference example record and its incremental generation-log staging copy.
+    """
     with op.batch_alter_table("generation_logs") as batch_op:
         batch_op.add_column(sa.Column("reference_example_record_json", sa.JSON(), nullable=True))
 

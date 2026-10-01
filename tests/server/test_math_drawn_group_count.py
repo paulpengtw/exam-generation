@@ -107,6 +107,26 @@ def test_resolved_math_http_generation_preserves_group_count(tmp_path: Path) -> 
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
+    from sqlalchemy import select
+
+    from server.generate.run import claim_next_run, execute_run
+    from server.models import GenerationRecord
+
+    async def _execute_one() -> dict:
+        async with SessionLocal() as session:
+            claimed = await claim_next_run(SessionLocal, host_id="test-host")
+        if claimed is None:
+            raise AssertionError("no queued run to claim")
+        await execute_run(
+            claimed, app_state=app.state, config=config,
+            session_factory=SessionLocal, host_id="test-host",
+        )
+        async with SessionLocal() as session:
+            record = (await session.execute(
+                select(GenerationRecord).order_by(GenerationRecord.created_at.desc()).limit(1)
+            )).scalar_one_or_none()
+        return record.question_json if record and record.question_json else {}
+
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with patch(
@@ -123,8 +143,8 @@ def test_resolved_math_http_generation_preserves_group_count(tmp_path: Path) -> 
                         ),
                         headers={"Authorization": f"Bearer {token}"},
                     )
-                    assert response.status_code == 200
-                    result_payloads.append(_result_payload(response.text))
+                    assert response.status_code == 202
+                    result_payloads.append(asyncio.run(_execute_one()))
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())

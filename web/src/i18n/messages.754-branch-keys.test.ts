@@ -34,6 +34,7 @@ const BRANCH_KEYS_754 = [
   "statusbar.legacy_request_total",
   "card.download_json_draft",
   "card.download_odt_draft",
+  "generate.run_read_unavailable",
 ] as const;
 
 describe("754 branch i18n key parity", () => {
@@ -55,8 +56,8 @@ describe("754 branch i18n key parity", () => {
     });
   }
 
-  it("all 23 branch keys are present (count check)", () => {
-    expect(BRANCH_KEYS_754).toHaveLength(23);
+  it("all 24 branch keys are present (count check)", () => {
+    expect(BRANCH_KEYS_754).toHaveLength(24);
     const enKeys = new Set(Object.keys(MESSAGES["en-US"]));
     const zhKeys = new Set(Object.keys(MESSAGES["zh-TW"]));
     for (const key of BRANCH_KEYS_754) {
