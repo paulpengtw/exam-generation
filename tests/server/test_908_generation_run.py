@@ -429,8 +429,10 @@ async def _run_ss_until_idle(env: _Env, subjects: dict, *, timeout: float = 20.0
 def test_ss_persists_one_failed_record_after_prior_success(tmp_path: Path) -> None:
     """Port of test_generate_route_persists_one_failed_record_after_prior_success.
 
-    One failed tombstone beside the successful record (social_studies seam,
-    execute_run path instead of SSE route).
+    Issue #931: when q1 succeeds and q2 fails via a question-scoped error,
+    the run is *completed* (at least one final result), not failed.  Only q1's
+    completed GenerationRecord is written; no batch tombstone is created.
+    The question states confirm q1 normal and q2 failed.
     """
     from src.social_studies.schemas import ExamQuestion
 
@@ -479,14 +481,29 @@ def test_ss_persists_one_failed_record_after_prior_success(tmp_path: Path) -> No
                 .all()
             )
 
-        assert len(rows) == 2
-        assert [r.status for r in rows].count("completed") == 1
-        assert [r.status for r in rows].count("failed") == 1
-        failed = next(r for r in rows if r.status == "failed")
-        assert failed.error == "Question generation failed (RuntimeError)"
-        assert failed.params_json["count"] == 2
-        assert failed.question_json is None
-        _ = accepted  # used to ensure the accept completed
+        # Issue #931: partial success → run completed; only q1's record exists.
+        assert len(rows) == 1, f"expected 1 record (q1 success only), got {len(rows)}: {[r.status for r in rows]}"
+        assert rows[0].status == "completed"
+
+        # Check the GenerationLog directly for the run status.
+        async with env.sessions() as session:
+            log = await session.get(GenerationLog, uuid.UUID(accepted.run_id))
+        assert log is not None
+        assert log.status == "completed", f"expected completed, got {log.status}"
+
+        # Both question states must have a termination_reason.
+        async with env.sessions() as session:
+            states = (
+                await session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == uuid.UUID(accepted.run_id)
+                    )
+                )
+            ).scalars().all()
+        assert len(states) == 2
+        reasons = {s.termination_reason for s in states}
+        assert "normal" in reasons, f"expected a normal terminal; got {reasons}"
+        assert "failed" in reasons, f"expected a failed terminal; got {reasons}"
 
     asyncio.run(_run())
 
@@ -496,11 +513,14 @@ def test_ss_defers_failed_policy_tombstone_until_workers_finish(tmp_path: Path) 
 
     A failed tombstone includes policy events emitted by slower sibling workers.
     Uses execute_run path instead of SSE route.
+
+    Issue #931: the tombstone is only written when ALL questions fail (no has_final=True).
+    This scenario uses two failing questions so the conservative all-question-fail
+    policy still triggers a tombstone, preserving the deferred-trail ordering test.
     """
     import datetime
 
     from src.common.figure_policy_trail import FigurePolicySpecEntry
-    from src.social_studies.schemas import ExamQuestion
 
     env = _Env(tmp_path)
     failure_started = threading.Event()
@@ -517,8 +537,10 @@ def test_ss_defers_failed_policy_tombstone_until_workers_finish(tmp_path: Path) 
         )
         if question_id.endswith("_001"):
             failure_started.set()
-            raise RuntimeError("scripted policy failure")
+            raise RuntimeError("scripted policy failure q1")
 
+        # q2 waits for q1 to fail, emits a late trail entry, then also fails.
+        # This proves the tombstone is not written until q2 finishes.
         assert failure_started.wait(timeout=5)
         time.sleep(0.25)
         kwargs["on_figure_policy_entry"](
@@ -529,17 +551,7 @@ def test_ss_defers_failed_policy_tombstone_until_workers_finish(tmp_path: Path) 
                 timestamp=datetime.datetime.now(datetime.timezone.utc),
             )
         )
-        return ExamQuestion(
-            id=question_id,
-            核心問題="核心問題",
-            文本="文本",
-            subquestions=[],
-            情境=[c.value for c in rng_params.情境],
-            題型種類=rng_params.題型種類.value,
-            題型=rng_params.題型[0].value,
-            題目=["題目"],
-            正確解題分析=["解析"],
-        )
+        raise RuntimeError("scripted policy failure q2")
 
     fake_spec = {
         "social_studies": dataclasses.replace(SUBJECTS["social_studies"], do_generate=_fake_do),

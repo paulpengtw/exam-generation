@@ -1141,13 +1141,21 @@ async def execute_run(
             if time_limit_exceeded_event.is_set():
                 raise _TimeLimitExceededError("time_limit exceeded during generation")
             if event.get("event") == SSEEventName.ERROR:
-                status = "failed"
-                payload = event.get("payload")
-                error = (
-                    payload.get("message", str(payload))
-                    if isinstance(payload, dict)
-                    else str(payload)
-                )
+                _err_context = event.get("context") or {}
+                _err_question_id = _err_context.get("question_id")
+                if not isinstance(_err_question_id, str):
+                    # Issue #931: only batch-scoped ERRORs (no question_id, e.g.
+                    # batch_generation_failed, started_invalid) make the whole run
+                    # fail immediately.  Question-scoped ERRORs are handled by
+                    # _QuestionStateRecorder; the run status is derived after the
+                    # stream ends from whether any question delivered a final result.
+                    status = "failed"
+                    payload = event.get("payload")
+                    error = (
+                        payload.get("message", str(payload))
+                        if isinstance(payload, dict)
+                        else str(payload)
+                    )
             await recorder.observe(event)
             await _publish_live(run_str_id, event)
     except _TimeLimitExceededError:
@@ -1184,6 +1192,27 @@ async def execute_run(
     # Issue #911: time-limit and recovery_exhausted use a specific terminal reason.
     unfinished_reason = error or "question ended without a terminal"
     await recorder.fail_unfinished(unfinished_reason)
+    # Issue #931: derive final status from question outcomes when no batch-level
+    # error or outer exception forced the run to failed.  A run completes when at
+    # least one question delivered a final result; it is failed only when no
+    # question delivered any final result (conservative all-question-fail policy).
+    if status == "completed":
+        async with session_factory() as _derive_session:
+            _question_states = (
+                await _derive_session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == claimed.run_id
+                    )
+                )
+            ).scalars().all()
+        _any_final = any(
+            isinstance(s.terminal_json, dict) and s.terminal_json.get("has_final") is True
+            for s in _question_states
+        )
+        if not _any_final:
+            status = "failed"
+            if error is None:
+                error = "all_questions_failed"
     if status == "failed":
         # issue #930: when params_json failed to parse, use the raw dict so we
         # still write exactly one failure record (idempotent via unique constraint).
