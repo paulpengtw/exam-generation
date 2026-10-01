@@ -19,10 +19,10 @@ from typing import Any
 
 import pytest
 
+from server.generate.exchange_recorder import ExchangeRecorder
+from src.common.generation_events import QuestionContext, new_run_id
 from src.config import FABLE_DOWNGRADE_TARGET, Config
 from src.llm_client import LLMClient
-from server.generate.exchange_recorder import ExchangeRecorder
-
 
 # ---------------------------------------------------------------------------
 # Helpers: fake Anthropic client (matching test_940 pattern)
@@ -190,8 +190,9 @@ def test_llm_failure_event_has_requested_model_when_substituted() -> None:
             yield  # unreachable
 
     client.client = SimpleNamespace(messages=FailingMessagesAPI())
+    _ctx = QuestionContext(run_id=new_run_id(), question_id="q-test", index=0)
     with pytest.raises(RuntimeError):
-        client.generate("sys", "user")
+        client.generate("sys", "user", scope=_ctx)
 
     failure_events = [e for e in events if e.get("type") == "llm_failure"]
     assert len(failure_events) >= 1
@@ -230,8 +231,9 @@ def test_llm_failure_event_has_no_requested_model_when_not_substituted() -> None
             yield
 
     client.client = SimpleNamespace(messages=FailingMessagesAPI())
+    _ctx = QuestionContext(run_id=new_run_id(), question_id="q-test", index=0)
     with pytest.raises(RuntimeError):
-        client.generate("sys", "user")
+        client.generate("sys", "user", scope=_ctx)
 
     failure_events = [e for e in events if e.get("type") == "llm_failure"]
     assert len(failure_events) >= 1
@@ -317,9 +319,6 @@ def test_generate_with_tools_failure_event_has_requested_model_when_substituted(
     events: list[dict] = []
     client.set_observer(events.append)
 
-    from src.common.generation_events import new_operation_scope, new_call_scope
-    from src.common.generation_events import QuestionContext
-
     class FailingMessagesAPI:
         def create(self, **kwargs):
             raise RuntimeError("test error")
@@ -330,8 +329,12 @@ def test_generate_with_tools_failure_event_has_requested_model_when_substituted(
             yield
 
     client.client = SimpleNamespace(messages=FailingMessagesAPI())
-    with pytest.raises(RuntimeError):
-        client.generate_with_tools("sys", "user", tools=_TOOLS, purpose="fact_check")
+    _ctx = QuestionContext(run_id=new_run_id(), question_id="q-test", index=0)
+    with pytest.raises(RuntimeError):  # noqa: PT011
+        client.generate_with_tools(
+            "sys", "user", tools=_TOOLS, purpose="fact_check",
+            scope=_ctx,
+        )
 
     failure_events = [e for e in events if e.get("type") == "llm_failure"]
     assert len(failure_events) >= 1
@@ -446,3 +449,48 @@ def test_exchanges_endpoint_returns_requested_model_for_substituted_exchange() -
     # and returned by the exchanges endpoint. Check it contains what the spec requires.
     assert row["request_body"]["model"] == FABLE_DOWNGRADE_TARGET
     assert row["request_body"]["requested_model"] == "claude-fable-5"
+
+
+# ---------------------------------------------------------------------------
+# Regression: legacy/no-scope path with switch OFF emits no llm_failure
+# ---------------------------------------------------------------------------
+
+
+def test_llm_failure_not_emitted_when_no_scope_and_switch_off() -> None:
+    """Legacy callers (no scope) must not see llm_failure — guard is call_scope is not None."""
+    cfg = Config(
+        api_key="test-only",
+        model_execute="claude-opus-4-6",
+        model_verify="",
+        model_plan="claude-opus-4-6",
+        model_correct="",
+        effort_execute="high",
+        effort_verify="",
+        effort_plan="high",
+        effort_correct="",
+        rate_limit_delay=0,
+        llm_stream=False,
+        fable_downgrade=False,  # switch OFF — byte-identical behaviour
+    )
+    client = LLMClient(cfg)
+    events: list[dict] = []
+    client.set_observer(events.append)
+
+    class FailingMessagesAPI:
+        def create(self, **kwargs):
+            raise RuntimeError("legacy failure")
+
+        @contextmanager
+        def stream(self, **kwargs):
+            raise RuntimeError("legacy failure")
+            yield  # unreachable
+
+    client.client = SimpleNamespace(messages=FailingMessagesAPI())
+    # No scope kwarg → _operation_scope returns None → call_scope is None → guard never fires.
+    with pytest.raises(RuntimeError):
+        client.generate("sys", "user")  # no scope argument — legacy path
+
+    failure_events = [e for e in events if e.get("type") == "llm_failure"]
+    assert failure_events == [], (
+        "llm_failure must NOT be emitted on the legacy (no-scope) path"
+    )

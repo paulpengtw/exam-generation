@@ -838,7 +838,7 @@ class LLMClient:
                 requested_model=_passed_requested,
             )
         except Exception as exc:
-            if self._observer:
+            if self._observer and call_scope is not None:
                 self._emit_call_event(
                     "llm_failure",
                     call_scope,
@@ -1440,7 +1440,7 @@ class LLMClient:
                 })
             return final_text, collected_citations
         except Exception as exc:
-            if self._observer:
+            if self._observer and call_scope is not None:
                 self._emit_call_event(
                     "llm_failure",
                     call_scope,
