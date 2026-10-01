@@ -454,3 +454,19 @@ prop is forwarded to the mock. New tests are needed to:
 7. **Does the auto-planner (confirmation flow, line 1990 in `ParamForm.tsx`) need the same
    default?** It runs without user interaction, so if a component-level default is chosen,
    the implementer must decide whether the confirmation-flow call should also use Gemini.
+
+---
+
+## Decision (2026-10-02)
+
+The picker-only model/effort selector implemented in PR #935 was dropped in favour of issue #933.
+
+**What changed:** The `CoreQuestionPicker` component no longer carries its own model/effort dropdowns (and no longer has `pickerModelPlan`/`pickerEffortPlan` props or picker-level `gemini-3.1-pro-preview` default state in `ParamForm`). Instead, both candidate-request call sites — the picker button and the auto-triggered planner in 發送前確認 — now forward the form's **existing** `規劃模型` (model_plan) and `規劃 Effort` (effort_plan) fields.
+
+**Why:** A single planning setting that is saved with the run and carries through both the picker and the generation itself is simpler, consistent, and solves the staging incident: the supervisor selects Gemini in the main form and all planning (candidates + generation) uses Gemini, with no second selector to get out of sync. The same result can be achieved without any new UI by choosing Gemini as `LLM_MODEL_PLAN` on the server.
+
+**The staging out-of-credit incident (2026-09-30):** Occurred because the server's default `LLM_MODEL_PLAN` (Anthropic/Claude) was out of credit and the supervisor had selected Gemini only in the model_execute/model_verify/model_correct fields, not model_plan. With this change, selecting Gemini as `規劃模型` in the form routes both candidates and generation through Gemini, or the operator can set `LLM_MODEL_PLAN=gemini-3.1-pro-preview` to change the server default for all sessions.
+
+**`pickerEffortClamp.ts` deleted:** The form's models-load effect (`reconcileEffortLevel`) already guarantees that `effortPlan` is valid for `modelPlan`. No separate clamp is needed when forwarding the form's own effort.
+
+**FLOW.md:** The planner call in the confirmation flow now carries the form's `model_plan` and `effort_plan` values. Specifically, `ParamForm.tsx`'s `useEffect` for the core-question planner reads `latestParams.model_plan` and `latestParams.effort_plan` from `pendingParamsRef.current` (the confirmed form payload) and includes both in the `inputKey` so the planner re-triggers when either changes.
