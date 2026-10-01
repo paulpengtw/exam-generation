@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m, useReducedMotion } from "motion/react";
 import { flushSync } from "react-dom";
 import { getAvailableModels, planCoreQuestions, previewGenerate, resolveGenerate, type AvailableModels, type PromptPreview, type SchemaEntry, type Schemas } from "../api/client";
@@ -1450,12 +1450,6 @@ export default function ParamForm({
     inputKey: string;
     operation: OperationHandle;
   } | null>(null);
-  const modelsRef = useRef<AvailableModels | null>(models);
-  // useLayoutEffect runs synchronously after DOM updates, before useEffect — so these
-  // refs are always current when the auto-trigger effect reads them.
-  useLayoutEffect(() => {
-    modelsRef.current = models;
-  }, [models]);
   const redrawsRef = useRef<Record<string, number>>(
     recoveryConfirmation ? cloneJson(recoveryConfirmation.redraws) : {},
   );
