@@ -452,26 +452,33 @@ const TAXONOMY_CODES = new Set([
 ]);
 
 export function parseErrorPayload(raw: string): ErrorPayload {
-  const fallback: ErrorPayload = { message: raw || "Unknown error", failureClass: null };
   if (!raw) return { message: "Unknown error", failureClass: null };
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed !== null && typeof parsed === "object") {
       const obj = parsed as Record<string, unknown>;
+      // Support both flat shape ({message, failure_class}) and
+      // v2 envelope shape ({event, context?, payload: {message, failure_class}}).
+      // When a "payload" object is present, read failure fields from it (Bug 2 fix).
+      const source: Record<string, unknown> =
+        typeof obj.payload === "object" && obj.payload !== null
+          ? (obj.payload as Record<string, unknown>)
+          : obj;
       const msg =
-        typeof obj.message === "string" && obj.message !== ""
-          ? obj.message
-          : raw;
-      const fc =
-        typeof obj.failure_class === "string" && TAXONOMY_CODES.has(obj.failure_class)
-          ? obj.failure_class
+        typeof source.message === "string" && source.message !== ""
+          ? source.message
           : null;
-      return { message: msg, failureClass: fc };
+      const fc =
+        typeof source.failure_class === "string" && TAXONOMY_CODES.has(source.failure_class)
+          ? source.failure_class
+          : null;
+      // Never return raw JSON as the message — fall back to "Unknown error"
+      return { message: msg ?? "Unknown error", failureClass: fc };
     }
   } catch {
-    // not JSON — fall through
+    // not JSON — use the raw string as the message (plain-text errors)
   }
-  return fallback;
+  return { message: raw, failureClass: null };
 }
 
 function formatHttpErrorDetail(detail: unknown): string | null {
@@ -936,36 +943,38 @@ export function useGenerate(): UseGenerateReturn {
           return;
         }
 
-        // Defensive run_id validation before the decoder sees the event.
-        // With a pre-seeded decoder, an event whose context.run_id differs from
-        // the accepted run is silently dropped by the decoder (kind:"ignore"),
-        // so the hook must detect the mismatch here and abort the stream.
+        // Parse the envelope once for run_id / manifest validation and
+        // error-event routing.  Kept outside the try so both uses can read it.
+        let envelopeContext: Record<string, unknown> | null = null;
+        let envelopePayload: unknown = undefined;
         try {
           const parsed = JSON.parse(ev.data) as unknown;
-          if (
-            parsed !== null &&
-            typeof parsed === "object" &&
-            "context" in (parsed as object) &&
-            (parsed as Record<string, unknown>).context !== null &&
-            typeof (parsed as Record<string, unknown>).context === "object" &&
-            "run_id" in ((parsed as Record<string, unknown>).context as object) &&
-            typeof ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id === "string"
-          ) {
-            const payloadRunId = ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id as string;
-            if (payloadRunId !== runId) {
-              closeStream();
-              return;
-            }
-            // If this is a "started" event, also validate the manifest (T3b)
+          if (parsed !== null && typeof parsed === "object") {
+            const pObj = parsed as Record<string, unknown>;
+            envelopePayload = pObj.payload;
             if (
-              ev.event === "started" &&
-              acceptedManifestRef.current !== null &&
-              "payload" in (parsed as object)
+              "context" in pObj &&
+              pObj.context !== null &&
+              typeof pObj.context === "object"
             ) {
-              const payload = ((parsed as Record<string, unknown>).payload) as Record<string, unknown> | null | undefined;
-              if (payload !== null && payload !== undefined && typeof payload === "object") {
-                const payloadTotal = (payload as Record<string, unknown>).total;
-                const payloadQuestions = (payload as Record<string, unknown>).questions;
+              envelopeContext = pObj.context as Record<string, unknown>;
+              // run_id mismatch: this event belongs to a different run — abort
+              if (
+                typeof envelopeContext.run_id === "string" &&
+                envelopeContext.run_id !== runId
+              ) {
+                closeStream();
+                return;
+              }
+              // Manifest validation for the "started" event (T3b)
+              if (
+                ev.event === "started" &&
+                acceptedManifestRef.current !== null &&
+                typeof pObj.payload === "object" && pObj.payload !== null
+              ) {
+                const payloadObj = pObj.payload as Record<string, unknown>;
+                const payloadTotal = payloadObj.total;
+                const payloadQuestions = payloadObj.questions;
                 const accepted = acceptedManifestRef.current;
                 const totalMismatch = typeof payloadTotal === "number" && payloadTotal !== accepted.total;
                 let idsMismatch = false;
@@ -986,20 +995,41 @@ export function useGenerate(): UseGenerateReturn {
           }
         } catch { /* non-JSON or missing fields — let decoder handle */ }
 
-        // Batch-level error event: extract failure_class for localized display
+        // Error events are either run-level (no context.question_id) or
+        // question-scoped (context.question_id present).
+        //
+        // Bug 1 fix: only run-level errors close the stream and set run status
+        // to "error".  Question-scoped errors (e.g. generation_failed for one
+        // question) fall through to the decoder so sibling questions keep
+        // streaming — consistent with the sibling-independence rule (#747).
         if (ev.event === "error") {
-          const errPayload = parseErrorPayload(ev.data);
-          const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
-          const localizedErrMsg = errPayload.failureClass
-            ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
-            : errPayload.message;
-          setErrorFailureClass(errPayload.failureClass);
-          setErrorMessage(localizedErrMsg);
-          setStatus("error");
-          setResultsCompletion("error");
-          endOperation("failed");
-          closeStream();
-          return;
+          const questionId =
+            envelopeContext !== null && typeof envelopeContext.question_id === "string"
+              ? envelopeContext.question_id
+              : null;
+
+          if (questionId === null) {
+            // Run-level error: set error state and permanently close the stream.
+            // Bug 2 fix: read failure fields from envelope.payload, not the
+            // full envelope, so message/failure_class are found correctly.
+            const payloadStr =
+              envelopePayload !== null && typeof envelopePayload === "object"
+                ? JSON.stringify(envelopePayload)
+                : "";
+            const errPayload = parseErrorPayload(payloadStr);
+            const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+            const localizedErrMsg = errPayload.failureClass
+              ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+              : errPayload.message;
+            setErrorFailureClass(errPayload.failureClass);
+            setErrorMessage(localizedErrMsg);
+            setStatus("error");
+            setResultsCompletion("error");
+            endOperation("failed");
+            closeStream();
+            return;
+          }
+          // Question-scoped error: fall through to the decoder.
         }
 
         const decoded = decoder.decode(ev.event, ev.data);

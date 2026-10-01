@@ -216,3 +216,167 @@ describe("useGenerate — snapshot failure_class (issue #946 gap 2)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// issue #946 — live-stream error routing bugs (Bug 1 + Bug 2)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — live-stream error routing (issue #946 bugs 1 & 2)", () => {
+  let capturedOnMessage: ((ev: { event: string; data: string }) => void) | undefined;
+
+  beforeEach(() => {
+    capturedOnMessage = undefined;
+    fetchEventSourceMock.mockClear();
+    fetchEventSourceMock.mockImplementation(async (_url: string, opts: Parameters<typeof fetchEventSourceMock>[1]) => {
+      await opts.onopen?.(new Response(null, { status: 200 }));
+      capturedOnMessage = opts.onmessage;
+    });
+  });
+
+  async function startLiveRun(count = 2) {
+    const questions = Array.from({ length: count }, (_, i) => waitingQuestion(`q-${i + 1}`));
+    const { result } = await startRun(count, runSnapshot(questions, { live_events_available: true }));
+    await flush(RUN_POLL_VISIBLE_MS + 10);
+    await flush(); // let fetchEventSource settle
+    return result;
+  }
+
+  // Bug 1: question-scoped error must NOT abort the run
+  it("question-scoped generation_failed does not set run status to error", async () => {
+    const result = await startLiveRun(2);
+
+    await act(async () => {
+      // Real wire shape: context.question_id present → question-scoped
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          context: { run_id: "run-1", question_id: "q-1", event_seq: 3 },
+          payload: { code: "generation_failed", message: "Question failed", failure_class: "timeout" },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Run must NOT have moved to error — sibling questions are still running
+    expect(result.current.status).not.toBe("error");
+    expect(result.current.errorMessage).toBeNull();
+    expect(result.current.errorFailureClass).toBeNull();
+  });
+
+  it("question-scoped error does not close stream — later sibling result still arrives", async () => {
+    const result = await startLiveRun(2);
+
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          context: { run_id: "run-1", question_id: "q-1", event_seq: 3 },
+          payload: { code: "generation_failed", message: "Question failed", failure_class: "timeout" },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // Sibling result event for q-2 must still be processed
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "result",
+        data: JSON.stringify({
+          event: "result",
+          context: { run_id: "run-1", question_id: "q-2", event_seq: 4, content_revision: 1 },
+          payload: {
+            id: "q-2",
+            情境: ["個人"],
+            題型種類: "單一題",
+            題型: "選擇題",
+            題目: ["Sibling question"],
+            正確解題分析: ["answer"],
+          },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    // q-2 result must be visible
+    expect(result.current.results.length).toBeGreaterThan(0);
+    const ids = result.current.results.map((q) => q.id);
+    expect(ids).toContain("q-2");
+  });
+
+  // Bug 2: run-level error reads failure_class from envelope.payload
+  it("run-level stream_failed (no context) sets status=error with localized message", async () => {
+    const lang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("zh-TW");
+    try {
+      const result = await startLiveRun(1);
+
+      await act(async () => {
+        // Real wire shape: no context field → run-level error
+        capturedOnMessage?.({
+          event: "error",
+          data: JSON.stringify({
+            event: "error",
+            payload: { code: "stream_failed", message: "backend error", failure_class: "connection" },
+          }),
+        });
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+
+      expect(result.current.status).toBe("error");
+      expect(result.current.errorFailureClass).toBe("connection");
+      // Must show localized text, not the raw envelope JSON
+      expect(result.current.errorMessage).not.toContain('"event"');
+      expect(result.current.errorMessage).not.toContain('"payload"');
+      const zhMsg = MESSAGES["zh-TW"]?.["error.class.connection"];
+      if (zhMsg) expect(result.current.errorMessage).toContain(zhMsg);
+    } finally {
+      useLangStore.getState().setLang(lang);
+    }
+  });
+
+  it("unknown failure_class falls back to payload.message, never raw JSON", async () => {
+    const result = await startLiveRun(1);
+
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          payload: {
+            code: "stream_failed",
+            message: "plain backend message",
+            failure_class: "not_a_real_code",
+          },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorFailureClass).toBeNull();
+    // Must be the message string, never a raw JSON dump
+    expect(result.current.errorMessage).toBe("plain backend message");
+    expect(result.current.errorMessage).not.toContain("{");
+  });
+
+  it("absent failure_class in payload falls back to payload.message", async () => {
+    const result = await startLiveRun(1);
+
+    await act(async () => {
+      capturedOnMessage?.({
+        event: "error",
+        data: JSON.stringify({
+          event: "error",
+          payload: { code: "stream_failed", message: "no class here" },
+        }),
+      });
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorFailureClass).toBeNull();
+    expect(result.current.errorMessage).toBe("no class here");
+  });
+});

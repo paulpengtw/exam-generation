@@ -1096,13 +1096,18 @@ describe("useGenerate — case 'error' localization (issue #946)", () => {
       await flush(RUN_POLL_VISIBLE_MS + 10);
       await flush(); // let fetchEventSource settle
 
+      // Real wire shape: full v2 envelope with payload containing failure fields.
+      // Run-level error has no context.question_id.
       await act(async () => {
         capturedOnMessage?.({
           event: "error",
           data: JSON.stringify({
-            code: "generation_failed",
-            message: "Rate limited by provider",
-            failure_class: "rate_limited",
+            event: "error",
+            payload: {
+              code: "stream_failed",
+              message: "Rate limited by provider",
+              failure_class: "rate_limited",
+            },
           }),
         });
         for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -1131,12 +1136,16 @@ describe("useGenerate — case 'error' localization (issue #946)", () => {
     await flush(RUN_POLL_VISIBLE_MS + 10);
     await flush();
 
+    // Real wire shape: run-level error with no context and no failure_class in payload
     await act(async () => {
       capturedOnMessage?.({
         event: "error",
         data: JSON.stringify({
-          code: "generation_failed",
-          message: "Raw backend error text",
+          event: "error",
+          payload: {
+            code: "stream_failed",
+            message: "Raw backend error text",
+          },
         }),
       });
       for (let i = 0; i < 5; i++) await Promise.resolve();
@@ -1185,14 +1194,17 @@ describe("useGenerate — case 'error' localization (issue #946)", () => {
     // Sanity: at least one result visible before error
     expect(result.current.results.length).toBeGreaterThan(0);
 
-    // Now the error event arrives
+    // Now a run-level error event arrives (real wire shape: envelope with payload)
     await act(async () => {
       capturedOnMessage?.({
         event: "error",
         data: JSON.stringify({
-          code: "generation_failed",
-          message: "Connection lost",
-          failure_class: "connection",
+          event: "error",
+          payload: {
+            code: "stream_failed",
+            message: "Connection lost",
+            failure_class: "connection",
+          },
         }),
       });
       for (let i = 0; i < 5; i++) await Promise.resolve();
