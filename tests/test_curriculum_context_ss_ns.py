@@ -332,7 +332,7 @@ def test_importing_ss_corrector_triggers_no_curriculum_io() -> None:
 # ---------------------------------------------------------------------------
 
 def test_ss_cli_generate_with_corrections_receives_curriculum_context(
-    monkeypatch,
+    monkeypatch, tmp_path: Path,
 ) -> None:
     """SS generate_with_corrections called from main() must pass curriculum_context."""
     import src.social_studies.cli as ss_cli
@@ -348,6 +348,7 @@ def test_ss_cli_generate_with_corrections_receives_curriculum_context(
         return "dry-run output"
 
     monkeypatch.setattr(ss_cli, "generate_with_corrections", _fake_gwc)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
 
     test_args = [
         "ss-cli",
@@ -380,7 +381,7 @@ def test_ss_cli_generate_with_corrections_receives_curriculum_context(
 
 
 def test_ns_cli_generate_with_corrections_receives_curriculum_context(
-    monkeypatch,
+    monkeypatch, tmp_path: Path,
 ) -> None:
     """NS generate_with_corrections called from main() must pass curriculum_context."""
     import src.natural_sciences.cli as ns_cli
@@ -394,6 +395,7 @@ def test_ns_cli_generate_with_corrections_receives_curriculum_context(
         return "dry-run output"
 
     monkeypatch.setattr(ns_cli, "generate_with_corrections", _fake_gwc)
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
 
     test_args = [
         "ns-cli",

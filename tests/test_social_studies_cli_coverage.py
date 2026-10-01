@@ -30,7 +30,9 @@ def test_core_question_callback_defaults_to_on() -> None:
     assert args.core_question_callback is True
 
 
-def test_no_core_question_callback_flag_reaches_generation(monkeypatch, capsys) -> None:
+def test_no_core_question_callback_flag_reaches_generation(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     import src.social_studies.cli as cli
     from src.config import Config
 
@@ -47,6 +49,7 @@ def test_no_core_question_callback_flag_reaches_generation(monkeypatch, capsys) 
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),

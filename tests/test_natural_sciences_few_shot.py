@@ -69,10 +69,10 @@ def test_all_examples_combined_covers_all_families() -> None:
     )
 
 
-def test_dry_run_generation_does_not_crash() -> None:
+def test_dry_run_generation_does_not_crash(tmp_path: Path) -> None:
     result = subprocess.run(
         [sys.executable, "-m", "src.natural_sciences.cli", "generate",
-         "--dry-run", "--seed", "1"],
+         "--dry-run", "--seed", "1", "--output", str(tmp_path)],
         cwd=Path(__file__).parent.parent,
         capture_output=True,
         text=True,
