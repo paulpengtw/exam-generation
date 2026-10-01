@@ -198,9 +198,13 @@ function buildExportMeta(
  *
  * Priority per slot:
  *   1. image_base64 present → "png_base64"
- *   2. chart_spec present (no image_base64) → "chart_spec_preview"
- *   3. slot in terminal.missing for kind="image" → "known_missing"
+ *   2. slot in terminal.missing for kind="image" → "known_missing" (issue #939:
+ *      server-confirmed render failure/empty file overrides client rasterization)
+ *   3. chart_spec present (no image_base64, not confirmed missing) → "chart_spec_preview"
  *   4. none → slot omitted from result
+ *
+ * Note: for the stem image, the legacy priority (chart_spec before terminal.missing)
+ * is preserved because stem image failures are not yet tracked by issue #939.
  *
  * IMPORTANT: call this AFTER captureQuestion() so the question is already an
  * immutable deep copy. Any later mutations to the source question do not affect
@@ -253,6 +257,10 @@ function captureImageSources(
   }
 
   // --- Per-subquestion images ---
+  // Priority (issue #939): image_base64 > terminal.missing > chart_spec.
+  // When the server confirms an image slot is missing (render_failed / empty_image),
+  // use known_missing rather than chart_spec_preview — no client-side rasterization
+  // attempt is useful when the server already declared the image unavailable.
   for (const sq of question.subquestions ?? []) {
     const key = `sq${sq.序號}`;
     if (sq.image_base64) {
@@ -261,14 +269,15 @@ function captureImageSources(
         pngBase64: sq.image_base64,
         contentRevision,
       };
+    } else if (missingSubqSeqnos.has(sq.序號)) {
+      // Server-confirmed missing image — skip rasterization attempt.
+      sources[key] = { kind: "known_missing", contentRevision };
     } else if (sq.chart_spec) {
       sources[key] = {
         kind: "chart_spec_preview",
         chartSpec: sq.chart_spec as Record<string, unknown>,
         contentRevision,
       };
-    } else if (missingSubqSeqnos.has(sq.序號)) {
-      sources[key] = { kind: "known_missing", contentRevision };
     }
   }
 
@@ -504,11 +513,10 @@ export function captureBatchSnapshots(input: BatchSnapshotInput): [QuestionSnaps
 // ---------------------------------------------------------------------------
 
 /**
- * Extract terminal delivery info from a history record's annotations_json.
+ * Extract terminal delivery info from the typed `terminal_delivery` field
+ * returned by GET /api/history/{id} (issue #939).
  *
- * Issue #939: generation records now store `annotations_json.terminal_delivery`
- * with the real `delivery_status` and `missing` slots computed at save time.
- * Old records without this key fall back to `delivery_status: "complete"` and
+ * Old records without this field fall back to `delivery_status: "complete"` and
  * `missing: []` — identical to the previous hard-coded behaviour.
  */
 function terminalDeliveryFromAnnotations(detail: HistoryDetail): {
@@ -516,15 +524,11 @@ function terminalDeliveryFromAnnotations(detail: HistoryDetail): {
   missing: GenerationSlotReference[];
   terminationReason: ExportMeta["termination_reason"];
 } {
-  const td = (detail.annotations_json as Record<string, unknown> | null | undefined)
-    ?.["terminal_delivery"] as Record<string, unknown> | undefined;
+  const td = detail.terminal_delivery;
   return {
-    deliveryStatus: (td?.["delivery_status"] as ExportMeta["delivery_status"]) ?? "complete",
-    missing: Array.isArray(td?.["missing"])
-      ? (td["missing"] as GenerationSlotReference[])
-      : [],
-    terminationReason:
-      (td?.["termination_reason"] as ExportMeta["termination_reason"]) ?? "normal",
+    deliveryStatus: (td?.delivery_status as ExportMeta["delivery_status"]) ?? "complete",
+    missing: Array.isArray(td?.missing) ? td.missing : [],
+    terminationReason: (td?.termination_reason as ExportMeta["termination_reason"]) ?? "normal",
   };
 }
 

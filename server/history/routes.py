@@ -183,6 +183,27 @@ async def _available_generation_log_id(
     return str(row.generation_log_id)
 
 
+def _extract_terminal_delivery(
+    annotations_json: dict | None,
+) -> dict | None:
+    """Extract the terminal_delivery sub-key from annotations_json.
+
+    Returns only the typed ``{delivery_status, missing, termination_reason}``
+    sub-dict (or ``None`` for old records and modification records that have no
+    such key).  The raw ``annotations_json`` column is never exposed to clients.
+    """
+    if not isinstance(annotations_json, dict):
+        return None
+    td = annotations_json.get("terminal_delivery")
+    if not isinstance(td, dict):
+        return None
+    return {
+        "delivery_status": td.get("delivery_status"),
+        "missing": td.get("missing", []),
+        "termination_reason": td.get("termination_reason"),
+    }
+
+
 def _embed_images_sync(question_json: dict, config: ServerConfig) -> dict:
     """Copy question_json and embed image_base64 for any PNG still on disk.
 
@@ -249,7 +270,7 @@ async def get_history_detail(
         "verification_trail": row.verification_trail_json,
         "figure_policy_trail": row.figure_policy_trail_json,
         "reference_example_record": row.reference_example_record_json,
-        "annotations_json": row.annotations_json,
+        "terminal_delivery": _extract_terminal_delivery(row.annotations_json),
     }
 
 

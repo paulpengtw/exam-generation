@@ -37,6 +37,8 @@ _V2_FIXTURES = [
     # issue #937 — blank-subquestion rejection produces partial delivery
     "social_partial_delivery.jsonl",
     "ns_partial_delivery.jsonl",
+    # issue #939 — six-slot NS run with render_failed and empty_image visual slots
+    "ns_six_slot_visual.jsonl",
 ]
 
 # Fixtures that intentionally omit one or more events to simulate transport loss.

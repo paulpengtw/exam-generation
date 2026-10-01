@@ -835,3 +835,152 @@ def test_detail_returns_the_persisted_reference_example_record_without_listing_i
     finally:
         limiter.reset()
         asyncio.run(engine.dispose())
+
+
+# ---------------------------------------------------------------------------
+# Issue #939 — terminal_delivery typed field; annotations_json NOT exposed
+# ---------------------------------------------------------------------------
+
+
+def _setup_terminal_delivery(tmp_path):
+    """Minimal setup for terminal_delivery tests."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from server.app import create_app
+    from server.auth.dependencies import get_config
+    from server.auth.tokens import create_jwt
+    from server.config import ServerConfig
+    from server.db import get_async_session
+    from server.models import Base, GenerationRecord, User
+    from collections.abc import AsyncGenerator
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+
+    async def init():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    asyncio.run(init())
+    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    async def override_session() -> AsyncGenerator[AsyncSession, None]:
+        async with SessionLocal() as s:
+            yield s
+
+    config = ServerConfig(
+        api_key="x", jwt_secret="test-secret", output_dir=tmp_path, data_dir=Path("data")
+    )
+    user_id = uuid.uuid4()
+
+    async def add_rows():
+        async with SessionLocal() as s:
+            s.add(User(id=user_id, email="td@example.com"))
+            await s.flush()
+            # Old record — no annotations_json
+            s.add(GenerationRecord(
+                id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                user_id=user_id,
+                subject="math",
+                question_id="q_OLD",
+                params_json={},
+                question_json={"id": "q_OLD"},
+                image_files=[],
+                annotations_json=None,
+            ))
+            # New record — has terminal_delivery
+            s.add(GenerationRecord(
+                id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+                user_id=user_id,
+                subject="natural_sciences",
+                question_id="q_NS_PARTIAL",
+                params_json={},
+                question_json={"id": "q_NS_PARTIAL"},
+                image_files=[],
+                annotations_json={
+                    "terminal_delivery": {
+                        "delivery_status": "partial",
+                        "missing": [
+                            {"kind": "image", "question_id": "q_NS_PARTIAL",
+                             "subquestion_id": "q_NS_PARTIAL-sq003", "reason": "render_failed"},
+                        ],
+                        "termination_reason": "normal",
+                    }
+                },
+            ))
+            # Modification record — annotations_json has "annotations" key, no terminal_delivery
+            s.add(GenerationRecord(
+                id=uuid.UUID("00000000-0000-0000-0000-000000000003"),
+                user_id=user_id,
+                subject="social_studies",
+                question_id="q_MOD",
+                params_json={},
+                question_json={"id": "q_MOD"},
+                image_files=[],
+                annotations_json={
+                    "annotations": [{"field_path": "subquestions[0].題目", "text": "x"}]
+                },
+            ))
+            await s.commit()
+    asyncio.run(add_rows())
+
+    app = create_app()
+    app.dependency_overrides[get_async_session] = override_session
+    app.dependency_overrides[get_config] = lambda: config
+    token = create_jwt(user_id, "td@example.com", config=config)
+    return app, token
+
+
+def test_terminal_delivery_old_record_is_null(tmp_path):
+    """Old record without annotations_json → terminal_delivery: null."""
+    app, token = _setup_terminal_delivery(tmp_path)
+    try:
+        with TestClient(app) as client:
+            r = client.get(
+                "/api/history/00000000-0000-0000-0000-000000000001",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert "annotations_json" not in body, "Raw annotations_json must not be exposed"
+        assert body["terminal_delivery"] is None
+    finally:
+        limiter.reset()
+
+
+def test_terminal_delivery_partial_record_populated(tmp_path):
+    """New generation record with terminal_delivery → typed field returned."""
+    app, token = _setup_terminal_delivery(tmp_path)
+    try:
+        with TestClient(app) as client:
+            r = client.get(
+                "/api/history/00000000-0000-0000-0000-000000000002",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert "annotations_json" not in body, "Raw annotations_json must not be exposed"
+        td = body["terminal_delivery"]
+        assert td is not None
+        assert td["delivery_status"] == "partial"
+        assert len(td["missing"]) == 1
+        assert td["missing"][0]["reason"] == "render_failed"
+        assert td["termination_reason"] == "normal"
+    finally:
+        limiter.reset()
+
+
+def test_terminal_delivery_modification_record_is_null(tmp_path):
+    """Modification record has annotations_json with 'annotations' key but no
+    terminal_delivery → terminal_delivery returns null (not the raw annotation dict)."""
+    app, token = _setup_terminal_delivery(tmp_path)
+    try:
+        with TestClient(app) as client:
+            r = client.get(
+                "/api/history/00000000-0000-0000-0000-000000000003",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert "annotations_json" not in body, "Raw annotations_json must not be exposed"
+        # Modification records have no terminal_delivery key in annotations_json
+        assert body["terminal_delivery"] is None
+    finally:
+        limiter.reset()

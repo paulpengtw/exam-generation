@@ -42,6 +42,47 @@ import {
   validateModificationBase,
   type ModificationRestoreBlockReason,
 } from "../lib/recovery/modificationValidation";
+import type { QuestionEvidence } from "../lib/generationEvidence";
+import type { HistoryTerminalDelivery } from "../api/client";
+
+/**
+ * Build a minimal QuestionEvidence with a synthetic terminal payload so that
+ * QuestionCard can show known-missing subquestion/image slots for stored partial
+ * records (issue #939). Returns null when no missing slots are present, so old
+ * records render unchanged without any synthetic evidence object.
+ */
+function buildHistoryEvidence(
+  questionId: string,
+  td: HistoryTerminalDelivery | null,
+): QuestionEvidence | undefined {
+  if (!td || td.missing.length === 0) return undefined;
+  // Build synthetic expected = delivered + missing; IDs from missing slots only.
+  const missing = td.missing;
+  const syntheticTerminal = {
+    termination_reason: (td.termination_reason ?? "normal") as "normal" | "failed" | "cancelled",
+    has_final: true,
+    final_revision: null,
+    delivery_status: (td.delivery_status ?? "partial") as "complete" | "partial" | "none" | "unknown",
+    expected: missing,
+    delivered: [],
+    missing,
+    review: { status: "unknown" as const },
+  };
+  return {
+    questionId,
+    index: 0,
+    processing: "ended",
+    content: { receipt: "final", revision: null, question: null, phase: null },
+    terminal: syntheticTerminal,
+    terminalConflict: false,
+    finalPending: false,
+    finalMissing: false,
+    review: { status: "unknown", revision: null },
+    trail: [],
+    figurePolicyTrail: [],
+    referenceExampleRecord: undefined,
+  };
+}
 
 function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -408,6 +449,10 @@ function HistoryDetailContent({
               subject={detail.subject}
               phase="verified"
               isFinal
+              evidence={buildHistoryEvidence(
+                detail.question_id,
+                detail.terminal_delivery,
+              )}
               trail={detail.verification_trail}
               figurePolicyTrail={detail.figure_policy_trail}
               referenceExampleRecord={detail.reference_example_record as ReferenceExampleRecordShape | null}

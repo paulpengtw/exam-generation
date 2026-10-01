@@ -21,7 +21,23 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Mapping
+from pathlib import Path as _Path2
 from typing import Any
+
+# PNG file signature: the first 8 bytes of any valid PNG file.
+# Files that do not start with this signature are corrupt / truncated renders
+# and must be classified as ``empty_image`` rather than delivered (issue #939).
+_PNG_MAGIC: bytes = b"\x89PNG\r\n\x1a\n"
+
+
+def _is_valid_png_header(path: _Path2) -> bool:
+    """Return True iff *path* starts with the 8-byte PNG magic bytes."""
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(8)
+    except OSError:
+        return False
+    return header == _PNG_MAGIC
 
 
 @dataclasses.dataclass(frozen=True)
@@ -170,10 +186,14 @@ def _compute_expected_delivered_missing(
         if filename and output_dir is not None:
             img_path = _Path(output_dir) / filename
             if img_path.exists():
-                if img_path.stat().st_size > 0:
+                # A delivered image must have a valid PNG header (issue #939).
+                # Files that are empty, truncated, or have a bad magic header
+                # (e.g. HTML error pages written to the output path) are treated
+                # as render failures rather than delivered images.
+                if img_path.stat().st_size >= 8 and _is_valid_png_header(img_path):
                     delivered.append(slot)
                     return
-                # File exists but is 0 bytes — counts as a render failure
+                # File exists but is empty, truncated, or not a valid PNG
                 missing.append({**slot, "reason": "empty_image"})
                 return
         missing.append({**slot, "reason": reason})
