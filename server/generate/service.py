@@ -1059,7 +1059,11 @@ async def generate_question_stream(
         )
         ctx.publisher.publish(
             SSEEventName.ERROR,
-            payload=build_sse_error("started_invalid", "generation manifest validation failed"),
+            payload=build_sse_error(
+                "started_invalid",
+                "generation manifest validation failed",
+                failure_class="unknown",
+            ),
         )
         await asyncio.sleep(0)
         yield queue.get_nowait()
