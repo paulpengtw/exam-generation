@@ -669,6 +669,91 @@ describe("ParamForm 發送前確認 display semantics", () => {
     });
   });
 
+  // #933: candidates follow the form's 規劃模型 and 規劃 Effort
+  it("#933 auto-triggered planner sends the form's model_plan when set in initialParams", async () => {
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6"],
+      effort: {
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "claude-opus-4-6": ["low", "medium", "high"],
+      },
+      defaults: { plan: "claude-opus-4-6", execute: "gemini-3.1-pro-preview", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "high" },
+    });
+    await openConfirmation("math", { topic: "分數", model_plan: "gemini-3.1-pro-preview" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    const call = planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.model_plan).toBe("gemini-3.1-pro-preview");
+  });
+
+  it("#933 auto-triggered planner sends the form's effort_plan when set in initialParams", async () => {
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6"],
+      effort: {
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "claude-opus-4-6": ["low", "medium", "high"],
+      },
+      defaults: { plan: "claude-opus-4-6", execute: "gemini-3.1-pro-preview", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "high" },
+    });
+    await openConfirmation("math", { topic: "分數", model_plan: "gemini-3.1-pro-preview", effort_plan: "medium" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    const call = planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.model_plan).toBe("gemini-3.1-pro-preview");
+    expect(call.effort_plan).toBe("medium");
+  });
+
+  it("#933 auto-triggered planner omits model_plan and effort_plan when both are empty (server defaults, no effort map)", async () => {
+    // Default beforeEach mock returns { allowed: [], defaults: { plan: "", execute: "" } }
+    // with no effort map — models?.effort is falsy so effort_plan stays undefined in params.
+    await openConfirmation("math", { topic: "分數" });
+
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    const call = planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.model_plan).toBeUndefined();
+    expect(call.effort_plan).toBeUndefined();
+  });
+
+  it("#933 auto-triggered planner re-requests with new values when model_plan changes on return to confirmation", async () => {
+    getAvailableModelsMock.mockResolvedValue({
+      allowed: ["gemini-3.1-pro-preview", "claude-opus-4-6"],
+      effort: {
+        "gemini-3.1-pro-preview": ["low", "medium", "high"],
+        "claude-opus-4-6": ["low", "medium", "high"],
+      },
+      defaults: { plan: "claude-opus-4-6", execute: "gemini-3.1-pro-preview", verify: "claude-opus-4-6", correct: "claude-opus-4-6", effort_plan: "medium" },
+    });
+    planCoreQuestionsMock
+      .mockResolvedValueOnce({ candidates: ["候選一"] })
+      .mockResolvedValueOnce({ candidates: ["候選二"] });
+
+    // First confirmation with model_plan = "claude-opus-4-6"
+    render(
+      <ParamForm
+        subject="math"
+        onSubmit={vi.fn()}
+        disabled={false}
+        initialParams={{ topic: "分數", model_plan: "claude-opus-4-6" }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "產生" }));
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(1));
+    expect((planCoreQuestionsMock.mock.calls[0][0] as Record<string, unknown>).model_plan).toBe("claude-opus-4-6");
+
+    // Return to form and change 規劃模型 to gemini-3.1-pro-preview
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+    const plannerModelSelect = screen.getByRole("combobox", { name: "規劃模型" });
+    fireEvent.change(plannerModelSelect, { target: { value: "gemini-3.1-pro-preview" } });
+
+    // Submit again to confirmation
+    fireEvent.click(screen.getByRole("button", { name: "產生" }));
+    await waitFor(() => expect(planCoreQuestionsMock).toHaveBeenCalledTimes(2));
+    const secondCall = planCoreQuestionsMock.mock.calls[1][0] as Record<string, unknown>;
+    expect(secondCall.model_plan).toBe("gemini-3.1-pro-preview");
+    // Still one request per distinct input (2 distinct inputs → 2 calls total)
+    expect(planCoreQuestionsMock).toHaveBeenCalledTimes(2);
+  });
+
   it("N=1 displays and submits the same one-element per-question payload", async () => {
     getSchemasMock.mockResolvedValue(MATH_SCHEMA_WITH_CURRICULUM);
     const onSubmit = vi.fn();

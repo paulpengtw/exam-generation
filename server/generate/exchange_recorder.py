@@ -133,6 +133,15 @@ class ExchangeRecorder:
                     else:
                         req = self._pending_legacy.pop(agent, None)
                 self._flush(agent, req, event)
+                return
+            if event_type == "llm_failure":
+                agent = str(event.get("agent", ""))
+                with self._lock:
+                    if identity is not None:
+                        req = self._pending_by_call.pop(identity, None)
+                    else:
+                        req = self._pending_legacy.pop(agent, None)
+                self._flush_failure(agent, req, event)
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("ExchangeRecorder failed to handle event: %s", exc)
 
@@ -231,6 +240,89 @@ class ExchangeRecorder:
         except Exception as exc:
             logger.warning(
                 "ExchangeRecorder write failed (agent=%s, order=%d): %s",
+                agent,
+                order,
+                exc,
+            )
+
+    def _flush_failure(
+        self,
+        agent: str,
+        req: dict[str, Any] | None,
+        failure_event: dict[str, Any],
+    ) -> None:
+        """Persist a failed provider call as an LLMExchange row.
+
+        The row uses request_body from the matching pending request (if any)
+        and encodes the ProviderErrorDetail fields in response_body["error"].
+        prompt_tokens and completion_tokens are always None — no completion
+        occurred.
+        """
+        _DETAIL_KEYS = (
+            "provider",
+            "model",
+            "http_status",
+            "provider_error_type",
+            "provider_error_code",
+            "provider_error_status",
+            "provider_message",
+            "request_id",
+            "retry_after_seconds",
+            "raw_body_truncated",
+            "error_type",
+        )
+
+        if self._next_order is not None:
+            order = self._next_order()
+        else:
+            with self._lock:
+                order = next(self._counter)
+
+        source = req or failure_event
+        error_body: dict[str, Any] = {
+            k: failure_event.get(k) for k in _DETAIL_KEYS if k in failure_event
+        }
+
+        response_body: dict[str, Any] = {"error": error_body}
+        failure_identity = self._identity_fields(failure_event)
+        if failure_identity:
+            response_body["identity"] = failure_identity
+
+        row: dict[str, Any] = {
+            "generation_log_id": self._log_id,
+            "exchange_order": order,
+            "agent": agent,
+            "purpose": str(source.get("purpose", "")),
+            "request_body": (
+                {
+                    "messages": req.get("messages"),
+                    "params": req.get("params"),
+                    "model": req.get("model"),
+                }
+                if req is not None
+                else None
+            ),
+            "response_body": response_body,
+            "model_used": str(source.get("model", "")),
+            "prompt_tokens": None,
+            "completion_tokens": None,
+        }
+        identity = self._identity_fields(req or failure_event)
+        if identity:
+            row.update(identity)
+        if req is not None:
+            request_identity = self._identity_fields(req)
+            if request_identity:
+                if row["request_body"] is not None:
+                    row["request_body"]["identity"] = request_identity
+
+        try:
+            write_result = self._write_row(row)
+            if isinstance(write_result, Future):
+                self.track_write(write_result)
+        except Exception as exc:
+            logger.warning(
+                "ExchangeRecorder write failed for llm_failure (agent=%s, order=%d): %s",
                 agent,
                 order,
                 exc,

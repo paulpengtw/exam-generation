@@ -372,32 +372,65 @@ function sameTerminalOutcome(left: QuestionTerminalPayload, right: QuestionTermi
 }
 
 /**
- * Transport/sidecar fields that the publisher adds to a `result` payload at
- * emission time and that are NOT part of the immutable content signature.
- * Confirmed by inspection of all five committed v2 fixtures: `metadata` is
- * null in `question_update` (draft) and populated in `result` (final) for the
- * same content_revision; all other question fields are byte-identical.
- * Excluding these from the fingerprint lets the draft→final promotion pass
- * without a false content conflict.
+ * Sidecar fields that the server strips at every depth before computing the
+ * content signature (issue #932).
+ *
+ * This set is the TypeScript mirror of CONTENT_SIGNATURE_EXCLUDED_KEYS in
+ * `src/common/generation_events.py` and must stay in sync with
+ * `contracts/content-sidecar-keys.json`.  A Python drift test
+ * (`tests/test_932_sidecar_contract.py`) asserts the Python constant matches
+ * that JSON file, and the vitest in
+ * `generationEvidence.sidecarCompare.test.ts` asserts the same for this side.
+ *
+ * Note on image_base64: the server hashes decoded image bytes rather than
+ * comparing base64 text.  The browser strips the field entirely here because
+ * the server guarantees that at any given content_revision the image bytes are
+ * fixed — if they changed, the server would have bumped the revision.
  */
-const CONTENT_SIDECAR_FIELDS = new Set(["metadata"]);
+export const CONTENT_SIDECAR_FIELDS = new Set([
+  "verification",
+  "verification_trail",
+  "figure_policy_trail",
+  "reference_example_record",
+  "image_base64",
+  "metadata",
+  "review",
+  "progress",
+  "export",
+  "_export",
+]);
 
 /**
- * A lightweight fingerprint for content-conflict detection (issue #749).
- * Normalises the question object by excluding transport/sidecar fields before
- * serialising.  An empty string on stringify failure ensures a mismatch is
+ * Recursively strip all sidecar keys from a question object (or any nested
+ * value).  Arrays are traversed element-by-element; non-object values are
+ * returned unchanged.
+ */
+function stripSidecarFields(value: unknown): unknown {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (!CONTENT_SIDECAR_FIELDS.has(k)) out[k] = stripSidecarFields(v);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    return value.map(stripSidecarFields);
+  }
+  return value;
+}
+
+/**
+ * A lightweight fingerprint for content-conflict detection (issue #749 /
+ * issue #932).
+ *
+ * Normalises the question object by recursively excluding all sidecar fields
+ * at every depth before serialising, matching the server's content-signature
+ * rule exactly.  An empty string on stringify failure ensures a mismatch is
  * never silently treated as identical.
  */
 function questionContentFingerprint(q: unknown): string {
-  if (q !== null && q !== undefined && typeof q === "object" && !Array.isArray(q)) {
-    const normalized: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(q as Record<string, unknown>)) {
-      if (!CONTENT_SIDECAR_FIELDS.has(k)) normalized[k] = v;
-    }
-    try { return JSON.stringify(normalized) ?? ""; } catch { return ""; }
-  }
   try {
-    return JSON.stringify(q) ?? "";
+    return JSON.stringify(stripSidecarFields(q)) ?? "";
   } catch {
     return "";
   }

@@ -1195,6 +1195,9 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
         output_dir=tmp_path,
         data_dir=Path("data"),
         llm_exchange_retention_days=30,
+        # Disable creative planning so the planner does not run (and therefore
+        # does not attempt a real Anthropic call with the fake api_key="x").
+        creative_planning=False,
     )
     params = _resolved_generate_params(
         {"subject": "social_studies", "count": 1, "seed": 41, "skip_verify": True}
@@ -1289,13 +1292,22 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
     rows = asyncio.run(_read())
     asyncio.run(engine.dispose())
 
-    assert [r.agent for r in rows] == ["generator", "verifier"]
-    assert [r.exchange_order for r in rows] == [1, 2]
+    # creative_planning=False ensures only the two fake observer events are
+    # recorded: one generator row and one verifier row, in that order.
+    assert len(rows) == 2, (
+        f"expected 2 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    )
+    assert rows[0].agent == "generator"
+    assert rows[0].exchange_order == 1
     assert rows[0].purpose == "generate"
     assert rows[0].prompt_tokens == 10
     assert rows[0].completion_tokens == 5
+    assert "error" not in (rows[0].response_body or {})
+    assert rows[1].agent == "verifier"
+    assert rows[1].exchange_order == 2
     assert rows[1].purpose == "verify"
     assert rows[1].model_used == "claude-sonnet-4-6"
+    assert "error" not in (rows[1].response_body or {})
 
 
 def test_generate_stream_shares_recorder_across_batch_workers(
@@ -1372,6 +1384,8 @@ def test_generate_stream_shares_recorder_across_batch_workers(
         output_dir=tmp_path,
         data_dir=Path("data"),
         llm_exchange_retention_days=30,
+        # Disable creative planning so no planner call is made with the fake key.
+        creative_planning=False,
     )
     params = _resolved_generate_params(
         {"subject": "social_studies", "count": 2, "seed": 41, "skip_verify": True}
@@ -1468,11 +1482,19 @@ def test_generate_stream_shares_recorder_across_batch_workers(
     rows = asyncio.run(_drive())
     asyncio.run(engine.dispose())
 
-    # Two questions x two exchanges each = 4 rows total.
-    assert len(rows) == 4
-    orders = sorted(r.exchange_order for r in rows)
-    assert orders == [1, 2, 3, 4]
-    assert len(set(orders)) == len(orders)
+    # creative_planning=False means no planner row is written.
+    # Each of the 2 fake workers emits exactly one generator event and one
+    # verifier event, so the total is always exactly 4 rows with orders [1..4].
+    assert len(rows) == 4, (
+        f"expected 4 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    )
+    orders = [r.exchange_order for r in rows]
+    assert sorted(orders) == [1, 2, 3, 4], f"non-contiguous exchange orders: {orders}"
+    agents = [r.agent for r in rows]
+    assert agents.count("generator") == 2
+    assert agents.count("verifier") == 2
+    for r in rows:
+        assert "error" not in (r.response_body or {}), f"unexpected failure row: agent={r.agent}"
 
 
 def test_generate_stream_flushes_exchange_recorders_concurrently(
