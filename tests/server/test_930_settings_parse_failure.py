@@ -29,7 +29,6 @@ from server.generate.run import (
 from server.models import Base, GenerationLog, GenerationQuestionState, GenerationRecord, User
 from tests.server.generate_test_utils import resolved_generate_params
 
-
 _MATH_PARAMS: dict[str, Any] = {
     "subject": "math",
     "seed": 41,
@@ -204,6 +203,8 @@ def test_settings_parse_failure_is_idempotent_one_tombstone(tmp_path: Path) -> N
                     )
                 )
             ).scalars().all()
-        assert len(records) == 1, f"expected 1 record after two identical writes, got {len(records)}"
+        assert len(records) == 1, (
+            f"expected 1 record after two identical writes, got {len(records)}"
+        )
 
     asyncio.run(_run())
