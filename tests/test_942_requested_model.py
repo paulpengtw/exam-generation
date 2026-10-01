@@ -452,12 +452,12 @@ def test_exchanges_endpoint_returns_requested_model_for_substituted_exchange() -
 
 
 # ---------------------------------------------------------------------------
-# Regression: legacy/no-scope path with switch OFF emits no llm_failure
+# Regression: legacy/no-scope path with switch OFF emits no requested_model
 # ---------------------------------------------------------------------------
 
 
-def test_llm_failure_not_emitted_when_no_scope_and_switch_off() -> None:
-    """Legacy callers (no scope) must not see llm_failure — guard is call_scope is not None."""
+def test_legacy_llm_failure_has_no_requested_model_when_switch_off() -> None:
+    """Legacy diagnostics omit requested_model when no Fable substitution occurred."""
     cfg = Config(
         api_key="test-only",
         model_execute="claude-opus-4-6",
@@ -486,11 +486,10 @@ def test_llm_failure_not_emitted_when_no_scope_and_switch_off() -> None:
             yield  # unreachable
 
     client.client = SimpleNamespace(messages=FailingMessagesAPI())
-    # No scope kwarg → _operation_scope returns None → call_scope is None → guard never fires.
+    # No scope kwarg → the failure remains a legacy event without call identity.
     with pytest.raises(RuntimeError):
         client.generate("sys", "user")  # no scope argument — legacy path
 
     failure_events = [e for e in events if e.get("type") == "llm_failure"]
-    assert failure_events == [], (
-        "llm_failure must NOT be emitted on the legacy (no-scope) path"
-    )
+    assert len(failure_events) == 1
+    assert "requested_model" not in failure_events[0]

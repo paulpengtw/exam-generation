@@ -34,6 +34,11 @@ _V2_FIXTURES = [
     "social_groups_interleaved.jsonl",
     "natural_sciences_groups_interleaved.jsonl",
     "math_abcd_transport.jsonl",
+    # issue #932: verified-run fixture (draft → post-verify draft → result, all at rev 1)
+    "math_single_verified.jsonl",
+    # issue #937 — blank-subquestion rejection produces partial delivery
+    "social_partial_delivery.jsonl",
+    "ns_partial_delivery.jsonl",
 ]
 
 # Fixtures that intentionally omit one or more events to simulate transport loss.

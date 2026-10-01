@@ -288,8 +288,10 @@ def test_schema_failure_reports_bad_question_field_and_type(
         event for event in observer.stages(status="error")
         if event.get("agent") == "sub_generator#2"
     )
+    # Issue #937: a non-string or blank 題目 is now caught before Pydantic; the
+    # error message still names the 題目 field but no longer includes the
+    # Pydantic-internal "string_type" type code.
     assert "題目" in error["message"]
-    assert "string_type" in error["message"]
     warning = next(
         record for record in _core_warnings(caplog)
         if "subquestion generation exhausted" in record.getMessage()

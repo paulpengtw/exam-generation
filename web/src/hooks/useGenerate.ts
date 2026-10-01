@@ -358,6 +358,8 @@ export interface UseGenerateReturn {
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
+  /** issue #946 — taxonomy code when errorMessage comes from a structured error event. */
+  errorFailureClass: string | null;
   startedAt: number | null;
   finishedAt: number | null;
   generationLogId: string | null;
@@ -390,6 +392,95 @@ export interface UseGenerateReturn {
    */
   cancelRun: () => Promise<boolean>;
 }
+
+/**
+ * Parse an SSE error event's raw data string into a human-readable message.
+ *
+ * The server now emits structured JSON: `{"code": "...", "message": "..."}`.
+ * Older or third-party error sources may still send a plain string.  This
+ * helper handles both so the UI always has something useful to display.
+ *
+ * Rules:
+ * - Valid JSON with a non-empty `.message` string → return `.message`.
+ * - Anything else (invalid JSON, missing/non-string message) → return the
+ *   raw string unchanged, or "Unknown error" when the raw string is empty.
+ */
+export function parseErrorEventData(raw: string): string {
+  if (!raw) return "Unknown error";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      "message" in parsed &&
+      typeof (parsed as Record<string, unknown>).message === "string" &&
+      (parsed as Record<string, unknown>).message !== ""
+    ) {
+      return (parsed as Record<string, string>).message;
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return raw;
+}
+
+/**
+ * Parse an SSE error event's raw data string into a structured payload.
+ *
+ * Issue #946: extends ``parseErrorEventData`` to also extract the optional
+ * ``failure_class`` field so the UI can show a localized class label.
+ *
+ * Returns ``{ message, failureClass }`` where ``failureClass`` is ``null``
+ * when absent or unrecognized.
+ */
+export interface ErrorPayload {
+  message: string;
+  failureClass: string | null;
+}
+
+const TAXONOMY_CODES = new Set([
+  "auth_config",
+  "quota_billing_exhausted",
+  "rate_limited",
+  "overloaded",
+  "timeout",
+  "connection",
+  "context_length",
+  "content_filtered",
+  "malformed_response",
+  "unknown",
+]);
+
+export function parseErrorPayload(raw: string): ErrorPayload {
+  if (!raw) return { message: "Unknown error", failureClass: null };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed !== null && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      // Support both flat shape ({message, failure_class}) and
+      // v2 envelope shape ({event, context?, payload: {message, failure_class}}).
+      // When a "payload" object is present, read failure fields from it (Bug 2 fix).
+      const source: Record<string, unknown> =
+        typeof obj.payload === "object" && obj.payload !== null
+          ? (obj.payload as Record<string, unknown>)
+          : obj;
+      const msg =
+        typeof source.message === "string" && source.message !== ""
+          ? source.message
+          : null;
+      const fc =
+        typeof source.failure_class === "string" && TAXONOMY_CODES.has(source.failure_class)
+          ? source.failure_class
+          : null;
+      // Never return raw JSON as the message — fall back to "Unknown error"
+      return { message: msg ?? "Unknown error", failureClass: fc };
+    }
+  } catch {
+    // not JSON — use the raw string as the message (plain-text errors)
+  }
+  return { message: raw, failureClass: null };
+}
+
 function formatHttpErrorDetail(detail: unknown): string | null {
   if (typeof detail === "string" && detail !== "") return detail;
   if (!Array.isArray(detail)) return null;
@@ -627,6 +718,7 @@ export function useGenerate(): UseGenerateReturn {
   const evidenceRef = useRef<RunEvidenceState | null>(null);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorFailureClass, setErrorFailureClass] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const [generationLogId, setGenerationLogId] = useState<string | null>(null);
@@ -723,6 +815,7 @@ export function useGenerate(): UseGenerateReturn {
     setResults([]);
     setDisplayResults([]);
     setErrorMessage(null);
+    setErrorFailureClass(null);
     setStartedAt(null);
     setFinishedAt(null);
     setGenerationLogId(null);
@@ -850,36 +943,38 @@ export function useGenerate(): UseGenerateReturn {
           return;
         }
 
-        // Defensive run_id validation before the decoder sees the event.
-        // With a pre-seeded decoder, an event whose context.run_id differs from
-        // the accepted run is silently dropped by the decoder (kind:"ignore"),
-        // so the hook must detect the mismatch here and abort the stream.
+        // Parse the envelope once for run_id / manifest validation and
+        // error-event routing.  Kept outside the try so both uses can read it.
+        let envelopeContext: Record<string, unknown> | null = null;
+        let envelopePayload: unknown = undefined;
         try {
           const parsed = JSON.parse(ev.data) as unknown;
-          if (
-            parsed !== null &&
-            typeof parsed === "object" &&
-            "context" in (parsed as object) &&
-            (parsed as Record<string, unknown>).context !== null &&
-            typeof (parsed as Record<string, unknown>).context === "object" &&
-            "run_id" in ((parsed as Record<string, unknown>).context as object) &&
-            typeof ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id === "string"
-          ) {
-            const payloadRunId = ((parsed as Record<string, unknown>).context as Record<string, unknown>).run_id as string;
-            if (payloadRunId !== runId) {
-              closeStream();
-              return;
-            }
-            // If this is a "started" event, also validate the manifest (T3b)
+          if (parsed !== null && typeof parsed === "object") {
+            const pObj = parsed as Record<string, unknown>;
+            envelopePayload = pObj.payload;
             if (
-              ev.event === "started" &&
-              acceptedManifestRef.current !== null &&
-              "payload" in (parsed as object)
+              "context" in pObj &&
+              pObj.context !== null &&
+              typeof pObj.context === "object"
             ) {
-              const payload = ((parsed as Record<string, unknown>).payload) as Record<string, unknown> | null | undefined;
-              if (payload !== null && payload !== undefined && typeof payload === "object") {
-                const payloadTotal = (payload as Record<string, unknown>).total;
-                const payloadQuestions = (payload as Record<string, unknown>).questions;
+              envelopeContext = pObj.context as Record<string, unknown>;
+              // run_id mismatch: this event belongs to a different run — abort
+              if (
+                typeof envelopeContext.run_id === "string" &&
+                envelopeContext.run_id !== runId
+              ) {
+                closeStream();
+                return;
+              }
+              // Manifest validation for the "started" event (T3b)
+              if (
+                ev.event === "started" &&
+                acceptedManifestRef.current !== null &&
+                typeof pObj.payload === "object" && pObj.payload !== null
+              ) {
+                const payloadObj = pObj.payload as Record<string, unknown>;
+                const payloadTotal = payloadObj.total;
+                const payloadQuestions = payloadObj.questions;
                 const accepted = acceptedManifestRef.current;
                 const totalMismatch = typeof payloadTotal === "number" && payloadTotal !== accepted.total;
                 let idsMismatch = false;
@@ -899,6 +994,43 @@ export function useGenerate(): UseGenerateReturn {
             }
           }
         } catch { /* non-JSON or missing fields — let decoder handle */ }
+
+        // Error events are either run-level (no context.question_id) or
+        // question-scoped (context.question_id present).
+        //
+        // Bug 1 fix: only run-level errors close the stream and set run status
+        // to "error".  Question-scoped errors (e.g. generation_failed for one
+        // question) fall through to the decoder so sibling questions keep
+        // streaming — consistent with the sibling-independence rule (#747).
+        if (ev.event === "error") {
+          const questionId =
+            envelopeContext !== null && typeof envelopeContext.question_id === "string"
+              ? envelopeContext.question_id
+              : null;
+
+          if (questionId === null) {
+            // Run-level error: set error state and permanently close the stream.
+            // Bug 2 fix: read failure fields from envelope.payload, not the
+            // full envelope, so message/failure_class are found correctly.
+            const payloadStr =
+              envelopePayload !== null && typeof envelopePayload === "object"
+                ? JSON.stringify(envelopePayload)
+                : "";
+            const errPayload = parseErrorPayload(payloadStr);
+            const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+            const localizedErrMsg = errPayload.failureClass
+              ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+              : errPayload.message;
+            setErrorFailureClass(errPayload.failureClass);
+            setErrorMessage(localizedErrMsg);
+            setStatus("error");
+            setResultsCompletion("error");
+            endOperation("failed");
+            closeStream();
+            return;
+          }
+          // Question-scoped error: fall through to the decoder.
+        }
 
         const decoded = decoder.decode(ev.event, ev.data);
         for (const decodedEvent of decoded) {
@@ -947,7 +1079,7 @@ export function useGenerate(): UseGenerateReturn {
         throw err; // prevent fetchEventSource retry
       },
     });
-  }, []);
+  }, [endOperation]);
 
   /** Fold a polled snapshot into state. Repeating the same snapshot changes nothing. */
   const applySnapshot = useCallback((snapshot: RunSnapshot, run: ActiveRun): { ended: boolean } => {
@@ -1020,7 +1152,19 @@ export function useGenerate(): UseGenerateReturn {
     const completedAt = snapshot.completed_at !== null ? Date.parse(snapshot.completed_at) : Number.NaN;
     setFinishedAt(Number.isNaN(completedAt) ? Date.now() : completedAt);
     if (snapshot.status === "failed") {
-      setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+      // issue #946: use snapshot.failure_class when present to show localized message
+      const snapshotFc =
+        typeof snapshot.failure_class === "string" && TAXONOMY_CODES.has(snapshot.failure_class)
+          ? snapshot.failure_class
+          : null;
+      setErrorFailureClass(snapshotFc);
+      if (snapshotFc !== null) {
+        const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+        const localizedErrMsg = `${errMessages[`error.class.${snapshotFc}`] ?? snapshot.error ?? localMessage("generate.run_failed")}\n${errMessages[`error.class_hint.${snapshotFc}`] ?? ""}`.trim();
+        setErrorMessage(localizedErrMsg);
+      } else {
+        setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+      }
       setStatus("error");
       setResultsCompletion("error");
       setTerminalEvidence(false);
@@ -1378,6 +1522,7 @@ export function useGenerate(): UseGenerateReturn {
     llmCalls,
     agentLanes,
     errorMessage,
+    errorFailureClass,
     startedAt,
     finishedAt,
     generationLogId,

@@ -517,7 +517,8 @@ async def persist_failed_generation_record(
     user_id: uuid.UUID,
     generation_log_id: uuid.UUID | None,
     subject: str,
-    params: Any,
+    params: Any = None,
+    params_json_raw: dict | None = None,
     error: str,
     session_factory: Any,
     model_substitutions_dict: dict[str, Any] | None = None,
@@ -530,8 +531,17 @@ async def persist_failed_generation_record(
 
     *model_substitutions_dict* — when non-empty, the ``model_substitutions`` key
     is added to ``params_json`` (issue #943).
+    Pass either a parsed *params* (``GenerateParams`` instance) or a raw
+    *params_json_raw* dict for cases where the params failed to parse (e.g.
+    schema drift across a deploy).  A duplicate insert for the same
+    ``(generation_log_id, question_id="")`` pair is silently absorbed by the
+    unique constraint, so calling this twice leaves exactly one record.
     """
     try:
+        if params is not None:
+            stored_params_json: dict = params.model_dump(mode="json")
+        else:
+            stored_params_json = dict(params_json_raw) if params_json_raw else {}
         figure_policy_trail_json = await _staged_figure_policy_trail(
             generation_log_id,
             session_factory,
@@ -540,7 +550,7 @@ async def persist_failed_generation_record(
             generation_log_id,
             session_factory,
         )
-        params_json_value: dict[str, Any] = params.model_dump(mode="json")
+        params_json_value = stored_params_json
         # Strip any client-supplied model_substitutions; only server-derived dict is stored.
         params_json_value.pop("model_substitutions", None)
         if model_substitutions_dict:

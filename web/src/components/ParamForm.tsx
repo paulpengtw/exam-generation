@@ -1973,6 +1973,8 @@ export default function ParamForm({
       subject,
       subject_filter: pendingSubjectFilter,
       grade: latestParams.grade,
+      model_plan: latestParams.model_plan ?? null,
+      effort_plan: latestParams.effort_plan ?? null,
     });
     if (activeRequest?.inputKey === inputKey) return;
 
@@ -1992,6 +1994,8 @@ export default function ParamForm({
       subject,
       subject_filter: pendingSubjectFilter,
       grade: latestParams.grade,
+      model_plan: latestParams.model_plan || undefined,
+      effort_plan: latestParams.effort_plan || undefined,
     }).then(({ candidates }) => {
       if (coreQuestionPlannerRef.current !== request) return;
       coreQuestionPlannerRef.current = null;
@@ -5275,6 +5279,8 @@ export default function ParamForm({
               onPick={(q) => setField("coreQuestion", q)}
               onClear={() => setField("coreQuestion", null)}
               pickedValue={coreQuestion}
+              modelPlan={modelPlan || undefined}
+              effortPlan={effortPlan || undefined}
             />
           )}
         </div>
