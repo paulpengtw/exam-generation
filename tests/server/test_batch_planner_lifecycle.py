@@ -176,11 +176,23 @@ def test_completed_planner_exchange_survives_later_generation_failure(planner_ca
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
-    # The planner's successful exchange must be present; failed generation
-    # workers may also produce llm_failure rows now.
-    planner_rows = [row for row in rows if row["agent"] == "planner"]
-    assert planner_rows, "planner exchange row must exist"
-    assert planner_rows[0]["response_body"]["reasoning"] == "planning evidence"
+    # Exactly 3 rows: planner success (order 1) + 2 generator failures (orders 2-3).
+    # sub_question_count=3 but text generators fail before any sub_generators run.
+    assert len(rows) == 3, (
+        f"expected 3 rows, got {len(rows)}: {[(r['agent'], r['exchange_order']) for r in rows]}"
+    )
+    assert rows[0]["agent"] == "planner"
+    assert rows[0]["exchange_order"] == 1
+    assert "error" not in (rows[0]["response_body"] or {}), "planner success row must not have error"
+    assert rows[0]["response_body"]["reasoning"] == "planning evidence"
+    assert rows[1]["agent"] == "generator"
+    assert rows[1]["exchange_order"] == 2
+    assert "error" in (rows[1]["response_body"] or {}), "generator failure row must carry response_body['error']"
+    assert rows[1]["prompt_tokens"] is None
+    assert rows[2]["agent"] == "generator"
+    assert rows[2]["exchange_order"] == 3
+    assert "error" in (rows[2]["response_body"] or {}), "generator failure row must carry response_body['error']"
+    assert rows[2]["prompt_tokens"] is None
     history = client.get("/api/history").json()
     detail = client.get(f"/api/history/{history['items'][0]['id']}").json()
     assert detail["status"] == "failed"
@@ -201,17 +213,27 @@ def test_failed_planner_falls_back_to_generation_without_fabricating_exchange(
     response = client.get(f"/api/generation-logs/{log_id}/exchanges")
     assert response.status_code == 200
     rows = response.json()
-    assert rows
-    # A failed planning call may now produce a failure row (response_body["error"]),
-    # but must NOT produce a fabricated successful exchange row.
-    planner_success = [
-        row for row in rows
-        if row["agent"] == "planner" and "error" not in row.get("response_body", {})
-    ]
-    assert not planner_success, (
-        "failed planner must not fabricate a successful exchange row"
+    # Exactly 9 rows: 1 planner failure (order 1) + 2 questions × (1 generator +
+    # 3 sub_generator#N) = 8 generation successes (orders 2-9).
+    assert len(rows) == 9, (
+        f"expected 9 rows, got {len(rows)}: {[(r['agent'], r['exchange_order']) for r in rows]}"
     )
-    assert any(row["agent"] == "generator" for row in rows)
+    # Row 0: planner failure
+    assert rows[0]["agent"] == "planner"
+    assert rows[0]["exchange_order"] == 1
+    assert "error" in (rows[0]["response_body"] or {}), "planner failure row must carry response_body['error']"
+    assert rows[0]["prompt_tokens"] is None
+    # Remaining 8 rows: all generation successes (no "error" key)
+    gen_rows = rows[1:]
+    assert len(gen_rows) == 8
+    generator_rows = [r for r in gen_rows if r["agent"] == "generator"]
+    subgen_rows = [r for r in gen_rows if r["agent"].startswith("sub_generator")]
+    assert len(generator_rows) == 2, f"expected 2 generator rows, got {len(generator_rows)}"
+    assert len(subgen_rows) == 6, f"expected 6 sub_generator rows, got {len(subgen_rows)}"
+    for r in gen_rows:
+        assert "error" not in (r["response_body"] or {}), (
+            f"generation row must not have error: agent={r['agent']}"
+        )
 
 
 def test_disabled_recording_keeps_planner_activity_and_results(planner_case: Any) -> None:
