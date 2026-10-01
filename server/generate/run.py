@@ -34,6 +34,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1143,19 +1144,27 @@ async def execute_run(
             if time_limit_exceeded_event.is_set():
                 raise _TimeLimitExceededError("time_limit exceeded during generation")
             if event.get("event") == SSEEventName.ERROR:
-                status = "failed"
-                # issue #946: capture both error and failure_class from the same
-                # (first) error event so they are always consistent.  Subsequent
-                # error events are ignored for persistence purposes.
-                if error is None:
-                    payload = event.get("payload")
-                    if isinstance(payload, dict):
-                        error = payload.get("message", str(payload))
-                        fc = payload.get("failure_class")
-                        if isinstance(fc, str) and fc:
-                            failure_class = fc
-                    else:
-                        error = str(payload)
+                _err_context = event.get("context") or {}
+                _err_question_id = _err_context.get("question_id")
+                if not isinstance(_err_question_id, str):
+                    # Issue #931: only batch-scoped ERRORs (no question_id, e.g.
+                    # batch_generation_failed, started_invalid) make the whole run
+                    # fail immediately.  Question-scoped ERRORs are handled by
+                    # _QuestionStateRecorder; the run status is derived after the
+                    # stream ends from whether any question delivered a final result.
+                    status = "failed"
+                    # issue #946: capture both error and failure_class from the same
+                    # (first) error event so they are always consistent.  Subsequent
+                    # error events are ignored for persistence purposes.
+                    if error is None:
+                        payload = event.get("payload")
+                        if isinstance(payload, dict):
+                            error = payload.get("message", str(payload))
+                            fc = payload.get("failure_class")
+                            if isinstance(fc, str) and fc:
+                                failure_class = fc
+                        else:
+                            error = str(payload)
             await recorder.observe(event)
             await _publish_live(run_str_id, event)
     except _TimeLimitExceededError:
@@ -1164,6 +1173,17 @@ async def execute_run(
         # Conservative: _TimeLimitExceededError is not a provider error; use "unknown".
         failure_class = "unknown"
         logger.info("run %s reached 2h time limit; terminating", claimed.run_id)
+    except ValidationError as exc:  # issue #930 — schema drift across a deploy
+        status = "failed"
+        error = "run_settings_parse_failure"
+        failure_class = "unknown"
+        # Log enough for operators to spot schema drift without leaking param content.
+        logger.warning(
+            "generation run %s: params_json failed GenerateParams validation "
+            "(%d error(s)) — possible schema drift; params is left unparsed",
+            claimed.run_id,
+            exc.error_count(),
+        )
     except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
         status = "failed"
         error = f"Run execution failed ({type(exc).__name__})"
@@ -1198,12 +1218,38 @@ async def execute_run(
     # Issue #911: time-limit and recovery_exhausted use a specific terminal reason.
     unfinished_reason = error or "question ended without a terminal"
     await recorder.fail_unfinished(unfinished_reason)
-    if status == "failed" and params is not None:
+    # Issue #931: derive final status from question outcomes when no batch-level
+    # error or outer exception forced the run to failed.  A run completes when at
+    # least one question delivered a final result; it is failed only when no
+    # question delivered any final result (conservative all-question-fail policy).
+    if status == "completed":
+        async with session_factory() as _derive_session:
+            _question_states = (
+                await _derive_session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == claimed.run_id
+                    )
+                )
+            ).scalars().all()
+        _any_final = any(
+            isinstance(s.terminal_json, dict) and s.terminal_json.get("has_final") is True
+            for s in _question_states
+        )
+        if not _any_final:
+            status = "failed"
+            if error is None:
+                error = "all_questions_failed"
+    if status == "failed":
+        # issue #930: when params_json failed to parse, use the raw dict so we
+        # still write exactly one failure record (idempotent via unique constraint).
         await persist_failed_generation_record(
             user_id=claimed.user_id,
             generation_log_id=claimed.run_id,
-            subject=params.subject,
+            subject=params.subject if params is not None else str(
+                claimed.params_json.get("subject", "")
+            ),
             params=params,
+            params_json_raw=claimed.params_json if params is None else None,
             error=error or "Generation failed",
             session_factory=session_factory,
         )

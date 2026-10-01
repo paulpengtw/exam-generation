@@ -240,6 +240,7 @@ Environment variables (set in `.env` or export directly):
 | `LLM_RATE_LIMIT_DELAY` | CLI + server | Seconds to wait before each API call (prevents 429 errors) | `0` |
 | `LLM_MAX_RETRIES` | CLI + server | Max correction attempts when verification fails | `3` |
 | `LLM_TEMPERATURE` | CLI + server | Sampling temperature forwarded to the API; unset = provider default; ignored for `claude-opus-4-6` because adaptive thinking is enabled, and for models that reject sampling params (claude-opus-5, claude-sonnet-5, claude-fable-5, claude-opus-4-7, claude-opus-4-8 and dated variants, gemini-3.x, gpt-5.x, and o1/o3/o4) | (unset) |
+| `LLM_FABLE_DOWNGRADE` | CLI + server | When `1` or `true`, any call whose model id contains `"fable"` is transparently dispatched to `claude-opus-4-6`; `xhigh` effort is clamped to `high`. One WARNING per substituted call names both ids. On Railway this is a backend service variable; a change takes effect only after the staged deploy completes. | (unset) |
 | `SUBGEN_MAX_CONCURRENCY` | CLI + server | Max concurrent 子題產生器 LLM calls per 題組 (SS/NS only) | `6` |
 | `SUBGEN_RETRIES` | CLI + server | Extra fresh-call attempts for a failed/unparseable 子題產生器 slot before that 子題 is dropped (SS/NS only; `0` = drop on first failure) | `1` |
 | `OUTPUT_DIR` | CLI | Directory for generated output | `./output` |

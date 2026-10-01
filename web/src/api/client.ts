@@ -197,6 +197,8 @@ export interface PlanCoreQuestionsRequest {
   subject?: string;
   subject_filter?: string[];
   grade?: number;
+  model_plan?: string;
+  effort_plan?: string;
 }
 
 export interface PlanCoreQuestionsResponse {

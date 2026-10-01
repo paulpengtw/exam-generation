@@ -21,6 +21,12 @@ export interface CoreQuestionPickerProps {
   onPick: (coreQuestion: string) => void;
   onClear: () => void;
   pickedValue: string | null;
+  /** Form's 規劃模型 (model_plan) to send with candidate requests.
+   *  When empty or absent, the server's default planner model is used. */
+  modelPlan?: string;
+  /** Form's 規劃 Effort (effort_plan) to send with candidate requests.
+   *  When empty or absent, the server's default effort is used. */
+  effortPlan?: string;
 }
 
 export default function CoreQuestionPicker({
@@ -31,6 +37,8 @@ export default function CoreQuestionPicker({
   onPick,
   onClear,
   pickedValue,
+  modelPlan,
+  effortPlan,
 }: CoreQuestionPickerProps) {
   const t = useT();
   const [candidates, setCandidates] = useState<string[]>([]);
@@ -43,6 +51,8 @@ export default function CoreQuestionPicker({
           subject,
           subject_filter: subjectFilter ? [subjectFilter] : undefined,
           grade,
+          model_plan: modelPlan || undefined,
+          effort_plan: effortPlan || undefined,
         }, signal);
       } catch (err) {
         // issue #946: when the 502 body has a recognized failure_class, show

@@ -152,6 +152,7 @@ Open the **backend** service, click the **Variables** tab, and add the following
 | `OPENAI_API_KEY` | An OpenAI `sk-...` key *(optional)* | Required only if using a `gpt-*` or o-series model |
 | `LLM_RATE_LIMIT_DELAY` | `2` | Wait 2 seconds between Claude calls (avoids rate-limit errors) |
 | `LLM_TEMPERATURE` | (unset) | Optional sampling temperature; leave unset to use the provider default. Ignored for models that reject sampling params. |
+| `LLM_FABLE_DOWNGRADE` | (unset / off) | Set to `1` or `true` to transparently dispatch any call whose model id contains `"fable"` to `claude-opus-4-6` instead. `xhigh` effort is clamped to `high` for the substituted model. One WARNING per substituted call is logged; events and records still carry the original requested id. Backend service only — a Railway variable change takes effect only after the staged deploy completes. |
 | `JWT_SECRET` | A long random string (see below) | Used to sign login tokens |
 | `JWT_EXPIRE_DAYS` | `7` | Keeps each login token valid for 7 days |
 | `SESSION_RENEWAL_THRESHOLD_MINUTES` | `360` | Renews a login session when less than 360 minutes remain on the token |
@@ -349,6 +350,7 @@ docker compose exec gateway python scripts/admission_gate.py status --require OP
    - `GATEWAY_RELEASE_REVISION` → `1` for the first controller record
    - `GATEWAY_READER_VERSION` → the recovery-reader version, for example `reader-1`
    - `GATEWAY_SUPPORTED_RECOVERY_FORMATS` → comma-separated formats accepted during recovery, default `exam-generation.recovery/1`. The web client's 儲存草稿並更新 requires the published policy to list `exam-generation.recovery/1`.
+   - `GATEWAY_STATE_DIR` → optional; defaults to `/var/lib/examgen-gate`. Override this to point the gateway at a fresh subdirectory on the same volume when re-seeding the policy record (for example during the staging environment switch-over — see below). The directory is created automatically on first write.
    - `PORT` → `8000` explicitly — set this so the gateway listens on the port its public domain targets.  Without it the domain answers 502 "Application failed to respond" even though the deploy shows as succeeded.
 4. Give the gateway service a **public domain** (Railway → Settings → Networking → Generate Domain).  Set the domain's target port to `8000`, matching `PORT`.
 5. Update the **frontend** service: change `BACKEND_HOST` from the backend's domain to the gateway's new domain.
@@ -831,14 +833,71 @@ These steps cannot be done in code and require direct Railway + gateway operator
 2. **Set the Railway backend environment variable**: in the Railway **staging** backend
    service → Variables, set `RELEASE_ENVIRONMENT = staging`. Redeploy the backend.
 
-3. **Update the gateway policy record**: on the staging gateway, update `admission.json`
-   so that the `exam-generation.release-policy/1` record contains `"environment": "staging"`.
-   Use `scripts/release_control.py` or the gateway control endpoint; the `RELEASE_ENVIRONMENT`
-   env var on the gateway service itself should also be `staging` (set in Step 1 of the
-   gateway Railway deployment steps in the section above).
+3. **Seed a fresh gateway policy record with `environment: staging`**: the release
+   controller rejects any stored record whose `environment` field differs from its own
+   `RELEASE_ENVIRONMENT` value, and no control endpoint can rewrite `environment` in an
+   existing record.  The only safe path is to point the gateway at a new, empty state
+   directory on the **same volume** so that the controller seeds a fresh record on the
+   next start.
+
+   In the Railway **staging** gateway service → Variables, set (or update):
+
+   | Variable | Value |
+   |---|---|
+   | `RELEASE_ENVIRONMENT` | `staging` |
+   | `GATEWAY_STATE_DIR` | a new subfolder on the volume, e.g. `/var/lib/examgen-gate/staging` |
+   | `GATEWAY_RELEASED_BUILD_ID` | the live staging frontend build ID (from `GET /build-meta.json`) |
+   | `GATEWAY_RELEASE_REVISION` | a value **higher than the old record's revision** (e.g. add 1) |
+
+   The directory named by `GATEWAY_STATE_DIR` must not exist yet (or must not contain an
+   `admission.json`); the gateway creates it automatically.  The old record in the
+   original state directory is left on disk, unused — it can be deleted later by removing
+   the files inside it, but leaving it in place is harmless.
+
+   Redeploy the gateway.  The controller seeds a fresh paused record with
+   `"environment": "staging"`.  Then open the gate:
+
+   ```bash
+   curl -X POST https://<gateway-domain>/gateway/admission \
+     -H "X-Gateway-Control-Token: <your-token>" \
+     -H "Content-Type: application/json" \
+     -d '{"state": "open"}'
+   ```
+
+   > **If follow mode is enabled** (`GATEWAY_FOLLOW_FRONTEND=1`): the staging follow hook
+   > (`50-follow-release.sh`) posts the new bundle's `build_id` on every frontend
+   > container start, which advances the `released_build_id` atomically.  You still need
+   > to open the gate manually after the initial seed, but you do not need to update
+   > `GATEWAY_RELEASED_BUILD_ID` on subsequent deploys.  If the follow hook runs before
+   > the gateway has a policy record (e.g. `GATEWAY_RELEASED_BUILD_ID` was unset), the
+   > hook has nothing to advance — make sure `GATEWAY_RELEASED_BUILD_ID` is set on the
+   > gateway's first start so the seed record is created.
 
 The order matters: change the frontend build first so the new bundle's `released_build_id`
 can be recorded before the gateway policy is updated to `staging`.
+
+### Volume and policy pitfalls
+
+Avoid these mistakes encountered during the 2026-09-29 staging switch-over:
+
+- **Deleting and re-adding the Railway volume fails.**  If you try to detach and
+  re-attach the gateway volume in Railway, the platform returns "This service already
+  has a volume. Detach the existing volume before adding another" until the pending
+  deletion is fully applied.  Use the fresh-subdirectory approach above instead: keep
+  the existing volume and point `GATEWAY_STATE_DIR` at a new path within it.
+
+- **A gateway without a volume loses its policy record on every deploy.**  Each
+  container start writes to the `GATEWAY_STATE_DIR` path.  Without a persistent volume
+  the directory vanishes on restart and the gateway comes back paused (no record → fail
+  closed → 503 `AUTHORITY_UNAVAILABLE` on `/release/policy.json`).  Always attach a
+  volume before setting `GATEWAY_RELEASED_BUILD_ID`.
+
+- **If `GATEWAY_RELEASED_BUILD_ID` is unset on first start, no policy record is
+  created.**  The gateway only seeds a record when `GATEWAY_RELEASED_BUILD_ID` is
+  non-empty and no `admission.json` exists yet.  Without a seeded record the follow hook
+  (`50-follow-release.sh`) has nothing to advance — the gateway stays fail-closed until
+  a record is written.  Set `GATEWAY_RELEASED_BUILD_ID` before the first deploy (or
+  before the first deploy to a fresh state directory).
 
 ### Verification
 
