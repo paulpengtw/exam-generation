@@ -63,7 +63,7 @@ def _social_generate_request(**params: str) -> object:
     limiter.reset()
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            gate_params = {"subject": "social_studies", "stream_version": 2, **params}
+            gate_params = {"subject": "social_studies", "stream_version": 3, **params}
             return client.get(
                 "/api/generate",
                 params=gate_params,

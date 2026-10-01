@@ -13,6 +13,14 @@ The dedicated variable ``TEST_POSTGRES_URL`` (not ``DATABASE_URL``) is used
 because ``server/db.py`` reads ``DATABASE_URL`` at import time; overriding it
 would silently route every test that imports ``server.db`` through Postgres.
 
+Public helpers provided
+-----------------------
+``postgres_test_url(database=None) -> str | None``
+    Returns an asyncpg SQLAlchemy URL for either the ``TEST_POSTGRES_URL``
+    case or the pgserver fallback, optionally pointed at a different database.
+    Returns ``None`` when Postgres is unavailable.  Tests use this instead of
+    reading private plugin state such as ``_PGSERVER_CONNECT_ARGS``.
+
 Fixtures provided
 -----------------
 ``pg_engine`` (session-scoped, async, requires ``postgres`` marker)
@@ -39,6 +47,39 @@ _PGSERVER_CONNECT_ARGS: dict | None = None
 _PGSERVER_URL: str | None = None
 
 _ENV_VAR = "TEST_POSTGRES_URL"
+
+
+def postgres_test_url(database: str | None = None) -> str | None:
+    """Return an asyncpg SQLAlchemy URL for the test Postgres instance.
+
+    Points at *database* (default: the database from ``TEST_POSTGRES_URL``, or
+    ``postgres`` for the pgserver fallback).  Returns ``None`` when Postgres is
+    unavailable so callers can ``pytest.skip`` without importing private names.
+
+    For pgserver, the socket directory is embedded as ``?host=<dir>`` in the
+    returned URL so the URL is self-contained for both SQLAlchemy and asyncpg DSN
+    use.  Callers that need keyword-argument form for ``asyncpg.connect()`` can
+    derive it from the URL::
+
+        url = postgres_test_url()
+        if url and "?host=" in url:
+            socket_dir = url.split("?host=")[1]
+        else:
+            admin_dsn = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+    See the ``pg_engine`` fixture for session-level usage.
+    """
+    url = os.environ.get(_ENV_VAR)
+    if url:
+        if database is not None:
+            url = f"{url.rsplit('/', 1)[0]}/{database}"
+        return url
+    if _PGSERVER_CONNECT_ARGS is not None:
+        socket_dir = _PGSERVER_CONNECT_ARGS.get("host")
+        if socket_dir:
+            db = database or "postgres"
+            return f"postgresql+asyncpg://postgres@/{db}?host={socket_dir}"
+    return None
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -156,15 +197,18 @@ def pg_engine():
     import asyncio
 
     from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
 
+    # NullPool: each test drives the engine from its own asyncio.run() loop, and
+    # an asyncpg connection pooled on one loop cannot be reused on another.
     url = os.environ.get(_ENV_VAR)
     if url:
-        engine = create_async_engine(url, echo=False, pool_pre_ping=True)
+        engine = create_async_engine(url, echo=False, poolclass=NullPool)
     elif _PGSERVER_URL and _PGSERVER_CONNECT_ARGS:
         engine = create_async_engine(
             _PGSERVER_URL,
             echo=False,
-            pool_pre_ping=True,
+            poolclass=NullPool,
             connect_args=_PGSERVER_CONNECT_ARGS,
         )
     else:

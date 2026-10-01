@@ -149,7 +149,20 @@ function validateManifest(payload: Record<string, unknown>): { valid: boolean; r
   return { valid: true };
 }
 
-export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }): GenerationStreamDecoder {
+export function createGenerationStreamDecoder(options?: {
+  clock?: DecoderClock;
+  /**
+   * Pre-seed the decoder with the accepted run manifest so it starts in v2
+   * degraded mode immediately, without waiting for a "started" event.
+   * Use this for late SSE subscribers (issue #909): `execute_run` never
+   * replays the "started" event to subscribers who connected after it was
+   * published.  When pre-seeded, a "started" event that *does* arrive is
+   * passed through (as a v2 event) so the caller can validate the run_id /
+   * manifest; all other activity-only events are still ignored in degraded
+   * mode, while content / terminal events pass through as normal.
+   */
+  preSeededManifest?: RunManifest;
+}): GenerationStreamDecoder {
   let mode: DecoderMode = "awaiting-start";
   let run: RunManifest | null = null;
   const held: Array<{ name: string; rawData: string }> = [];
@@ -169,6 +182,22 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
   let seqPendingBytes = 0;
   let seqGapStart: number | null = null;
   let seqDegraded = false;
+  /**
+   * True when the decoder was pre-seeded with a manifest and has not yet
+   * received a "started" event.  In this window the "started" event passes
+   * through degraded mode so the caller can validate the run_id / manifest.
+   * After the first "started" is received (or when not pre-seeded) this flag
+   * is false and "started" is filtered like any other activity event.
+   */
+  let preSeededAwaitingStart = false;
+
+  // Pre-seeded mode: start in v2 + degraded without waiting for "started".
+  if (options?.preSeededManifest != null) {
+    mode = "v2";
+    run = options.preSeededManifest;
+    seqDegraded = true;
+    preSeededAwaitingStart = true;
+  }
 
   /** Record a processed seq → fingerprint pair. */
   function recordSeq(seq: number, rawData: string) {
@@ -267,7 +296,15 @@ export function createGenerationStreamDecoder(options?: { clock?: DecoderClock }
     }
 
     if (seqDegraded) {
-      if (eventName === "question_update" || eventName === "result" || eventName === "question_terminal") {
+      if (
+        eventName === "question_update" ||
+        eventName === "result" ||
+        eventName === "question_terminal" ||
+        // Pre-seeded late subscribers pass "started" through for run_id validation
+        // (only before the first "started" is received).
+        (preSeededAwaitingStart && eventName === "started")
+      ) {
+        if (eventName === "started") preSeededAwaitingStart = false;
         recordSeq(eventSeq, rawData);
         return [decoded];
       }

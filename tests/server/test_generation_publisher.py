@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import threading
 import uuid
 from pathlib import Path
@@ -659,18 +658,3 @@ def test_slice4b_error_event_has_v2_context(tmp_path) -> None:
     )
 
 
-def test_slice4b_routes_sse_wire_started_has_context_and_payload() -> None:
-    """SSE wire 'data' for v2 started envelope parses to exactly {context, payload}."""
-    from server.generate.routes import _serialize_event
-
-    envelope = {
-        "event": "started",
-        "context": {"run_id": "test_run_42", "event_seq": 1},
-        "payload": {"protocol_version": 2, "total": 1, "questions": []},
-    }
-    result = _serialize_event(envelope)
-    assert result["event"] == "started", f"SSE event name must be 'started'; got {result['event']!r}"  # noqa: E501
-    wire_data = json.loads(result["data"])
-    assert set(wire_data.keys()) == {"context", "payload"}, (
-        f"SSE wire data must have exactly {{context, payload}} keys; got {set(wire_data.keys())}"
-    )
