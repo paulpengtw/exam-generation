@@ -216,6 +216,7 @@ async def accept_run(
     session: AsyncSession,
     submission_key: str | None = None,
     queue_limit: int = QUEUE_LIMIT,
+    model_substitutions_dict: dict[str, Any] | None = None,
 ) -> AcceptedRun:
     """Record a queued run and its waiting questions in one transaction.
 
@@ -280,10 +281,17 @@ async def accept_run(
     manifest = allocate_manifest(
         SUBJECTS[params.subject].question_id_prefix, str(log_id), max(1, params.count)
     )
+    _params_json: dict[str, Any] = params.model_dump(
+        mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)
+    )
+    # Strip any client-supplied model_substitutions; only the server-derived dict is stored.
+    _params_json.pop("model_substitutions", None)
+    if model_substitutions_dict:
+        _params_json["model_substitutions"] = model_substitutions_dict
     new_log = GenerationLog(
         id=log_id,
         user_id=user_id,
-        params_json=params.model_dump(mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)),
+        params_json=_params_json,
         status="queued",
         # Queue order while queued; the first claim restamps it as the
         # execution start that the time limit is measured from.

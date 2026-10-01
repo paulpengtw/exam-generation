@@ -20,6 +20,12 @@ from server.auth.dependencies import get_config, get_current_user
 from server.config import ServerConfig
 from server.db import get_async_session
 from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
+from server.generate.model_substitutions import (
+    effective_tier_models as _effective_tier_models,
+)
+from server.generate.model_substitutions import (
+    model_substitutions as _model_substitutions,
+)
 from server.generate.models import (
     ALLOWED_SUBJECTS,
     SERVER_ONLY_GENERATE_FIELDS,
@@ -130,13 +136,11 @@ def _preview_generate(
     _check_model_allowed(params.model_verify, config, "model_verify")    # #375
     _check_model_allowed(params.model_correct, config, "model_correct")  # #375
     _check_subject_allowed(params.subject)
-    effective_plan_model = params.model_plan or config.model_plan
-    effective_execute_model = params.model_execute or config.model_execute
-    # #375: tier model resolution — request param → env var → effective execute model
-    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = (
-        params.model_correct or config.model_correct or effective_execute_model
-    )
+    _tier_models = _effective_tier_models(params, config)  # shared seam #943
+    effective_plan_model = _tier_models["plan"]
+    effective_execute_model = _tier_models["execute"]
+    effective_verify_model = _tier_models["verify"]
+    effective_correct_model = _tier_models["correct"]
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     # #377: effective execute effort (with per-request override applied)
     effective_execute_effort = params.effort_execute or config.effort_execute
@@ -320,6 +324,10 @@ async def generate_endpoint(
     effort_correct: str | None = Query(default=None),  # #377: per-request tier effort override
     reporting_scale: str | None = Query(default=None),
     stream_version: int | None = Query(default=None),  # submission protocol version gate
+    # #943: server-derived field; any client-supplied value is accepted here but
+    # silently discarded — the server always recomputes it from config.
+    # Typed as str | None so FastAPI can accept it (dict is not a valid Query type).
+    model_substitutions: str | None = Query(default=None),
     submission_key: str | None = Query(default=None),  # idempotency key (server-only)
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
@@ -440,6 +448,9 @@ async def _accept(
     params = _require_complete_generate_params(params)
     logger.info("generate request params=%s", params.model_dump(mode="json"))
     queue_limit = config.queue_limit if config is not None else QUEUE_LIMIT
+    # Compute server-derived model_substitutions (#943) before accept_run so
+    # the correct value is persisted in params_json from the first write.
+    subs = _model_substitutions(params, config) if config is not None else None
     try:
         accepted = await accept_run(
             params,
@@ -447,6 +458,7 @@ async def _accept(
             session=session,
             submission_key=submission_key,
             queue_limit=queue_limit,
+            model_substitutions_dict=subs or None,
         )
     except QueueLimitError:
         return JSONResponse(
@@ -568,14 +580,12 @@ def _check_generation_admission(params: GenerateParams, config: ServerConfig) ->
     _check_model_allowed(params.model_correct, config, "model_correct")  # #375
     _check_subject_allowed(params.subject)
     # Validate effort levels against the effective model's roster (BEFORE any LLM call).
-    effective_plan_model = params.model_plan or config.model_plan
-    effective_execute_model = params.model_execute or config.model_execute
-    # #375: tier model resolution — request param → env var → effective execute model.
-    # Note: chains off effective_execute_model (honours per-request model_execute override).
-    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = (
-        params.model_correct or config.model_correct or effective_execute_model
-    )
+    # Use shared seam so model_substitutions (#943) derives from the same resolution.
+    _tier_models = _effective_tier_models(params, config)
+    effective_plan_model = _tier_models["plan"]
+    effective_execute_model = _tier_models["execute"]
+    effective_verify_model = _tier_models["verify"]
+    effective_correct_model = _tier_models["correct"]
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     # #377: validate tier efforts against their effective model using the full inherited chain.
@@ -595,7 +605,6 @@ def _check_generation_admission(params: GenerateParams, config: ServerConfig) ->
     _check_provider_key_for_model(effective_execute_model, config, "model_execute")
     _check_provider_key_for_model(effective_verify_model, config, "model_verify")    # #375
     _check_provider_key_for_model(effective_correct_model, config, "model_correct")  # #375
-
 
 
 @router.post("/plan-core-questions", response_model=PlanCoreQuestionsResponse)
