@@ -272,6 +272,7 @@ class ExchangeRecorder:
             "provider_error_status",
             "provider_message",
             "request_id",
+            "tier",
             "retry_after_seconds",
             "raw_body_truncated",
             "error_type",

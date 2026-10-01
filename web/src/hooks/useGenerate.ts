@@ -20,6 +20,11 @@ import {
   DETACHED_RUN_PROTOCOL_VERSION,
   type RunSnapshot,
 } from "../lib/runSnapshot";
+import {
+  appendProviderFailureContext,
+  parseProviderFailureContext,
+  type ProviderFailureContext,
+} from "../lib/providerFailure";
 import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
 import { createGenerationStreamDecoder, type RunManifest } from "../lib/generationStream";
 import { fetchEventSource } from "@microsoft/fetch-event-source";
@@ -436,6 +441,7 @@ export function parseErrorEventData(raw: string): string {
 export interface ErrorPayload {
   message: string;
   failureClass: string | null;
+  providerContext: ProviderFailureContext | null;
 }
 
 const TAXONOMY_CODES = new Set([
@@ -452,7 +458,7 @@ const TAXONOMY_CODES = new Set([
 ]);
 
 export function parseErrorPayload(raw: string): ErrorPayload {
-  if (!raw) return { message: "Unknown error", failureClass: null };
+  if (!raw) return { message: "Unknown error", failureClass: null, providerContext: null };
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed !== null && typeof parsed === "object") {
@@ -472,13 +478,14 @@ export function parseErrorPayload(raw: string): ErrorPayload {
         typeof source.failure_class === "string" && TAXONOMY_CODES.has(source.failure_class)
           ? source.failure_class
           : null;
+      const providerContext = parseProviderFailureContext(source);
       // Never return raw JSON as the message — fall back to "Unknown error"
-      return { message: msg ?? "Unknown error", failureClass: fc };
+      return { message: msg ?? "Unknown error", failureClass: fc, providerContext };
     }
   } catch {
     // not JSON — use the raw string as the message (plain-text errors)
   }
-  return { message: raw, failureClass: null };
+  return { message: raw, failureClass: null, providerContext: null };
 }
 
 function formatHttpErrorDetail(detail: unknown): string | null {
@@ -1018,9 +1025,12 @@ export function useGenerate(): UseGenerateReturn {
                 : "";
             const errPayload = parseErrorPayload(payloadStr);
             const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
-            const localizedErrMsg = errPayload.failureClass
-              ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
-              : errPayload.message;
+            const localizedErrMsg = appendProviderFailureContext(
+              errPayload.failureClass
+                ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+                : errPayload.message,
+              errPayload.providerContext,
+            );
             setErrorFailureClass(errPayload.failureClass);
             setErrorMessage(localizedErrMsg);
             setStatus("error");
@@ -1161,9 +1171,14 @@ export function useGenerate(): UseGenerateReturn {
       if (snapshotFc !== null) {
         const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
         const localizedErrMsg = `${errMessages[`error.class.${snapshotFc}`] ?? snapshot.error ?? localMessage("generate.run_failed")}\n${errMessages[`error.class_hint.${snapshotFc}`] ?? ""}`.trim();
-        setErrorMessage(localizedErrMsg);
+        setErrorMessage(appendProviderFailureContext(localizedErrMsg, snapshot.failure_context));
       } else {
-        setErrorMessage(snapshot.error ?? localMessage("generate.run_failed"));
+        setErrorMessage(
+          appendProviderFailureContext(
+            snapshot.error ?? localMessage("generate.run_failed"),
+            snapshot.failure_context,
+          ),
+        );
       }
       setStatus("error");
       setResultsCompletion("error");

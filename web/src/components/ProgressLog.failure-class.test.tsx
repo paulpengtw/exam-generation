@@ -63,6 +63,20 @@ describe("ProgressLog — failure_class localized message (issue #946, task 6.5)
     expect(alertEl).toHaveTextContent("Please contact the administrator");
   });
 
+  it("renders provider context appended to the localized failure", () => {
+    render(
+      <ProgressLog
+        lines={[]}
+        status="error"
+        errorMessage={"Rate limited\nPlease try again.\ngemini · gemini-3.1-pro-preview · HTTP 429"}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "gemini · gemini-3.1-pro-preview · HTTP 429",
+    );
+  });
+
   it("renders raw message when no failure_class (fallback path)", () => {
     render(
       <ProgressLog

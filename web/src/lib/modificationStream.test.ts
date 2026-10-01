@@ -92,6 +92,26 @@ describe("decodeModificationEvent", () => {
     });
   });
 
+  it("appends safe provider context without exposing diagnostic body fields", () => {
+    const decoded = decodeModificationEvent(
+      "error",
+      JSON.stringify({
+        message: "provider failed",
+        failure_class: "rate_limited",
+        provider: "gemini",
+        model: "gemini-3.1-pro-preview",
+        http_status: 429,
+        provider_message: "secret response",
+        raw_body_truncated: "secret raw body",
+      }),
+    );
+    expect(decoded).toEqual({
+      kind: "error",
+      error: new Error("provider failed\ngemini · gemini-3.1-pro-preview · HTTP 429"),
+      failureClass: "rate_limited",
+    });
+  });
+
   it("ignores unrecognized failure_class values", () => {
     expect(
       decodeModificationEvent("error", '{"message":"err","failure_class":"bogus_code"}')

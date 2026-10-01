@@ -17,14 +17,26 @@ vi.mock("../api/client", () => ({
     detail: string;
     code?: string;
     failureClass?: string | null;
+    providerFailureContext?: {
+      provider?: string;
+      model?: string;
+      httpStatus?: number;
+      retryAfterSeconds?: number;
+    } | null;
 
-    constructor(status: number, detail: string, code?: string, _errors?: unknown, failureClass?: string | null) {
+    constructor(status: number, detail: string, code?: string, _errors?: unknown, failureClass?: string | null, providerFailureContext?: {
+      provider?: string;
+      model?: string;
+      httpStatus?: number;
+      retryAfterSeconds?: number;
+    } | null) {
       super(detail);
       this.name = "ApiError";
       this.status = status;
       this.detail = detail;
       this.code = code;
       this.failureClass = failureClass ?? null;
+      this.providerFailureContext = providerFailureContext ?? null;
     }
   },
   planCoreQuestions: vi.fn(),
@@ -156,6 +168,28 @@ describe("CoreQuestionPicker — failure_class localized message (issue #946)", 
     expect(alert).toHaveTextContent("Rate limited");
     expect(alert).toHaveTextContent("wait");
     expect(alert).not.toHaveTextContent("Planner provider call failed");
+  });
+
+  it("appends provider, model, and HTTP status to a provider failure", async () => {
+    const { ApiError, planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockRejectedValueOnce(
+      new ApiError(
+        502,
+        "Planner provider call failed",
+        "PLANNER_PROVIDER_ERROR",
+        undefined,
+        "rate_limited",
+        { provider: "gemini", model: "gemini-3.1-pro-preview", httpStatus: 429 },
+      ),
+    );
+
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "gemini · gemini-3.1-pro-preview · HTTP 429",
+    );
   });
 
   it("shows localized admin-only message for quota_billing_exhausted", async () => {

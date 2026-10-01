@@ -155,6 +155,28 @@ describe("parseRunSnapshot", () => {
       result: null,
     });
   });
+
+  it("parses safe provider failure context from a failed run", () => {
+    const parsed = parseRunSnapshot({
+      run_id: "run-1",
+      status: "failed",
+      failure_context: {
+        provider: "gemini",
+        model: "gemini-3.1-pro-preview",
+        tier: "execute",
+        http_status: 429,
+        retry_after_seconds: 12,
+        raw_body_truncated: "must not cross the API boundary",
+      },
+      questions: [{ index: 0, question_id: "q-1" }],
+    });
+    expect(parsed?.failure_context).toEqual({
+      provider: "gemini",
+      model: "gemini-3.1-pro-preview",
+      httpStatus: 429,
+      retryAfterSeconds: 12,
+    });
+  });
 });
 
 describe("applyRunSnapshot", () => {

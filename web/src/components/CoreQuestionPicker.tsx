@@ -3,6 +3,7 @@ import { ApiError, planCoreQuestions } from "../api/client";
 import { useLangStore } from "../store/langStore";
 import { MESSAGES } from "../i18n/messages";
 import { useT } from "../i18n/useT";
+import { appendProviderFailureContext } from "../lib/providerFailure";
 import {
   ActionButton,
   ActionFailure,
@@ -57,13 +58,18 @@ export default function CoreQuestionPicker({
       } catch (err) {
         // issue #946: when the 502 body has a recognized failure_class, show
         // a localized message; fall back to form.plan_error otherwise.
-        if (err instanceof ApiError && err.failureClass) {
+        if (err instanceof ApiError) {
           const lang = useLangStore.getState().lang;
           const msgs = MESSAGES[lang] ?? MESSAGES["en-US"];
-          const label = msgs[`error.class.${err.failureClass}`];
-          const hint = msgs[`error.class_hint.${err.failureClass}`];
-          if (label && hint) {
-            throw new ActionFailure(`${label}\n${hint}`);
+          let message = err.detail;
+          if (err.failureClass) {
+            const label = msgs[`error.class.${err.failureClass}`];
+            const hint = msgs[`error.class_hint.${err.failureClass}`];
+            if (label && hint) message = `${label}\n${hint}`;
+          }
+          const withContext = appendProviderFailureContext(message, err.providerFailureContext);
+          if (withContext !== err.detail || err.providerFailureContext != null) {
+            throw new ActionFailure(withContext);
           }
         }
         throw err;

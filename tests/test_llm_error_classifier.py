@@ -140,6 +140,16 @@ def test_quota_via_detail_402():
     assert classify_provider_error(None, detail=d) == "quota_billing_exhausted"
 
 
+def test_quota_gemini_compat_payment_required():
+    exc = _exc(
+        status_code=402,
+        body=[{"error": {
+            "code": 402, "message": "Billing account is disabled", "status": "FAILED_PRECONDITION",
+        }}],
+    )
+    assert classify_provider_error(exc) == "quota_billing_exhausted"
+
+
 # ---------------------------------------------------------------------------
 # 3. rate_limited
 # ---------------------------------------------------------------------------
@@ -208,6 +218,20 @@ def test_timeout_from_exception_class():
         exc.status_code = None  # type: ignore[attr-defined]
         exc.body = None  # type: ignore[attr-defined]
         exc.response = types.SimpleNamespace(headers={})  # type: ignore[attr-defined]
+
+    assert classify_provider_error(exc) == "timeout"
+
+
+def test_timeout_openai_compat_exception():
+    try:
+        from openai import APITimeoutError  # noqa: PLC0415
+
+        exc = APITimeoutError.__new__(APITimeoutError)
+    except (ImportError, TypeError):
+        class OpenAICompatTimeout(TimeoutError):
+            pass
+
+        exc = OpenAICompatTimeout("OpenAI-compatible request timed out")
 
     assert classify_provider_error(exc) == "timeout"
 
@@ -289,6 +313,16 @@ def test_malformed_response_500():
 
 def test_malformed_response_503():
     exc = _exc(status_code=503, body={"error": {"type": "api_error"}})
+    assert classify_provider_error(exc) == "malformed_response"
+
+
+def test_malformed_response_gemini_compat_500():
+    exc = _exc(
+        status_code=500,
+        body=[{"error": {
+            "code": 500, "message": "unexpected upstream response", "status": "INTERNAL",
+        }}],
+    )
     assert classify_provider_error(exc) == "malformed_response"
 
 

@@ -595,6 +595,7 @@ def test_plan_core_questions_provider_failure_includes_failure_class(monkeypatch
     failure_class=<classified>). The route handler reads it and exposes it in the 502 body.
     """
     from src.common.planner import CandidateValidationError
+    from src.llm_client import ProviderFailureContext
 
     app, token, engine = _make_app_and_token()
 
@@ -605,6 +606,13 @@ def test_plan_core_questions_provider_failure_includes_failure_class(monkeypatch
             expected_count=3,
             attempt=1,
             failure_class="quota_billing_exhausted",
+            provider_context=ProviderFailureContext(
+                provider="gemini",
+                model="gemini-3.1-pro-preview",
+                tier="plan",
+                http_status=429,
+                retry_after_seconds=20,
+            ),
         )
 
     monkeypatch.setattr("src.social_studies.planner.plan_core_questions", fake_plan)
@@ -624,8 +632,13 @@ def test_plan_core_questions_provider_failure_includes_failure_class(monkeypatch
     body = response.json()
     assert body.get("failure_class") == "quota_billing_exhausted"
     assert body.get("code") == "PLANNER_PROVIDER_ERROR"
+    assert body.get("provider") == "gemini"
+    assert body.get("model") == "gemini-3.1-pro-preview"
+    assert body.get("tier") == "plan"
+    assert body.get("http_status") == 429
+    assert body.get("retry_after_seconds") == 20
     # No raw provider error body text (e.g. exception class names or provider-specific codes)
-    # must appear in the response — only our sanitized fields (detail, code, failure_class)
+    # must appear in the response — only the detail, taxonomy, and safe context fields.
     for forbidden in ("APIError", "credit_balance", "enforced_spend", "AuthenticationError"):
         assert forbidden not in response.text, (
             f"Raw provider text leaked: {forbidden!r} found in {response.text!r}"

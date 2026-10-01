@@ -1028,6 +1028,27 @@ describe("useGenerate — parseErrorPayload (issue #946)", () => {
     expect(result.message).toBe("backend message");
   });
 
+  it("extracts only safe provider context fields", () => {
+    const raw = JSON.stringify({
+      message: "backend message",
+      failure_class: "rate_limited",
+      provider: "gemini",
+      model: "gemini-3.1-pro-preview",
+      http_status: 429,
+      retry_after_seconds: 12,
+      provider_message: "do not display this",
+      raw_body_truncated: "do not display this either",
+    });
+    const result = parseErrorPayload(raw);
+    expect(result.providerContext).toEqual({
+      provider: "gemini",
+      model: "gemini-3.1-pro-preview",
+      httpStatus: 429,
+      retryAfterSeconds: 12,
+    });
+    expect(JSON.stringify(result.providerContext)).not.toContain("do not display");
+  });
+
   it("returns failureClass=null when failure_class is absent", () => {
     const raw = JSON.stringify({ code: "generation_failed", message: "some error" });
     const result = parseErrorPayload(raw);

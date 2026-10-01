@@ -9,6 +9,8 @@ import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
 import { isResolverFieldErrorLike, type ResolverFieldErrorLike } from "../lib/resolverErrorMessages";
 import type { GenerationSlotReference } from "../lib/generationEvidence";
+import type { ProviderFailureContext } from "../lib/providerFailure";
+import { parseProviderFailureContext } from "../lib/providerFailure";
 
 export interface MagicLinkResponse {
   message: string;
@@ -68,6 +70,8 @@ export class ApiError extends Error {
   errors?: ResolverFieldErrorLike[];
   /** issue #946 — failure taxonomy code from structured error response bodies. */
   failureClass?: string | null;
+  /** Safe provider/model/status context from a structured provider failure. */
+  providerFailureContext?: ProviderFailureContext | null;
 
   constructor(
     status: number,
@@ -75,6 +79,7 @@ export class ApiError extends Error {
     code?: string,
     errors?: ResolverFieldErrorLike[],
     failureClass?: string | null,
+    providerFailureContext?: ProviderFailureContext | null,
   ) {
     super(detail);
     this.name = "ApiError";
@@ -83,6 +88,7 @@ export class ApiError extends Error {
     this.code = code;
     this.errors = errors;
     this.failureClass = failureClass ?? null;
+    this.providerFailureContext = providerFailureContext ?? null;
   }
 }
 
@@ -108,7 +114,13 @@ const _TAXONOMY_CODES_CLIENT = new Set([
 
 async function extractError(
   res: Response,
-): Promise<{ detail: string; code?: string; errors?: ResolverFieldErrorLike[]; failureClass?: string | null }> {
+): Promise<{
+  detail: string;
+  code?: string;
+  errors?: ResolverFieldErrorLike[];
+  failureClass?: string | null;
+  providerFailureContext?: ProviderFailureContext | null;
+}> {
   try {
     const body = await res.json() as unknown;
     if (body && typeof body === "object") {
@@ -124,12 +136,20 @@ async function extractError(
         typeof payload.failure_class === "string" && _TAXONOMY_CODES_CLIENT.has(payload.failure_class)
           ? payload.failure_class
           : null;
-      if (detail) return { detail, code, failureClass };
+      const providerFailureContext = parseProviderFailureContext(payload);
+      if (detail) return { detail, code, failureClass, providerFailureContext };
       // #835: keep the string path above unchanged; additionally surface a
       // non-string (array) `detail` as parsed field errors instead of
       // discarding it, so callers can format it readably.
       const errors = parseResolverFieldErrors(payload.detail);
-      if (errors) return { detail: `Request failed with status ${res.status}`, errors, failureClass };
+      if (errors) {
+        return {
+          detail: `Request failed with status ${res.status}`,
+          errors,
+          failureClass,
+          providerFailureContext,
+        };
+      }
     }
   } catch {
     // ignore
@@ -161,7 +181,14 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
       authState.logout();
     }
     const error = await extractError(res);
-    throw new ApiError(res.status, error.detail, error.code, error.errors, error.failureClass);
+    throw new ApiError(
+      res.status,
+      error.detail,
+      error.code,
+      error.errors,
+      error.failureClass,
+      error.providerFailureContext,
+    );
   }
   return res;
 }

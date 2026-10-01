@@ -48,9 +48,20 @@ from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams, 
 from server.generate.persistence import persist_failed_generation_record
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS, SubjectSpec
-from server.models import GenerationLog, GenerationQuestionState, GenerationRecord, User
+from server.models import (
+    GenerationLog,
+    GenerationQuestionState,
+    GenerationRecord,
+    LLMExchange,
+    User,
+)
 from src.common.generation_events import allocate_manifest
-from src.llm_client import classify_provider_error
+from src.llm_client import (
+    classify_provider_error,
+    provider_failure_sse_kwargs,
+    resolve_provider,
+    tier_for_purpose,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +358,63 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _safe_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    return value if isinstance(value, int) else None
+
+
+def _failure_context_from_exchange(exchange: LLMExchange) -> dict[str, Any] | None:
+    """Project a persisted provider diagnostic into the public safe allow-list."""
+    response_body = exchange.response_body
+    detail = response_body.get("error") if isinstance(response_body, dict) else None
+    if not isinstance(detail, dict):
+        return None
+
+    model = detail.get("model")
+    if not isinstance(model, str) or not model:
+        model = exchange.model_used or None
+    provider = detail.get("provider")
+    if not isinstance(provider, str) or not provider:
+        provider = resolve_provider(model) if model else None
+
+    context: dict[str, Any] = {}
+    if provider is not None:
+        context["provider"] = provider
+    if model is not None:
+        context["model"] = model
+    tier = detail.get("tier")
+    context["tier"] = tier if isinstance(tier, str) and tier else tier_for_purpose(exchange.purpose)
+
+    http_status = _safe_int(detail.get("http_status"))
+    if http_status is not None:
+        context["http_status"] = http_status
+    retry_after_seconds = _safe_int(detail.get("retry_after_seconds"))
+    if retry_after_seconds is not None:
+        context["retry_after_seconds"] = retry_after_seconds
+    return context or None
+
+
+async def _read_failure_context(
+    log_id: uuid.UUID,
+    *,
+    session: AsyncSession,
+) -> dict[str, Any] | None:
+    """Read the newest redacted provider diagnostic for a failed run."""
+    exchanges = (
+        await session.execute(
+            select(LLMExchange)
+            .where(LLMExchange.generation_log_id == log_id)
+            .order_by(LLMExchange.exchange_order.desc())
+        )
+    ).scalars().all()
+    for exchange in exchanges:
+        context = _failure_context_from_exchange(exchange)
+        if context is not None:
+            return context
+    return None
+
+
 async def read_run(
     run_id: str | uuid.UUID,
     user_id: uuid.UUID,
@@ -435,6 +503,11 @@ async def read_run(
             )
         ).scalar_one()
         queue_position = ahead_count
+    failure_context = (
+        await _read_failure_context(log_id, session=session)
+        if log.status == "failed"
+        else None
+    )
 
     return {
         "run_id": str(log.id),
@@ -445,6 +518,7 @@ async def read_run(
         "completed_at": _iso(log.completed_at),
         "error": log.error,
         "failure_class": log.failure_class,  # issue #946: taxonomy code when failed
+        "failure_context": failure_context,
         "cancel_requested": log.cancel_requested,
         "queue_position": queue_position,
         "questions": questions,
@@ -1154,6 +1228,18 @@ async def execute_run(
             if event.get("event") == SSEEventName.ERROR:
                 _err_context = event.get("context") or {}
                 _err_question_id = _err_context.get("question_id")
+                _error_payload = event.get("payload")
+                if isinstance(_error_payload, dict):
+                    # Capture the first taxonomy value from either a batch or a
+                    # question-scoped error. It is persisted only if the run
+                    # ultimately fails, so partial sibling success is unchanged.
+                    _event_failure_class = _error_payload.get("failure_class")
+                    if (
+                        failure_class is None
+                        and isinstance(_event_failure_class, str)
+                        and _event_failure_class
+                    ):
+                        failure_class = _event_failure_class
                 if not isinstance(_err_question_id, str):
                     # Issue #931: only batch-scoped ERRORs (no question_id, e.g.
                     # batch_generation_failed, started_invalid) make the whole run
@@ -1168,9 +1254,6 @@ async def execute_run(
                         payload = event.get("payload")
                         if isinstance(payload, dict):
                             error = payload.get("message", str(payload))
-                            fc = payload.get("failure_class")
-                            if isinstance(fc, str) and fc:
-                                failure_class = fc
                         else:
                             error = str(payload)
             await recorder.observe(event)
@@ -1207,6 +1290,7 @@ async def execute_run(
                     "stream_failed",
                     _run_error_msg,
                     failure_class=failure_class,
+                    **provider_failure_sse_kwargs(exc),
                 ),
             },
         )
@@ -1263,7 +1347,7 @@ async def execute_run(
         )
     async with session_factory() as session:
         _update_values: dict = {"status": status, "error": error, "completed_at": clock()}
-        if failure_class is not None:
+        if status == "failed" and failure_class is not None:
             _update_values["failure_class"] = failure_class
         await session.execute(
             update(GenerationLog)

@@ -1,5 +1,9 @@
 import type { ExamQuestion } from "../hooks/useGenerate";
 import type { ModificationEvidence } from "./runEvidence";
+import {
+  appendProviderFailureContext,
+  parseProviderFailureContext,
+} from "./providerFailure";
 
 export type ModificationStageName = "modification" | "verify" | "correct";
 
@@ -110,6 +114,16 @@ function parseError(raw: string): { error: Error; failureClass: string | null } 
     if (typeof fc === "string" && _TAXONOMY_CODES_MOD.has(fc)) {
       failureClass = fc;
     }
+    const providerContext = parseProviderFailureContext(obj);
+    return {
+      error: new Error(
+        appendProviderFailureContext(
+          errorMsg ?? (raw || "Modification stream failed"),
+          providerContext,
+        ),
+      ),
+      failureClass,
+    };
   }
   return {
     error: new Error(errorMsg ?? (raw || "Modification stream failed")),
