@@ -525,10 +525,13 @@ function terminalDeliveryFromAnnotations(detail: HistoryDetail): {
   terminationReason: ExportMeta["termination_reason"];
 } {
   const td = detail.terminal_delivery;
+  if (td == null) {
+    return { deliveryStatus: "complete", missing: [], terminationReason: "normal" };
+  }
   return {
-    deliveryStatus: (td?.delivery_status as ExportMeta["delivery_status"]) ?? "complete",
-    missing: Array.isArray(td?.missing) ? td.missing : [],
-    terminationReason: (td?.termination_reason as ExportMeta["termination_reason"]) ?? "normal",
+    deliveryStatus: td.delivery_status,
+    missing: Array.isArray(td.missing) ? td.missing : [],
+    terminationReason: td.termination_reason,
   };
 }
 
