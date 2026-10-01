@@ -25,7 +25,12 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal, get_async_session
 from server.generate.drain import get_drain
 from server.generate.event_protocol import SUPPORTED_STREAM_VERSIONS, client_update_required_body
-from server.generate.model_substitutions import model_substitutions as _model_substitutions
+from server.generate.model_substitutions import (
+    effective_tier_models as _effective_tier_models,
+)
+from server.generate.model_substitutions import (
+    model_substitutions as _model_substitutions,
+)
 from server.generate.models import (
     ALLOWED_SUBJECTS,
     SERVER_ONLY_GENERATE_FIELDS,
@@ -130,13 +135,11 @@ def _preview_generate(
     _check_model_allowed(params.model_verify, config, "model_verify")    # #375
     _check_model_allowed(params.model_correct, config, "model_correct")  # #375
     _check_subject_allowed(params.subject)
-    effective_plan_model = params.model_plan or config.model_plan
-    effective_execute_model = params.model_execute or config.model_execute
-    # #375: tier model resolution — request param → env var → effective execute model
-    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = (
-        params.model_correct or config.model_correct or effective_execute_model
-    )
+    _tier_models = _effective_tier_models(params, config)  # shared seam #943
+    effective_plan_model = _tier_models["plan"]
+    effective_execute_model = _tier_models["execute"]
+    effective_verify_model = _tier_models["verify"]
+    effective_correct_model = _tier_models["correct"]
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     # #377: effective execute effort (with per-request override applied)
     effective_execute_effort = params.effort_execute or config.effort_execute
@@ -458,14 +461,12 @@ def _check_generation_admission(params: GenerateParams, config: ServerConfig) ->
     _check_model_allowed(params.model_correct, config, "model_correct")  # #375
     _check_subject_allowed(params.subject)
     # Validate effort levels against the effective model's roster (BEFORE any LLM call).
-    effective_plan_model = params.model_plan or config.model_plan
-    effective_execute_model = params.model_execute or config.model_execute
-    # #375: tier model resolution — request param → env var → effective execute model.
-    # Note: chains off effective_execute_model (honours per-request model_execute override).
-    effective_verify_model = params.model_verify or config.model_verify or effective_execute_model
-    effective_correct_model = (
-        params.model_correct or config.model_correct or effective_execute_model
-    )
+    # Use shared seam so model_substitutions (#943) derives from the same resolution.
+    _tier_models = _effective_tier_models(params, config)
+    effective_plan_model = _tier_models["plan"]
+    effective_execute_model = _tier_models["execute"]
+    effective_verify_model = _tier_models["verify"]
+    effective_correct_model = _tier_models["correct"]
     _check_effort_for_model(params.effort_plan, effective_plan_model, "effort_plan")
     _check_effort_for_model(params.effort_execute, effective_execute_model, "effort_execute")
     # #377: validate tier efforts against their effective model using the full inherited chain.

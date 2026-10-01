@@ -17,7 +17,7 @@ pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from server.generate.model_substitutions import model_substitutions
+from server.generate.model_substitutions import effective_tier_models, model_substitutions
 from server.generate.models import GenerateParams
 from server.models import Base, GenerationLog, User
 from src.config import FABLE_DOWNGRADE_TARGET, Config
@@ -277,3 +277,73 @@ class TestParamsJsonBuildSite:
         stored = loop.run_until_complete(_store())
         loop.close()
         assert "model_substitutions" not in stored
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for the shared effective_tier_models helper
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveTierModels:
+    """effective_tier_models is the shared seam; _check_generation_admission and
+    model_substitutions both call it — it must resolve tiers identically."""
+
+    def test_returns_all_four_keys(self) -> None:
+        config = make_config(fable_downgrade=False)
+        params = GenerateParams()
+        result = effective_tier_models(params, config)
+        assert set(result.keys()) == {"plan", "execute", "verify", "correct"}
+
+    def test_per_request_overrides_config(self) -> None:
+        config = make_config(
+            model_execute="gemini-3.1-pro-preview",
+            model_verify="claude-opus-4-6",
+        )
+        params = GenerateParams(model_execute="claude-fable-5")
+        result = effective_tier_models(params, config)
+        assert result["execute"] == "claude-fable-5"
+        # verify is explicitly set in config, not inherited
+        assert result["verify"] == "claude-opus-4-6"
+
+    def test_verify_inherits_execute_when_unset(self) -> None:
+        config = make_config(
+            model_execute="gemini-3.1-pro-preview",
+            model_verify="",   # unset → inherits execute
+        )
+        params = GenerateParams()
+        result = effective_tier_models(params, config)
+        assert result["verify"] == result["execute"]
+
+    def test_correct_inherits_execute_when_unset(self) -> None:
+        config = make_config(
+            model_execute="gemini-3.1-pro-preview",
+            model_correct="",  # unset → inherits execute
+        )
+        params = GenerateParams()
+        result = effective_tier_models(params, config)
+        assert result["correct"] == result["execute"]
+
+    def test_per_request_execute_propagates_to_inherited_verify(self) -> None:
+        """When per-request model_execute overrides config, inherited verify follows."""
+        config = make_config(
+            model_execute="gemini-3.1-pro-preview",
+            model_verify="",   # inherits execute
+        )
+        params = GenerateParams(model_execute="claude-fable-5")
+        result = effective_tier_models(params, config)
+        assert result["execute"] == "claude-fable-5"
+        assert result["verify"] == "claude-fable-5"
+
+    def test_config_defaults_used_when_no_per_request(self) -> None:
+        config = make_config(
+            model_plan="claude-opus-4-6",
+            model_execute="gemini-3.1-pro-preview",
+            model_verify="claude-opus-4-6",
+            model_correct="claude-opus-4-6",
+        )
+        params = GenerateParams()
+        result = effective_tier_models(params, config)
+        assert result["plan"] == "claude-opus-4-6"
+        assert result["execute"] == "gemini-3.1-pro-preview"
+        assert result["verify"] == "claude-opus-4-6"
+        assert result["correct"] == "claude-opus-4-6"
