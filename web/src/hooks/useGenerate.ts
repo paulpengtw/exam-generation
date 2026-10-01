@@ -1095,13 +1095,20 @@ export function useGenerate(): UseGenerateReturn {
           break;
         }
         case "error": {
-          const errPayload = payload as { message?: string; code?: string } | string | null;
-          let msg = "Unknown error";
-          if (typeof errPayload === "string") msg = errPayload;
-          else if (errPayload && typeof errPayload === "object" && typeof errPayload.message === "string") {
-            msg = errPayload.message;
-          }
-          setErrorMessage(msg);
+          // Re-serialize the structured payload for parseErrorPayload
+          const rawData = typeof payload === "string"
+            ? payload
+            : payload !== null && typeof payload === "object"
+              ? JSON.stringify(payload)
+              : "";
+          const errPayload = parseErrorPayload(rawData);
+          const lang = useLangStore.getState().lang;
+          const messages = MESSAGES[lang] ?? MESSAGES["en-US"];
+          const localizedMsg = errPayload.failureClass
+            ? `${messages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${messages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+            : errPayload.message;
+          setErrorMessage(localizedMsg);
+          setErrorFailureClass(errPayload.failureClass);
           setStatus("error");
           if (startedRef.current) {
             setResultsCompletion("error");
@@ -1341,7 +1348,12 @@ export function useGenerate(): UseGenerateReturn {
           break;
         case "error": {
           const errPayload = parseErrorPayload(data ?? "");
-          setErrorMessage(errPayload.message);
+          const errLang = useLangStore.getState().lang;
+          const errMessages = MESSAGES[errLang] ?? MESSAGES["en-US"];
+          const localizedErrMsg = errPayload.failureClass
+            ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
+            : errPayload.message;
+          setErrorMessage(localizedErrMsg);
           setErrorFailureClass(errPayload.failureClass);
           setStatus("error");
           if (startedRef.current) {

@@ -5,18 +5,26 @@ import CoreQuestionPicker from "./CoreQuestionPicker";
 
 // Use English locale for all tests
 vi.mock("../store/langStore", () => ({
-  useLangStore: (selector: (s: { lang: string }) => unknown) =>
-    selector({ lang: "en-US" }),
+  useLangStore: Object.assign(
+    (selector: (s: { lang: string }) => unknown) => selector({ lang: "en-US" }),
+    { getState: () => ({ lang: "en-US" }) },
+  ),
 }));
 
 vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {
+    status: number;
     detail: string;
+    code?: string;
+    failureClass?: string | null;
 
-    constructor(_status: number, detail: string) {
+    constructor(status: number, detail: string, code?: string, _errors?: unknown, failureClass?: string | null) {
       super(detail);
       this.name = "ApiError";
+      this.status = status;
       this.detail = detail;
+      this.code = code;
+      this.failureClass = failureClass ?? null;
     }
   },
   planCoreQuestions: vi.fn(),
@@ -125,5 +133,61 @@ describe("CoreQuestionPicker — use my core question button", () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #946 — failure_class localization in CoreQuestionPicker
+// ---------------------------------------------------------------------------
+
+describe("CoreQuestionPicker — failure_class localized message (issue #946)", () => {
+  it("shows localized message when 502 ApiError has a recognized failure_class (rate_limited)", async () => {
+    const { ApiError, planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockRejectedValueOnce(
+      new ApiError(502, "Planner provider call failed", "PLANNER_PROVIDER_ERROR", undefined, "rate_limited"),
+    );
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+
+    const alert = screen.getByRole("alert");
+    // Must show the localized label and hint — NOT the raw backend "Planner provider call failed"
+    expect(alert).toHaveTextContent("Rate limited");
+    expect(alert).toHaveTextContent("wait");
+    expect(alert).not.toHaveTextContent("Planner provider call failed");
+  });
+
+  it("shows localized admin-only message for quota_billing_exhausted", async () => {
+    const { ApiError, planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockRejectedValueOnce(
+      new ApiError(502, "Planner provider call failed", "PLANNER_PROVIDER_ERROR", undefined, "quota_billing_exhausted"),
+    );
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Quota or billing exhausted");
+    expect(alert).toHaveTextContent("Please contact the administrator");
+  });
+
+  it("shows ApiError.detail when failure_class is absent (no localization override)", async () => {
+    const { ApiError, planCoreQuestions } = await import("../api/client");
+    vi.mocked(planCoreQuestions).mockRejectedValueOnce(
+      new ApiError(502, "Planner upstream returned malformed candidates", "PLANNER_MALFORMED_OUTPUT"),
+    );
+    const user = userEvent.setup();
+    render(<CoreQuestionPicker {...defaultProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Generate core question candidates" }));
+
+    const alert = screen.getByRole("alert");
+    // No failure_class → ApiError.detail is shown (existing behavior, no localization override)
+    expect(alert).toHaveTextContent("Planner upstream returned malformed candidates");
+    // Must NOT show the rate_limited or quota messages
+    expect(alert).not.toHaveTextContent("Rate limited");
+    expect(alert).not.toHaveTextContent("Please contact the administrator");
   });
 });

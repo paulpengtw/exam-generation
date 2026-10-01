@@ -34,6 +34,7 @@ vi.mock("../sentry", () => ({
 import {
   buildQueryString,
   parseErrorEventData,
+  parseErrorPayload,
   useGenerate,
   type VerificationTrailEntry,
 } from "./useGenerate";
@@ -535,6 +536,192 @@ describe("useGenerate — parseErrorEventData", () => {
 
   it("falls back to the raw string for a plain string payload", () => {
     expect(parseErrorEventData("plain error text")).toBe("plain error text");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #946 — parseErrorPayload (task 6.1)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — parseErrorPayload (issue #946)", () => {
+  it("extracts failure_class when it is a recognized taxonomy code", () => {
+    const raw = JSON.stringify({
+      code: "generation_failed",
+      message: "backend message",
+      failure_class: "rate_limited",
+    });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBe("rate_limited");
+    expect(result.message).toBe("backend message");
+  });
+
+  it("returns failureClass=null when failure_class is absent", () => {
+    const raw = JSON.stringify({ code: "generation_failed", message: "some error" });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("some error");
+  });
+
+  it("returns failureClass=null when failure_class is an unrecognized string", () => {
+    const raw = JSON.stringify({ message: "err", failure_class: "not_a_real_code" });
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+  });
+
+  it("falls back to raw string as message when not JSON", () => {
+    const raw = "plain error text";
+    const result = parseErrorPayload(raw);
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("plain error text");
+  });
+
+  it("handles empty string", () => {
+    const result = parseErrorPayload("");
+    expect(result.failureClass).toBeNull();
+    expect(result.message).toBe("Unknown error");
+  });
+
+  it("recognizes all 10 taxonomy codes", () => {
+    const codes = [
+      "auth_config", "quota_billing_exhausted", "rate_limited", "overloaded",
+      "timeout", "connection", "context_length", "content_filtered",
+      "malformed_response", "unknown",
+    ];
+    for (const code of codes) {
+      const raw = JSON.stringify({ message: "err", failure_class: code });
+      const result = parseErrorPayload(raw);
+      expect(result.failureClass).toBe(code);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #946 — case "error" localization (task 6.2/6.3)
+// ---------------------------------------------------------------------------
+
+describe("useGenerate — case 'error' localization (issue #946)", () => {
+  beforeEach(() => { fetchEventSourceMock.mockClear(); });
+
+  it("localizes errorMessage when failure_class is a recognized code (en-US)", async () => {
+    const originalLang = useLangStore.getState().lang;
+    useLangStore.getState().setLang("en-US");
+    try {
+      const { result } = renderHook(() => useGenerate());
+      act(() => { result.current.generate({ subject: "math", count: 1 }); });
+
+      // Enter legacy mode via started event
+      act(() => {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: "started",
+          data: JSON.stringify({ generation_log_id: null }),
+        });
+      });
+
+      act(() => {
+        latestStreamOptions().onmessage?.({
+          id: "",
+          event: "error",
+          data: JSON.stringify({
+            code: "generation_failed",
+            message: "Rate limited by provider",
+            failure_class: "rate_limited",
+          }),
+        });
+      });
+
+      expect(result.current.status).toBe("error");
+      expect(result.current.errorFailureClass).toBe("rate_limited");
+      // Must contain the localized label (not the raw backend string)
+      expect(result.current.errorMessage).toContain("Rate limited");
+      expect(result.current.errorMessage).not.toBe("Rate limited by provider");
+    } finally {
+      useLangStore.getState().setLang(originalLang);
+    }
+  });
+
+  it("falls back to raw message when failure_class is absent", async () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 1 }); });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: null }),
+      });
+    });
+
+    act(() => {
+      latestStreamOptions().onmessage?.({
+        id: "",
+        event: "error",
+        data: JSON.stringify({
+          code: "generation_failed",
+          message: "Raw backend error text",
+        }),
+      });
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(result.current.errorFailureClass).toBeNull();
+    expect(result.current.errorMessage).toBe("Raw backend error text");
+  });
+
+  it("preserves draft content already received when error event arrives (#938)", async () => {
+    const { result } = renderHook(() => useGenerate());
+    act(() => { result.current.generate({ subject: "math", count: 1 }); });
+
+    const stream = latestStreamOptions();
+
+    // Legacy started
+    act(() => {
+      stream.onmessage?.({
+        id: "",
+        event: "started",
+        data: JSON.stringify({ generation_log_id: null }),
+      });
+    });
+
+    const draftQuestion = {
+      id: "q-draft-1",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Draft question text"],
+      正確解題分析: ["answer"],
+    };
+
+    // Draft content arrives
+    act(() => {
+      stream.onmessage?.({
+        id: "",
+        event: "question_update",
+        data: JSON.stringify({ index: 0, phase: "draft", question: draftQuestion }),
+      });
+    });
+
+    // Sanity: draft is visible before error
+    expect(result.current.displayResults.length).toBeGreaterThan(0);
+
+    // Now the error event arrives
+    act(() => {
+      stream.onmessage?.({
+        id: "",
+        event: "error",
+        data: JSON.stringify({
+          code: "generation_failed",
+          message: "Connection lost",
+          failure_class: "connection",
+        }),
+      });
+    });
+
+    // Status is error
+    expect(result.current.status).toBe("error");
+    // Draft content must STILL be visible (#938 requirement)
+    expect(result.current.displayResults.length).toBeGreaterThan(0);
+    expect(result.current.errorMessage).toBeTruthy();
   });
 });
 
