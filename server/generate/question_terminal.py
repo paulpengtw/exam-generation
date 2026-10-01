@@ -21,7 +21,23 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Mapping
+from pathlib import Path as _Path2
 from typing import Any
+
+# PNG file signature: the first 8 bytes of any valid PNG file.
+# Files that do not start with this signature are corrupt / truncated renders
+# and must be classified as ``empty_image`` rather than delivered (issue #939).
+_PNG_MAGIC: bytes = b"\x89PNG\r\n\x1a\n"
+
+
+def _is_valid_png_header(path: _Path2) -> bool:
+    """Return True iff *path* starts with the 8-byte PNG magic bytes."""
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(8)
+    except OSError:
+        return False
+    return header == _PNG_MAGIC
 
 
 @dataclasses.dataclass(frozen=True)
@@ -170,7 +186,15 @@ def _compute_expected_delivered_missing(
         if filename and output_dir is not None:
             img_path = _Path(output_dir) / filename
             if img_path.exists():
-                delivered.append(slot)
+                # A delivered image must have a valid PNG header (issue #939).
+                # Files that are empty, truncated, or have a bad magic header
+                # (e.g. HTML error pages written to the output path) are treated
+                # as render failures rather than delivered images.
+                if img_path.stat().st_size >= 8 and _is_valid_png_header(img_path):
+                    delivered.append(slot)
+                    return
+                # File exists but is empty, truncated, or not a valid PNG
+                missing.append({**slot, "reason": "empty_image"})
                 return
         missing.append({**slot, "reason": reason})
 
@@ -249,7 +273,7 @@ def _compute_expected_delivered_missing(
 
                 if has_final and question is not None:
                     config = configs[slot_index] if slot_index < len(configs) else None
-                    adopted = bool(
+                    spec_adopted = bool(
                         sub is not None
                         and (
                             getattr(sub, "chart_spec", None) is not None
@@ -263,11 +287,21 @@ def _compute_expected_delivered_missing(
                             or _config_value(config, "figure_kind")
                         )
                     )
+                    # Structured per-slot reason:
+                    # • spec_adopted → spec was set but render failed or produced
+                    #   no file (or a 0-byte file, handled inside _add_image_slot)
+                    # • explicitly_visual but no spec → LLM omitted the spec
+                    if spec_adopted:
+                        img_reason = "render_failed"
+                    elif explicitly_visual:
+                        img_reason = "spec_missing"
+                    else:
+                        img_reason = "image not delivered"
                     _add_image_slot(
                         subquestion_id=subquestion_id,
                         filename=getattr(sub, "圖片", None) if sub is not None else None,
-                        adopted=adopted or explicitly_visual,
-                        reason="image not delivered",
+                        adopted=spec_adopted or explicitly_visual,
+                        reason=img_reason,
                         subquestion_index=slot_index,
                     )
 
@@ -279,7 +313,7 @@ def _compute_expected_delivered_missing(
                     getattr(question, "chart_spec", None) is not None
                     or getattr(question, "image_spec", None) is not None
                 ),
-                reason="image not delivered",
+                reason="render_failed",
             )
     elif has_final and question is not None:
         # Flat question: an image slot exists only when the pipeline adopted an
@@ -292,7 +326,7 @@ def _compute_expected_delivered_missing(
             subquestion_id=None,
             filename=getattr(question, "圖片", None),
             adopted=has_image_spec,
-            reason="image not delivered",
+            reason="render_failed",
         )
 
     return expected, delivered, missing

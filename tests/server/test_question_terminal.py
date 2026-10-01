@@ -479,7 +479,8 @@ def test_terminal_image_slot_delivered(tmp_path: Path) -> None:
     ctx = _build_ctx(loop, queue, output_dir=tmp_path)
     qid = ctx.manifest[0].question_id
     img_filename = f"{qid}.png"
-    (tmp_path / img_filename).write_bytes(b"PNG_DATA")
+    # Write a valid PNG magic header so the issue #939 header check treats it as delivered.
+    (tmp_path / img_filename).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
 
     q = MagicMock(spec=ctx.spec.exam_question_cls)
     q.__class__ = ctx.spec.exam_question_cls
@@ -855,7 +856,7 @@ def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
         "question_id": question_id,
         "subquestion_id": f"{question_id}-sq001",
         "subquestion_index": 0,
-        "reason": "image not delivered",
+        "reason": "render_failed",
     }]
 
 
@@ -1040,7 +1041,7 @@ def test_terminal_natural_sciences_tracks_fixed_subquestion_image_slot(tmp_path:
         "question_id": question_id,
         "subquestion_id": f"{question_id}-sq001",
         "subquestion_index": 0,
-        "reason": "image not delivered",
+        "reason": "render_failed",
     }]
 
 

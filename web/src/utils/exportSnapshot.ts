@@ -197,9 +197,13 @@ function buildExportMeta(
  *
  * Priority per slot:
  *   1. image_base64 present → "png_base64"
- *   2. chart_spec present (no image_base64) → "chart_spec_preview"
- *   3. slot in terminal.missing for kind="image" → "known_missing"
+ *   2. slot in terminal.missing for kind="image" → "known_missing" (issue #939:
+ *      server-confirmed render failure/empty file overrides client rasterization)
+ *   3. chart_spec present (no image_base64, not confirmed missing) → "chart_spec_preview"
  *   4. none → slot omitted from result
+ *
+ * Note: for the stem image, the legacy priority (chart_spec before terminal.missing)
+ * is preserved because stem image failures are not yet tracked by issue #939.
  *
  * IMPORTANT: call this AFTER captureQuestion() so the question is already an
  * immutable deep copy. Any later mutations to the source question do not affect
@@ -252,6 +256,10 @@ function captureImageSources(
   }
 
   // --- Per-subquestion images ---
+  // Priority (issue #939): image_base64 > terminal.missing > chart_spec.
+  // When the server confirms an image slot is missing (render_failed / empty_image),
+  // use known_missing rather than chart_spec_preview — no client-side rasterization
+  // attempt is useful when the server already declared the image unavailable.
   for (const sq of question.subquestions ?? []) {
     const key = `sq${sq.序號}`;
     if (sq.image_base64) {
@@ -260,14 +268,15 @@ function captureImageSources(
         pngBase64: sq.image_base64,
         contentRevision,
       };
+    } else if (missingSubqSeqnos.has(sq.序號)) {
+      // Server-confirmed missing image — skip rasterization attempt.
+      sources[key] = { kind: "known_missing", contentRevision };
     } else if (sq.chart_spec) {
       sources[key] = {
         kind: "chart_spec_preview",
         chartSpec: sq.chart_spec as Record<string, unknown>,
         contentRevision,
       };
-    } else if (missingSubqSeqnos.has(sq.序號)) {
-      sources[key] = { kind: "known_missing", contentRevision };
     }
   }
 
@@ -503,6 +512,56 @@ export function captureBatchSnapshots(input: BatchSnapshotInput): [QuestionSnaps
 // ---------------------------------------------------------------------------
 
 /**
+ * Extract terminal delivery info from the typed `terminal_delivery` field
+ * returned by GET /api/history/{id} (issue #939).
+ *
+ * Old records without this field fall back to `delivery_status: "complete"` and
+ * `missing: []` — identical to the previous hard-coded behaviour.
+ */
+function terminalDeliveryFromAnnotations(detail: HistoryDetail): {
+  deliveryStatus: ExportMeta["delivery_status"];
+  missing: GenerationSlotReference[];
+  terminationReason: ExportMeta["termination_reason"];
+} {
+  const td = detail.terminal_delivery;
+  if (td == null) {
+    return { deliveryStatus: "complete", missing: [], terminationReason: "normal" };
+  }
+  return {
+    deliveryStatus: td.delivery_status,
+    missing: Array.isArray(td.missing) ? td.missing : [],
+    terminationReason: td.termination_reason,
+  };
+}
+
+/**
+ * Build a synthetic QuestionTerminalPayload from stored annotations so that
+ * captureImageSources can recognise known-missing image slots in History records.
+ * Returns null when there are no missing slots (saves allocation for the common case).
+ */
+function syntheticTerminalFromAnnotations(
+  detail: HistoryDetail,
+  questionId: string,
+): QuestionTerminalPayload | null {
+  const { missing } = terminalDeliveryFromAnnotations(detail);
+  if (missing.length === 0) return null;
+  // Ensure question_id is populated on each slot for the captureImageSources helper.
+  const taggedMissing = missing.map((s) =>
+    s.question_id ? s : { ...s, question_id: questionId },
+  );
+  return {
+    termination_reason: "normal",
+    has_final: true,
+    final_revision: null,
+    delivery_status: "partial",
+    expected: [],
+    delivered: [],
+    missing: taggedMissing,
+    review: { status: "unknown" },
+  };
+}
+
+/**
  * Build an `_export` annotation for a history detail record (persisted result).
  * History records are always final (isFinal = true).
  */
@@ -514,6 +573,8 @@ export function captureFromHistory(
 
   const question = detail.question_json as unknown as ExamQuestion;
   const captured = captureQuestion(question);
+  const { deliveryStatus, missing, terminationReason } =
+    terminalDeliveryFromAnnotations(detail);
 
   const exportMeta = buildExportMeta({
     exportedAt,
@@ -522,9 +583,9 @@ export function captureFromHistory(
     index: null, // single record; order is not meaningful
     contentRevision: null, // persisted records have no revision field
     processing: "ended", // persisted = completed run
-    terminationReason: "normal",
-    deliveryStatus: "complete",
-    missing: [],
+    terminationReason,
+    deliveryStatus,
+    missing,
     review: { status: "unknown", content_revision: null },
   });
 
@@ -544,6 +605,8 @@ export function captureFromHistorySnapshot(
 
   const question = detail.question_json as unknown as ExamQuestion;
   const captured = captureQuestion(question);
+  const { deliveryStatus, missing, terminationReason } =
+    terminalDeliveryFromAnnotations(detail);
 
   const exportMeta = buildExportMeta({
     exportedAt,
@@ -552,15 +615,19 @@ export function captureFromHistorySnapshot(
     index: null,
     contentRevision: null,
     processing: "ended",
-    terminationReason: "normal",
-    deliveryStatus: "complete",
-    missing: [],
+    terminationReason,
+    deliveryStatus,
+    missing,
     review: { status: "unknown", content_revision: null },
   });
 
   const exported: ExportedQuestion = { ...captured, _export: exportMeta };
-  // History records have no live terminal payload; no known-missing image slots.
-  const imageSources = captureImageSources(captured, null, null);
+  // Build a synthetic terminal for captureImageSources to detect known-missing slots.
+  const syntheticTerminal = syntheticTerminalFromAnnotations(
+    detail,
+    question.id ?? detail.question_id ?? "",
+  );
+  const imageSources = captureImageSources(captured, null, syntheticTerminal);
   return { exported, captured, isDraft: false, index: null, imageSources };
 }
 

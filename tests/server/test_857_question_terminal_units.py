@@ -520,7 +520,9 @@ class TestComputeExpectedDeliveredMissing:
         )
 
         with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / filename).write_text("fake png")
+            # Write a minimal valid PNG (magic header + stub data) so the PNG
+            # header check introduced in issue #939 passes.
+            (Path(tmp) / filename).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 8)
             expected, delivered, missing = _compute_expected_delivered_missing(
                 question_id=qid,
                 question=question,
@@ -594,6 +596,130 @@ class TestComputeExpectedDeliveredMissing:
         # slot_manifest stays None → no subquestion slots generated.
         # This is correct behaviour: slot_manifest fallback only fires on failure.
         assert expected == []
+
+    # ------------------------------------------------------------------
+    # Issue #939 — PNG header check
+    # ------------------------------------------------------------------
+
+    def test_image_slot_bad_png_header_treated_as_empty_image(self) -> None:
+        """A non-empty file with an invalid PNG header is classified as empty_image (issue #939).
+
+        The PNG magic bytes are \\x89PNG\\r\\n\\x1a\\n (8 bytes). A file with any
+        other leading bytes is a corrupt/truncated render output and must NOT be
+        counted as delivered — it should go into ``missing`` with reason='empty_image'.
+        """
+        import tempfile
+        from pathlib import Path
+
+        qid = "q-bad-png-header"
+        filename = f"{qid}.png"
+        question = SimpleNamespace(
+            chart_spec=object(),
+            image_spec=None,
+            圖片=filename,
+            subquestions=[],
+            verification=None,
+        )
+        params = _flat_params()
+        resolution = _make_resolution(
+            has_per_question_resolution=True,
+            resolved_subquestion_count=None,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Write a non-empty file that is NOT a valid PNG (HTML render artifact)
+            (Path(tmp) / filename).write_bytes(b"<html>error</html>")
+            expected, delivered, missing = _compute_expected_delivered_missing(
+                question_id=qid,
+                question=question,
+                params=params,
+                output_dir=tmp,
+                has_final=True,
+                termination_reason="normal",
+                resolution=resolution,
+            )
+
+        assert len(expected) == 1, "slot must be in expected"
+        assert delivered == [], "bad-header file must NOT be delivered"
+        assert len(missing) == 1, "bad-header file must appear in missing"
+        assert missing[0]["reason"] == "empty_image", (
+            f"reason must be 'empty_image', got {missing[0].get('reason')!r}"
+        )
+
+    def test_image_slot_valid_png_header_delivered(self) -> None:
+        """A file starting with the correct PNG magic bytes is delivered (issue #939)."""
+        import tempfile
+        from pathlib import Path
+
+        qid = "q-valid-png-header"
+        filename = f"{qid}.png"
+        question = SimpleNamespace(
+            chart_spec=object(),
+            image_spec=None,
+            圖片=filename,
+            subquestions=[],
+            verification=None,
+        )
+        params = _flat_params()
+        resolution = _make_resolution(
+            has_per_question_resolution=True,
+            resolved_subquestion_count=None,
+        )
+        # Minimal valid-header PNG: just the 8-byte magic + enough data to be non-trivial
+        valid_png_header = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / filename).write_bytes(valid_png_header)
+            expected, delivered, missing = _compute_expected_delivered_missing(
+                question_id=qid,
+                question=question,
+                params=params,
+                output_dir=tmp,
+                has_final=True,
+                termination_reason="normal",
+                resolution=resolution,
+            )
+
+        assert len(expected) == 1
+        assert len(delivered) == 1, "valid PNG header must be delivered"
+        assert missing == []
+
+    def test_image_slot_truncated_png_header_treated_as_empty_image(self) -> None:
+        """A file with fewer than 8 bytes (truncated) is classified as empty_image (issue #939)."""
+        import tempfile
+        from pathlib import Path
+
+        qid = "q-truncated-png"
+        filename = f"{qid}.png"
+        question = SimpleNamespace(
+            chart_spec=object(),
+            image_spec=None,
+            圖片=filename,
+            subquestions=[],
+            verification=None,
+        )
+        params = _flat_params()
+        resolution = _make_resolution(
+            has_per_question_resolution=True,
+            resolved_subquestion_count=None,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Only 4 bytes — cannot contain the 8-byte PNG magic
+            (Path(tmp) / filename).write_bytes(b"\x89PNG")
+            expected, delivered, missing = _compute_expected_delivered_missing(
+                question_id=qid,
+                question=question,
+                params=params,
+                output_dir=tmp,
+                has_final=True,
+                termination_reason="normal",
+                resolution=resolution,
+            )
+
+        assert delivered == [], "truncated file must NOT be delivered"
+        assert len(missing) == 1
+        assert missing[0]["reason"] == "empty_image"
 
 
 # ---------------------------------------------------------------------------

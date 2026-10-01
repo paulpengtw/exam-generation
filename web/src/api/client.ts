@@ -8,6 +8,7 @@ import type { ResolveResponse } from "./generated/contract";
 import { saveSignoutReason } from "../lib/signoutReason";
 import { saveReturnDestination } from "../lib/returnDestination";
 import { isResolverFieldErrorLike, type ResolverFieldErrorLike } from "../lib/resolverErrorMessages";
+import type { GenerationSlotReference } from "../lib/generationEvidence";
 
 export interface MagicLinkResponse {
   message: string;
@@ -330,6 +331,13 @@ export interface HistoryListResponse {
   items: HistoryListItem[];
 }
 
+/** Typed terminal delivery summary returned by GET /api/history/{id}. */
+export interface HistoryTerminalDelivery {
+  delivery_status: "complete" | "partial" | "none" | "unknown" | null;
+  missing: GenerationSlotReference[];
+  termination_reason: "normal" | "failed" | "cancelled" | null;
+}
+
 export interface HistoryDetail {
   id: string;
   subject: string;
@@ -343,6 +351,12 @@ export interface HistoryDetail {
   verification_trail: VerificationTrailEntry[] | null;
   figure_policy_trail: FigurePolicyTrailEntry[] | null;
   reference_example_record: { disabled?: boolean; entries: unknown[] } | null;
+  /**
+   * Terminal delivery summary computed at save time (issue #939).
+   * Null for old records and modification records.
+   * Old records fall back to `delivery_status: "complete"` and `missing: []`.
+   */
+  terminal_delivery: HistoryTerminalDelivery | null;
 }
 
 export interface ListHistoryOpts {

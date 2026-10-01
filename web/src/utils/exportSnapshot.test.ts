@@ -574,6 +574,7 @@ describe("captureFromHistory", () => {
     verification_trail: null,
     figure_policy_trail: null,
     reference_example_record: null,
+    terminal_delivery: null,
     ...overrides,
   });
 
@@ -605,6 +606,47 @@ describe("captureFromHistory", () => {
     expect(result!._export.run_id).toBeNull();
     expect(result!._export.review.status).toBe("unknown");
     expect(result!._export.review.content_revision).toBeNull();
+  });
+
+  // issue #939 — History persistence for missing-slot state
+  it("old record (no terminal_delivery) falls back to delivery_status=complete and missing=[]", () => {
+    const detail = makeHistoryDetail({ terminal_delivery: null });
+    const result = captureFromHistory(detail, "2026-09-27T10:00:00.000Z");
+    expect(result!._export.delivery_status).toBe("complete");
+    expect(result!._export.missing).toEqual([]);
+    expect(result!._export.termination_reason).toBe("normal");
+  });
+
+  it("record with terminal_delivery partial (missing subquestion) uses stored values", () => {
+    const detail = makeHistoryDetail({
+      terminal_delivery: {
+        delivery_status: "partial",
+        missing: [{ kind: "subquestion", question_id: "q-legacy-1", subquestion_id: "sq1", subquestion_index: 0, reason: null }],
+        termination_reason: "normal",
+      },
+    });
+    const result = captureFromHistory(detail, "2026-09-27T10:00:00.000Z");
+    expect(result!._export.delivery_status).toBe("partial");
+    expect(result!._export.missing).toHaveLength(1);
+    expect(result!._export.missing[0].kind).toBe("subquestion");
+    expect(result!._export.termination_reason).toBe("normal");
+  });
+
+  it("record with terminal_delivery partial (missing visual image) uses stored values", () => {
+    const detail = makeHistoryDetail({
+      terminal_delivery: {
+        delivery_status: "partial",
+        missing: [
+          { kind: "image", question_id: "q-legacy-1", subquestion_id: "sq2", subquestion_index: 1, reason: "render_failed" },
+        ],
+        termination_reason: "normal",
+      },
+    });
+    const result = captureFromHistory(detail, "2026-09-27T10:00:00.000Z");
+    expect(result!._export.delivery_status).toBe("partial");
+    expect(result!._export.missing).toHaveLength(1);
+    expect(result!._export.missing[0].kind).toBe("image");
+    expect(result!._export.missing[0].subquestion_id).toBe("sq2");
   });
 });
 
