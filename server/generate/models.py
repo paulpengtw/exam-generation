@@ -87,9 +87,9 @@ REQUEST_LEVEL_FIELDS: frozenset[str] = frozenset(
 # model_substitutions is server-derived and must never be accepted from the
 # client (it could be spoofed).  It is added to params_json at the server
 # side only (issue #943).  submission_key is excluded from params_json (#912).
-SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset(
-    {"stream_version", "model_substitutions", "submission_key"}
-)
+SERVER_ONLY_GENERATE_FIELDS: frozenset[str] = frozenset({
+    "stream_version", "model_substitutions", "submission_key"
+})
 
 
 def decode_per_question_params(raw: str | None) -> list[dict[str, Any]] | None:

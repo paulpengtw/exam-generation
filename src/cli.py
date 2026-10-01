@@ -105,7 +105,7 @@ def _emit_verification_trail(
             make_verification_trail_entry(
                 question_id,
                 verification,
-                config.model_verify or config.model_execute,
+                config.dispatch_model(config.model_verify or config.model_execute),
                 content_revision=content_revision,
             ),
             scope=scope,
@@ -608,7 +608,9 @@ def generate_one(
         raise GenerationCancelled()
 
     # Parse into ExamQuestion
-    question = _parse_question(raw_json, question_id, params, config.model_execute)
+    question = _parse_question(
+        raw_json, question_id, params, config.dispatch_model(config.model_execute)
+    )
     content_revision = _record_update_revision(
         on_question_update,
         question,
@@ -993,7 +995,7 @@ def generate_with_corrections(
                     question_id,
                     question,
                     attempt + 1,
-                    config.model_correct or config.model_execute,
+                    config.dispatch_model(config.model_correct or config.model_execute),
                     content_revision=content_revision,
                 ),
                 scope=correction_scope,
