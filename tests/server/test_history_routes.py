@@ -845,13 +845,13 @@ def test_detail_returns_the_persisted_reference_example_record_without_listing_i
 def _setup_terminal_delivery(tmp_path):
     """Minimal setup for terminal_delivery tests."""
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     from server.app import create_app
     from server.auth.dependencies import get_config
     from server.auth.tokens import create_jwt
     from server.config import ServerConfig
     from server.db import get_async_session
     from server.models import Base, GenerationRecord, User
-    from collections.abc import AsyncGenerator
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
