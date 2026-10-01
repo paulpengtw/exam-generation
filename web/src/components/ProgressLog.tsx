@@ -152,9 +152,12 @@ export default function ProgressLog({
         )}
       </div>
       {status === "error" && errorMessage && (
-        <pre className="max-h-64 overflow-y-auto rounded border border-red-300 bg-red-50 p-3 font-mono text-xs text-red-800 whitespace-pre-wrap">
+        <div
+          role="alert"
+          className="max-h-64 overflow-y-auto rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 whitespace-pre-wrap"
+        >
           {errorMessage}
-        </pre>
+        </div>
       )}
       <pre
         ref={preRef}

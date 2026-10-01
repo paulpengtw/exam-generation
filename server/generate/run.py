@@ -44,12 +44,13 @@ from server.config import ServerConfig
 from server.db import AsyncSessionLocal
 from server.generate.event_protocol import QuestionTerminalPayload
 from server.generate.marshalling import SSEEventName, embed_image_base64
-from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams
+from server.generate.models import SERVER_ONLY_GENERATE_FIELDS, GenerateParams, build_sse_error
 from server.generate.persistence import persist_failed_generation_record
 from server.generate.service import generate_question_stream
 from server.generate.subjects import SUBJECTS, SubjectSpec
 from server.models import GenerationLog, GenerationQuestionState, GenerationRecord, User
 from src.common.generation_events import allocate_manifest
+from src.llm_client import classify_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +216,7 @@ async def accept_run(
     session: AsyncSession,
     submission_key: str | None = None,
     queue_limit: int = QUEUE_LIMIT,
+    model_substitutions_dict: dict[str, Any] | None = None,
 ) -> AcceptedRun:
     """Record a queued run and its waiting questions in one transaction.
 
@@ -279,10 +281,17 @@ async def accept_run(
     manifest = allocate_manifest(
         SUBJECTS[params.subject].question_id_prefix, str(log_id), max(1, params.count)
     )
+    _params_json: dict[str, Any] = params.model_dump(
+        mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)
+    )
+    # Strip any client-supplied model_substitutions; only the server-derived dict is stored.
+    _params_json.pop("model_substitutions", None)
+    if model_substitutions_dict:
+        _params_json["model_substitutions"] = model_substitutions_dict
     new_log = GenerationLog(
         id=log_id,
         user_id=user_id,
-        params_json=params.model_dump(mode="json", exclude=set(SERVER_ONLY_GENERATE_FIELDS)),
+        params_json=_params_json,
         status="queued",
         # Queue order while queued; the first claim restamps it as the
         # execution start that the time limit is measured from.
@@ -435,6 +444,7 @@ async def read_run(
         "started_at": _iso(log.started_at),
         "completed_at": _iso(log.completed_at),
         "error": log.error,
+        "failure_class": log.failure_class,  # issue #946: taxonomy code when failed
         "cancel_requested": log.cancel_requested,
         "queue_position": queue_position,
         "questions": questions,
@@ -1086,6 +1096,7 @@ async def execute_run(
         _live_observers.setdefault(run_str_id, [])
     status = "completed"
     error: str | None = None
+    failure_class: str | None = None  # issue #946: taxonomy code when status="failed"
     params: GenerateParams | None = None
     try:
         params = GenerateParams.model_validate(claimed.params_json)
@@ -1150,21 +1161,30 @@ async def execute_run(
                     # _QuestionStateRecorder; the run status is derived after the
                     # stream ends from whether any question delivered a final result.
                     status = "failed"
-                    payload = event.get("payload")
-                    error = (
-                        payload.get("message", str(payload))
-                        if isinstance(payload, dict)
-                        else str(payload)
-                    )
+                    # issue #946: capture both error and failure_class from the same
+                    # (first) error event so they are always consistent.  Subsequent
+                    # error events are ignored for persistence purposes.
+                    if error is None:
+                        payload = event.get("payload")
+                        if isinstance(payload, dict):
+                            error = payload.get("message", str(payload))
+                            fc = payload.get("failure_class")
+                            if isinstance(fc, str) and fc:
+                                failure_class = fc
+                        else:
+                            error = str(payload)
             await recorder.observe(event)
             await _publish_live(run_str_id, event)
     except _TimeLimitExceededError:
         status = "failed"
         error = "time_limit"
+        # Conservative: _TimeLimitExceededError is not a provider error; use "unknown".
+        failure_class = "unknown"
         logger.info("run %s reached 2h time limit; terminating", claimed.run_id)
     except ValidationError as exc:  # issue #930 — schema drift across a deploy
         status = "failed"
         error = "run_settings_parse_failure"
+        failure_class = "unknown"
         # Log enough for operators to spot schema drift without leaking param content.
         logger.warning(
             "generation run %s: params_json failed GenerateParams validation "
@@ -1175,7 +1195,21 @@ async def execute_run(
     except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
         status = "failed"
         error = f"Run execution failed ({type(exc).__name__})"
+        # issue #946: classify the exception and emit an error event before done.
+        failure_class = classify_provider_error(exc)
+        _run_error_msg = error
         logger.exception("generation run %s failed", claimed.run_id)
+        await _publish_live(
+            run_str_id,
+            {
+                "event": "error",
+                "payload": build_sse_error(
+                    "stream_failed",
+                    _run_error_msg,
+                    failure_class=failure_class,
+                ),
+            },
+        )
     finally:
         heartbeat.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -1228,10 +1262,13 @@ async def execute_run(
             session_factory=session_factory,
         )
     async with session_factory() as session:
+        _update_values: dict = {"status": status, "error": error, "completed_at": clock()}
+        if failure_class is not None:
+            _update_values["failure_class"] = failure_class
         await session.execute(
             update(GenerationLog)
             .where(GenerationLog.id == claimed.run_id)
-            .values(status=status, error=error, completed_at=clock())
+            .values(**_update_values)
         )
         await session.commit()
 

@@ -65,22 +65,38 @@ describe("decodeModificationEvent", () => {
 
   it("extracts the message from a JSON error object", () => {
     expect(decodeModificationEvent("error", '{"message":"connection lost"}')).toEqual({
-      kind: "error", error: new Error("connection lost"),
+      kind: "error", error: new Error("connection lost"), failureClass: null,
     });
   });
 
   it("uses raw error text when no message object is available", () => {
     expect(decodeModificationEvent("error", "connection lost")).toEqual({
-      kind: "error", error: new Error("connection lost"),
+      kind: "error", error: new Error("connection lost"), failureClass: null,
     });
     expect(decodeModificationEvent("error", '{"message":""}')).toEqual({
-      kind: "error", error: new Error('{"message":""}'),
+      kind: "error", error: new Error('{"message":""}'), failureClass: null,
     });
   });
 
   it("uses the existing fallback for empty error data", () => {
     expect(decodeModificationEvent("error", "")).toEqual({
-      kind: "error", error: new Error("Modification stream failed"),
+      kind: "error", error: new Error("Modification stream failed"), failureClass: null,
+    });
+  });
+
+  it("extracts failure_class from a JSON error object", () => {
+    expect(
+      decodeModificationEvent("error", '{"message":"rate limited","failure_class":"rate_limited"}')
+    ).toEqual({
+      kind: "error", error: new Error("rate limited"), failureClass: "rate_limited",
+    });
+  });
+
+  it("ignores unrecognized failure_class values", () => {
+    expect(
+      decodeModificationEvent("error", '{"message":"err","failure_class":"bogus_code"}')
+    ).toEqual({
+      kind: "error", error: new Error("err"), failureClass: null,
     });
   });
 

@@ -16,11 +16,11 @@
 
 ## 3. Recording the requested and ran models
 
-- [ ] 3.1 Add `requested_model` to `llm_request`, `llm_response`, and `llm_failure` events only when it differs from `model`; verify with tests for both the substituted and the unsubstituted case
-- [ ] 3.2 Copy `requested_model` into `request_body` in `server/generate/exchange_recorder.py`; verify a recorder test shows `model_used == "claude-opus-4-6"` and `request_body["requested_model"] == "claude-fable-5"`, and that an unsubstituted exchange has no such key
-- [ ] 3.3 Implement `model_substitutions(params, config)` using the same effective-tier resolution as `_check_generation_admission`; verify unit tests for per-request Fable, env-configured Fable, inherited verify/correct tiers, and the empty result
-- [ ] 3.4 Add the `model_substitutions` key at each `params_json` build site (`server/generate/routes.py`, `server/generate/persistence.py`) only when non-empty; verify a server test stores the key for a Fable run with the switch on and stores byte-identical `params_json` with the switch off
-- [ ] 3.5 Pass the `model` written into `QuestionMetadata.model` and the verification trail through `config.dispatch_model` in the math, social-studies, and natural-sciences pipelines; verify a test per pipeline shows the ran model when substituted and the unchanged model otherwise
+- [x] 3.1 Add `requested_model` to `llm_request`, `llm_response`, and `llm_failure` events only when it differs from `model`; verify with tests for both the substituted and the unsubstituted case
+- [x] 3.2 Copy `requested_model` into `request_body` in `server/generate/exchange_recorder.py`; verify a recorder test shows `model_used == "claude-opus-4-6"` and `request_body["requested_model"] == "claude-fable-5"`, and that an unsubstituted exchange has no such key
+- [x] 3.3 Implement `model_substitutions(params, config)` using the same effective-tier resolution as `_check_generation_admission`; verify unit tests for per-request Fable, env-configured Fable, inherited verify/correct tiers, and the empty result
+- [x] 3.4 Add the `model_substitutions` key at each `params_json` build site (`server/generate/routes.py`, `server/generate/persistence.py`) only when non-empty; verify a server test stores the key for a Fable run with the switch on and stores byte-identical `params_json` with the switch off
+- [x] 3.5 Pass the `model` written into `QuestionMetadata.model` and the verification trail through `config.dispatch_model` in the math, social-studies, and natural-sciences pipelines; verify a test per pipeline shows the ran model when substituted and the unchanged model otherwise
 
 ## 4. Admission and roster stay unchanged
 
@@ -28,9 +28,9 @@
 
 ## 5. History detail
 
-- [ ] 5.1 Add zh-TW and en-US messages for the substitution notice in `web/src/i18n/messages.ts`; verify the i18n key-parity test passes
-- [ ] 5.2 Render the notice in `web/src/pages/HistoryDetail.tsx` listing each substituted tier as requested → ran; verify a component test shows it for a record with `model_substitutions` and shows nothing for a record without it
-- [ ] 5.3 Drop `model_substitutions` from `prefillParams` on regenerate; verify a component test shows the prefilled request keeps the requested Fable id and has no `model_substitutions` key
+- [x] 5.1 Add zh-TW and en-US messages for the substitution notice in `web/src/i18n/messages.ts`; verify the i18n key-parity test passes
+- [x] 5.2 Render the notice in `web/src/pages/HistoryDetail.tsx` listing each substituted tier as requested → ran; verify a component test shows it for a record with `model_substitutions` and shows nothing for a record without it
+- [x] 5.3 Drop `model_substitutions` from `prefillParams` on regenerate; verify a component test shows the prefilled request keeps the requested Fable id and has no `model_substitutions` key
 
 ## 6. Documentation
 

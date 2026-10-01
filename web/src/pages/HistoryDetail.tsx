@@ -286,8 +286,10 @@ function HistoryDetailContent({
 
   const handleRegenerate = () => {
     if (!detail) return;
+    // Strip server-derived model_substitutions — it must not become a user pin.
+    const { model_substitutions: _stripped, ...prefillParams } = detail.params_json as Record<string, unknown>;
     navigate(`/generate/${detail.subject}`, {
-      state: { prefillParams: detail.params_json },
+      state: { prefillParams },
     });
   };
 
@@ -399,6 +401,38 @@ function HistoryDetailContent({
         {!detail && !error && (
           <div className="text-sm text-gray-500">{t("history.detail_loading")}</div>
         )}
+        {detail && (() => {
+          const subs = (detail.params_json as Record<string, unknown>)?.model_substitutions as Record<string, { requested: string; ran: string }> | undefined;
+          if (!subs || Object.keys(subs).length === 0) return null;
+          const tierLabelKey: Record<string, string> = {
+            plan: "history.model_substitution_tier_plan",
+            execute: "history.model_substitution_tier_execute",
+            verify: "history.model_substitution_tier_verify",
+            correct: "history.model_substitution_tier_correct",
+          };
+          return (
+            <div
+              data-testid="history-model-substitutions-notice"
+              className="rounded border border-amber-200 bg-amber-50 p-3 text-xs"
+              role="status"
+            >
+              <p className="font-medium text-amber-800">
+                {t("history.model_substitutions_notice")}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {Object.entries(subs).map(([tier, { requested, ran }]) => (
+                  <li key={tier} className="text-amber-700">
+                    <span className="font-medium">
+                      {t(tierLabelKey[tier] ?? tier)}:
+                    </span>{" "}
+                    {t("history.model_substitution_requested")} {requested} →{" "}
+                    {t("history.model_substitution_ran")} {ran}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
         {detail && (
           isInterrupted ? (
             <section className="space-y-4 rounded border bg-white p-4 shadow-sm">

@@ -155,7 +155,6 @@ export function slotRefSeqno(
 
 /** Deep copy a plain question object, excluding any existing `_export` field. */
 function captureQuestion(question: ExamQuestion): ExamQuestion {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _export: _removed, ...rest } = question as ExamQuestion & { _export?: unknown };
   return JSON.parse(JSON.stringify(rest)) as ExamQuestion;
 }
@@ -662,7 +661,6 @@ export function batchFilename(hasDraft: boolean): string {
  * Does NOT mutate the input.
  */
 export function stripExport(exported: ExportedQuestion): ExamQuestion {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { _export: _removed, ...rest } = exported;
   return rest as ExamQuestion;
 }
