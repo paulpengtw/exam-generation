@@ -17,12 +17,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from server.auth.dependencies import get_config
-from server.generate import routes as generate_routes
 from server.generate.models import GenerateParams
 from server.generate.service import generate_question_stream
 from server.models import GenerationLog
 from tests.server.test_generate_body_transport import transport_client  # noqa: F401
-from tests.server.test_generation_log_discovery import live_generation, stream_events
 
 
 class PlannerProvider:
@@ -100,7 +98,7 @@ def planner_case(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-social-batch.json").read_text(),
     )
-    payload.update(model_plan="claude-opus-4-6", effort_plan="max", stream_version=2)
+    payload.update(model_plan="claude-opus-4-6", effort_plan="max", stream_version=3)
     try:
         yield client, probe, payload
     finally:
@@ -119,63 +117,36 @@ async def recorded_planner(reader: httpx.AsyncClient, log_id: str) -> list[dict[
     return await asyncio.wait_for(read_until_committed(), timeout=5)
 
 
-def test_disconnect_during_planning_returns_before_provider_and_preserves_late_exchange(
-    planner_case: Any,
-) -> None:
-    client, probe, payload = planner_case
+def _execute_run(client: TestClient) -> None:
+    """Claim and execute one queued run using the transport_client's session factory."""
+    from server.generate.run import claim_next_run, execute_run
 
-    async def exercise() -> None:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=client.app), base_url="http://testserver",
-            headers=client.headers,
-        ) as reader:
-            before_tasks = asyncio.all_tasks()
-            async with live_generation(client, payload) as (events, disconnect, task):
-                try:
-                    _, started = await asyncio.wait_for(events.get(), timeout=5)
-                    log_id = started["payload"]["generation_log_id"]
-                    while True:
-                        name, data = await asyncio.wait_for(events.get(), timeout=5)
-                        if name == "llm_thinking":
-                            assert data.get("payload", data).get("agent") == "planner"
-                            break
-                    assert not probe.release.is_set()
-                    disconnect.set()
-                    await asyncio.wait_for(asyncio.shield(task), timeout=2)
-                    assert probe.execute_calls == []
-                finally:
-                    probe.release.set()
-            rows = await recorded_planner(reader, log_id)
-            assert [row["agent"] for row in rows] == ["planner"]
-            assert rows[0]["response_body"]["reasoning"] == "planning evidence"
-            history = (await reader.get("/api/history")).json()
-            detail = (await reader.get(f"/api/history/{history['items'][0]['id']}")).json()
-            assert detail["status"] == "aborted"
-            assert detail["generation_log_id"] == log_id
-            # sse-starlette starts one application-lifetime shutdown watcher.
-            # Everything else created by this request must finish on closure.
-            pending = {
-                task for task in asyncio.all_tasks() - before_tasks
-                if task.get_coro().__qualname__ != "_shutdown_watcher"
-            }
-            if pending:
-                await asyncio.wait_for(asyncio.gather(*pending), timeout=2)
-            assert probe.execute_calls == []
+    sessions = client.app.state.test_async_session_local
+    config = client.app.dependency_overrides[get_config]()
+    app_state = client.app.state
 
-    asyncio.run(exercise())
+    async def _run() -> None:
+        claimed = await claim_next_run(sessions, host_id="test-host")
+        if claimed is not None:
+            await execute_run(
+                claimed, app_state=app_state, config=config,
+                session_factory=sessions, host_id="test-host",
+            )
+
+    asyncio.run(_run())
 
 
 def test_completed_planner_exchange_survives_later_generation_failure(planner_case: Any) -> None:
     client, probe, payload = planner_case
     probe.fail_generation = True
     probe.release.set()
-    events = stream_events(client.post("/api/generate", json=payload))
-    assert any(name == "error" for name, _ in events)
-    assert not any(name == "result" for name, _ in events)
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    response = client.get(f"/api/generation-logs/{log_id}/exchanges")
-    assert response.status_code == 200
-    rows = response.json()
+    response = client.post("/api/generate", json=payload)
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_run(client)
+    exchanges = client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    rows = exchanges.json()
     # Exactly 3 rows: planner success (order 1) + 2 generator failures (orders 2-3).
     # sub_question_count=3 but text generators fail before any sub_generators run.
     assert len(rows) == 3, (
@@ -211,20 +182,20 @@ def test_failed_planner_falls_back_to_generation_without_fabricating_exchange(
     client, probe, payload = planner_case
     probe.fail_planning = True
     probe.release.set()
-    events = stream_events(client.post("/api/generate", json=payload))
-    assert any(name == "result" for name, _ in events)
-    assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_thinking" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    response = client.get(f"/api/generation-logs/{log_id}/exchanges")
-    assert response.status_code == 200
-    rows = response.json()
+    response = client.post("/api/generate", json=payload)
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_run(client)
+    assert probe.plan_calls  # planner was invoked
+    exchanges = client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    rows = exchanges.json()
     # Exactly 9 rows: 1 planner failure (order 1) + 2 questions × (1 generator +
     # 3 sub_generator#N) = 8 generation successes (orders 2-9).
     assert len(rows) == 9, (
         f"expected 9 rows, got {len(rows)}: {[(r['agent'], r['exchange_order']) for r in rows]}"
     )
-    # Row 0: planner failure
+    # Row 0: planner failure recorded via llm_failure event (#945)
     assert rows[0]["agent"] == "planner"
     assert rows[0]["exchange_order"] == 1
     assert "error" in (rows[0]["response_body"] or {}), (
@@ -248,30 +219,28 @@ def test_disabled_recording_keeps_planner_activity_and_results(planner_case: Any
     client, probe, payload = planner_case
     client.app.dependency_overrides[get_config]().llm_exchange_retention_days = 0
     probe.release.set()
-    events = stream_events(client.post("/api/generate", json=payload))
-    assert any(name == "result" for name, _ in events)
-    assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_thinking" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    response = client.get(f"/api/generation-logs/{log_id}/exchanges")
-    assert response.status_code == 200
-    assert response.json() == []
+    response = client.post("/api/generate", json=payload)
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_run(client)
+    assert probe.plan_calls  # planner was invoked despite recording being disabled
+    exchanges = client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    assert exchanges.json() == []
 
 
 def test_skipped_planning_does_not_fabricate_planner_events_or_exchanges(planner_case: Any) -> None:
     client, probe, payload = planner_case
     client.app.dependency_overrides[get_config]().creative_planning = False
-    events = stream_events(client.post("/api/generate", json=payload))
-    assert any(name == "result" for name, _ in events)
-    assert not any(name == "error" for name, _ in events)
+    probe.release.set()  # unblock any lingering waits
+    response = client.post("/api/generate", json=payload)
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_run(client)
     assert probe.plan_calls == []
-    assert not any(
-        name.startswith("llm_") and data.get("payload", data).get("agent") == "planner" for name, data in events  # noqa: E501
-    )
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    response = client.get(f"/api/generation-logs/{log_id}/exchanges")
-    assert response.status_code == 200
-    rows = response.json()
+    exchanges = client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    rows = exchanges.json()
     assert rows
     assert all(row["agent"] != "planner" for row in rows)
 
@@ -280,7 +249,7 @@ def test_planner_recording_failure_does_not_interrupt_generation(planner_case: A
     client, probe, payload = planner_case
 
     async def reject_exchange_writes() -> None:
-        async with generate_routes.AsyncSessionLocal() as session:
+        async with client.app.state.test_async_session_local() as session:
             await session.execute(text(
                 "CREATE TRIGGER reject_exchange BEFORE INSERT ON llm_exchanges "
                 "BEGIN SELECT RAISE(FAIL, 'fixture exchange write failure'); END"
@@ -289,14 +258,13 @@ def test_planner_recording_failure_does_not_interrupt_generation(planner_case: A
 
     asyncio.run(reject_exchange_writes())
     probe.release.set()
-    events = stream_events(client.post("/api/generate", json=payload))
-    assert any(name == "result" for name, _ in events)
-    assert not any(name == "error" for name, _ in events)
-    assert any(name == "llm_response" and data.get("payload", data).get("agent") == "planner" for name, data in events)  # noqa: E501
-    log_id = events[0][1]["payload"]["generation_log_id"]
-    response = client.get(f"/api/generation-logs/{log_id}/exchanges")
-    assert response.status_code == 200
-    assert response.json() == []
+    response = client.post("/api/generate", json=payload)
+    assert response.status_code == 202
+    log_id = response.json()["run_id"]
+    _execute_run(client)
+    exchanges = client.get(f"/api/generation-logs/{log_id}/exchanges")
+    assert exchanges.status_code == 200
+    assert exchanges.json() == []
     history = client.get("/api/history").json()
     detail = client.get(f"/api/history/{history['items'][0]['id']}").json()
     assert detail["status"] == "completed"
@@ -312,14 +280,14 @@ def test_closing_planner_iterator_returns_before_provider_and_preserves_late_exc
     log_id = uuid.uuid4()
 
     async def exercise() -> None:
-        async with generate_routes.AsyncSessionLocal() as session:
+        async with client.app.state.test_async_session_local() as session:
             session.add(GenerationLog(
                 id=log_id, user_id=user_id, params_json=payload, status="started",
             ))
             await session.commit()
         stream = generate_question_stream(
             GenerateParams.model_validate(payload), config, client.app.state,
-            generation_log_id=log_id, session_factory=generate_routes.AsyncSessionLocal,
+            generation_log_id=log_id, session_factory=client.app.state.test_async_session_local,
         )
         try:
             while True:

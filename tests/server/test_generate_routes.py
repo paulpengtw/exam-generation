@@ -28,15 +28,16 @@ from server.auth.dependencies import get_config, get_current_user
 from server.auth.tokens import create_jwt
 from server.config import ServerConfig
 from server.db import get_async_session
-from server.models import Base, GenerationLog, GenerationRecord, User
+from server.models import Base, GenerationLog, User
 from server.rate_limit import limiter
 from src.common.resolver import resolve
+from tests.server.generate_test_utils import fake_acceptance
 
 
 def _complete_query_params(payload: dict[str, Any]) -> dict[str, Any]:
     """Encode a resolver-complete payload for the GET route's wire shape."""
     completed = dict(resolve(payload).payload)
-    completed["stream_version"] = 2
+    completed["stream_version"] = 3
     rows = completed.get("per_question_params")
     if isinstance(rows, list):
         for row in rows:
@@ -83,7 +84,7 @@ def test_generate_route_rejects_unresolved_top_level_field() -> None:
                     "learning_content": "A-7-7",
                     "learning_performance": "s-IV-12",
                     "core_competency": "數-J-A2",
-                    "stream_version": 2,
+                    "stream_version": 3,
                 },
             )
     finally:
@@ -137,7 +138,7 @@ def test_generate_route_rejects_unresolved_per_question_field() -> None:
                     "subject": "math",
                     "seed": 41,
                     "count": 2,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "per_question_params": json.dumps(rows, ensure_ascii=False),
                 },
             )
@@ -186,7 +187,7 @@ def test_generate_route_rejects_unresolved_subquestion_field() -> None:
                     "subject": "natural_sciences",
                     "seed": 41,
                     "grade": 8,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "context": "Personal",
                     "sub_context": "Maintenance of health",
                     "set_type": "題組題",
@@ -326,7 +327,7 @@ def test_generate_route_reports_incompatible_parent_with_resolver_shape() -> Non
                     "subject": "natural_sciences",
                     "seed": 1,
                     "grade": 8,
-                    "stream_version": 2,
+                    "stream_version": 3,
                     "context": "Global",
                     "sub_context": "Maintenance of health",
                     "set_type": "單一題",
@@ -377,7 +378,7 @@ def test_generate_and_preview_reject_the_empty_narrowed_civic_domain(route: str)
                     "set_type": "題組題",
                     "subject_filter": "公民與社會",
                     "learning_content": ["公Aa-Ⅳ-1", "公Ab-Ⅳ-1"],
-                    "stream_version": 2,
+                    "stream_version": 3,
                 },
             )
     finally:
@@ -426,7 +427,7 @@ def _accept_narrowed_payload_via_route(
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     def fake_previews(params, *_args, **_kwargs):
         return []
@@ -435,9 +436,9 @@ def _accept_narrowed_payload_via_route(
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
-    original_stream = gen_routes.generate_question_stream
+    original_stream = gen_routes.accept_run
     original_previews = gen_routes.build_prompt_previews
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
     limiter.reset()
 
@@ -447,7 +448,7 @@ def _accept_narrowed_payload_via_route(
             response = client.get(route, params=query)
             re_resolved = client.post("/api/generate/resolve", json=query)
     finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.accept_run = original_stream  # type: ignore[assignment]
         gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
@@ -501,7 +502,7 @@ def test_generate_and_preview_accept_the_834_narrowed_reproductions(
     """
     status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
 
-    assert status_code == 200
+    assert status_code in (200, 202)
     assert re_resolved["drawn"] == []
     assert re_resolved["cleared"] == []
 
@@ -528,7 +529,7 @@ def test_generate_and_preview_accept_the_row_pinned_civic_content(route: str) ->
 
     status_code, re_resolved = _accept_narrowed_payload_via_route(route, partial)
 
-    assert status_code == 200
+    assert status_code in (200, 202)
     assert re_resolved["payload"]["subject_filter"][0] in {"公民與社會", "跨科"}
     assert re_resolved["payload"]["content_domain"] == "Civic Roles and Identities"
     assert re_resolved["drawn"] == []
@@ -569,7 +570,7 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["generate"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     def fake_previews(params, *_args, **_kwargs):
         captured["preview"] = params
@@ -579,9 +580,9 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
-    original_stream = gen_routes.generate_question_stream
+    original_stream = gen_routes.accept_run
     original_previews = gen_routes.build_prompt_previews
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     gen_routes.build_prompt_previews = fake_previews  # type: ignore[assignment]
     limiter.reset()
     try:
@@ -611,16 +612,16 @@ def test_resolved_payload_passes_generate_and_preview_unchanged() -> None:
                 if value is not None
             }
 
-            wire_payload["stream_version"] = 2
+            wire_payload["stream_version"] = 3
             generate_response = client.get("/api/generate", params=wire_payload)
             preview_response = client.get("/api/generate/preview", params=wire_payload)
     finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
+        gen_routes.accept_run = original_stream  # type: ignore[assignment]
         gen_routes.build_prompt_previews = original_previews  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert generate_response.status_code == 200, generate_response.text
+    assert generate_response.status_code == 202, generate_response.text
     assert preview_response.status_code == 200, preview_response.text
     expected = submitted.model_dump(mode="json")
     # stream_version is a server-only transport field; exclude from the round-trip check
@@ -664,7 +665,7 @@ def test_generate_route_rejects_malformed_per_question_params() -> None:
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get(
                 "/api/generate",
-                params={"per_question_params": "{not-json", "stream_version": 2},
+                params={"per_question_params": "{not-json", "stream_version": 3},
             )
     finally:
         limiter.reset()
@@ -686,7 +687,7 @@ def test_generate_route_rejects_count_above_ten(count: int) -> None:
 
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
-            response = client.get("/api/generate", params={"count": count, "stream_version": 2})
+            response = client.get("/api/generate", params={"count": count, "stream_version": 3})
     finally:
         limiter.reset()
 
@@ -726,15 +727,15 @@ def test_generate_route_accepts_count_of_ten() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -744,11 +745,11 @@ def test_generate_route_accepts_count_of_ten() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].count == 10
 
 
@@ -787,15 +788,15 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         query = _complete_query_params(
@@ -836,11 +837,11 @@ def test_generate_route_forwards_social_studies_options(caplog) -> None:
             finally:
                 gen_routes.logger.removeHandler(caplog.handler)
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].subject == "social_studies"
     assert captured["params"].image_generation_mode == "gpt_image"
     assert captured["params"].topic == "氣候變遷"
@@ -909,15 +910,15 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -939,11 +940,11 @@ def test_generate_route_forwards_natural_sciences_options() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].subject == "natural_sciences"
     assert captured["params"].context == ["Global"]
     assert captured["params"].sub_context == "Food security"
@@ -1044,15 +1045,15 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -1068,11 +1069,11 @@ def test_generate_route_accepts_difficulty_query_param() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert ok.status_code == 200
+    assert ok.status_code == 202
     assert captured["params"].difficulty == "hard"
     assert bad.status_code == 422
 
@@ -1113,15 +1114,15 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -1133,7 +1134,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
                 ),
                 headers={"Authorization": f"Bearer {token}"},
             )
-            assert r_default.status_code == 200
+            assert r_default.status_code == 202
             assert captured["params"].coverage_mode == "balanced"
 
             # Explicit random passes through.
@@ -1149,7 +1150,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
                 ),
                 headers={"Authorization": f"Bearer {token}"},
             )
-            assert r_random.status_code == 200
+            assert r_random.status_code == 202
             assert captured["params"].coverage_mode == "random"
 
             # Unknown value → 422 from Query Literal validation.
@@ -1159,7 +1160,7 @@ def test_generate_route_defaults_coverage_mode_to_balanced() -> None:
             )
             assert r_bad.status_code == 422
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -1168,7 +1169,6 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
     import dataclasses
     from types import SimpleNamespace
 
-    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -1322,7 +1322,6 @@ def test_generate_stream_shares_recorder_across_batch_workers(
     import dataclasses
     from types import SimpleNamespace
 
-    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -1726,149 +1725,11 @@ def test_generate_stream_shares_figure_policy_recorder_across_batch_workers(
     assert all(event["payload"]["code"] == "figure_policy" for event in policy_events)
 
 
-def test_generate_route_defers_failed_policy_tombstone_until_workers_finish(tmp_path) -> None:
-    """A failed tombstone includes policy events emitted by slower sibling workers."""
-    from server.generate.service import generate_question_stream
-    from server.generate.subjects import SUBJECTS
-    from src.common.figure_policy_trail import FigurePolicySpecEntry
-    from src.social_studies.schemas import ExamQuestion
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
-
-    async def init_db() -> None:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(init_db())
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        async with SessionLocal() as session:
-            yield session
-
-    config = ServerConfig(
-        api_key="x",
-        gemini_api_key="x",
-        jwt_secret="test-secret",
-        output_dir=tmp_path,
-        data_dir=Path("data"),
-    )
-    user_id = uuid.uuid4()
-
-    async def add_user() -> None:
-        async with SessionLocal() as session:
-            session.add(User(id=user_id, email="figure-failure@example.com"))
-            await session.commit()
-
-    asyncio.run(add_user())
-
-    failure_started = threading.Event()
-
-    def fake_do_generate(rng_params, _overrides, **kwargs):
-        question_id = kwargs["question_id"]
-        kwargs["on_figure_policy_entry"](
-            FigurePolicySpecEntry(
-                question_id=question_id,
-                label="題幹",
-                effective_figure_kind="地圖",
-                timestamp=datetime.now(timezone.utc),
-            )
-        )
-        if question_id.endswith("_001"):
-            failure_started.set()
-            raise RuntimeError("scripted policy failure")
-
-        assert failure_started.wait(timeout=5)
-        time.sleep(0.25)
-        kwargs["on_figure_policy_entry"](
-            FigurePolicySpecEntry(
-                question_id=question_id,
-                label="小題 1",
-                effective_figure_kind="統計圖",
-                timestamp=datetime.now(timezone.utc),
-            )
-        )
-        return ExamQuestion(
-            id=question_id,
-            核心問題="核心問題",
-            文本="文本",
-            subquestions=[],
-            情境=[c.value for c in rng_params.情境],
-            題型種類=rng_params.題型種類.value,
-            題型=rng_params.題型[0].value,
-            題目=["題目"],
-            正確解題分析=["解析"],
-        )
-
-    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
-
-    async def injected_stream(params, config_arg, app_state, **kwargs):
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        asyncio.get_running_loop().set_default_executor(executor)
-        try:
-            async for event in generate_question_stream(
-                params,
-                config_arg,
-                app_state,
-                subjects={"social_studies": fake_spec},
-                **kwargs,
-            ):
-                yield event
-        finally:
-            executor.shutdown(wait=True)
-
-    app = create_app()
-    app.dependency_overrides[get_async_session] = override_session
-    app.dependency_overrides[get_config] = lambda: config
-    limiter.reset()
-
-    from server.generate import routes as gen_routes
-
-    original_stream = gen_routes.generate_question_stream
-    original_session_factory = gen_routes.AsyncSessionLocal
-    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
-    gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
-    try:
-        token = create_jwt(user_id, "figure-failure@example.com", config=config)
-        with TestClient(app) as client:
-            response = client.get(
-                "/api/generate",
-                params=_complete_query_params(
-                    {
-                        "subject": "social_studies",
-                        "count": 2,
-                        "seed": 41,
-                        "skip_verify": True,
-                    }
-                ),
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    finally:
-        gen_routes.generate_question_stream = original_stream  # type: ignore[assignment]
-        gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
-        limiter.reset()
-
-    assert response.status_code == 200
-
-    async def read_records() -> list[GenerationRecord]:
-        async with SessionLocal() as session:
-            return list((await session.execute(select(GenerationRecord))).scalars().all())
-
-    rows = asyncio.run(read_records())
-    asyncio.run(engine.dispose())
-
-    failed = next(row for row in rows if row.status == "failed")
-    assert failed.figure_policy_trail_json is not None
-    assert len(failed.figure_policy_trail_json) == 3
-    assert len({entry["question_id"] for entry in failed.figure_policy_trail_json}) == 2
-    assert {entry["label"] for entry in failed.figure_policy_trail_json} == {"題幹", "小題 1"}
-
 
 def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
     import dataclasses
     from types import SimpleNamespace
 
-    from sqlalchemy import select
     from sqlalchemy.ext.asyncio import (
         AsyncSession,
         async_sessionmaker,
@@ -1968,7 +1829,6 @@ def test_generate_stream_skips_recording_when_retention_zero(tmp_path) -> None:
 
 def test_generate_route_rejects_unknown_subject_422() -> None:
     """Unknown subject returns 422 before any DB write (no generation_log row)."""
-    from sqlalchemy import select
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
 
@@ -2003,7 +1863,7 @@ def test_generate_route_rejects_unknown_subject_422() -> None:
         with TestClient(app) as client:
             response = client.get(
                 "/api/generate",
-                params={"subject": "typo", "stream_version": 2},
+                params={"subject": "typo", "stream_version": 3},
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -2054,15 +1914,15 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -2072,9 +1932,9 @@ def test_generate_route_valid_subjects_still_accepted() -> None:
                     params=_complete_query_params({"subject": subject, "seed": 41}),
                     headers={"Authorization": f"Bearer {token}"},
                 )
-                assert r.status_code == 200, f"expected 200 for subject={subject!r}"
+                assert r.status_code == 202, f"expected 202 for subject={subject!r}"
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -2137,196 +1997,6 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
     assert '  File "' not in data["message"]
 
 
-def test_route_outer_error_event_is_structured() -> None:
-    """The outer event_generator exception path must emit a structured error dict."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
-
-    async def init_db() -> None:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(init_db())
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        async with SessionLocal() as session:
-            yield session
-
-    config = ServerConfig(api_key="x", jwt_secret="test-secret", gemini_api_key="x")
-    user_id = uuid.uuid4()
-
-    async def add_user() -> None:
-        async with SessionLocal() as session:
-            session.add(User(id=user_id, email="u@example.com"))
-            await session.commit()
-
-    asyncio.run(add_user())
-
-    from server.generate import routes as gen_routes
-
-    async def exploding_stream(params, *_args, **_kwargs):
-        raise RuntimeError("outer stream boom")
-        yield  # make it a generator
-
-    app = create_app()
-    app.dependency_overrides[get_async_session] = override_session
-    app.dependency_overrides[get_config] = lambda: config
-    limiter.reset()
-
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = exploding_stream  # type: ignore[assignment]
-    try:
-        token = create_jwt(user_id, "u@example.com", config=config)
-        with TestClient(app) as client:
-            response = client.get(
-                "/api/generate",
-                params=_complete_query_params({"subject": "math", "seed": 41}),
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
-        limiter.reset()
-        asyncio.run(engine.dispose())
-
-    assert response.status_code == 200
-    # Parse the SSE stream body to find the error event
-    body = response.text
-    error_data: str | None = None
-    for line in body.splitlines():
-        if line.startswith("data:") and "stream_failed" in line:
-            error_data = line[len("data:") :].strip()
-            break
-    assert error_data is not None, f"No stream_failed error event found in: {body!r}"
-    import json as _json
-
-    parsed = _json.loads(error_data)
-    assert parsed["code"] == "stream_failed"
-    assert "Traceback (most recent call last)" not in parsed["message"]
-    assert '  File "' not in parsed["message"]
-
-
-def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path) -> None:
-    """A dead run leaves one tombstone beside each successful result emitted first."""
-    from server.generate.service import generate_question_stream
-    from server.generate.subjects import SUBJECTS
-    from src.social_studies.schemas import ExamQuestion
-
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
-
-    async def init_db() -> None:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(init_db())
-    SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
-    async def override_session() -> AsyncGenerator[AsyncSession, None]:
-        async with SessionLocal() as session:
-            yield session
-
-    config = ServerConfig(
-        api_key="x", jwt_secret="test-secret", output_dir=tmp_path, data_dir=Path("data"),
-        gemini_api_key="x",
-    )
-    user_id = uuid.uuid4()
-
-    async def add_user() -> None:
-        async with SessionLocal() as session:
-            session.add(User(id=user_id, email="u@example.com"))
-            await session.commit()
-
-    asyncio.run(add_user())
-
-    calls = 0
-
-    def fake_do_generate(sampled_params, _overrides, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 2:
-            raise RuntimeError("scripted LLM failure")
-        return ExamQuestion(
-            id=kwargs["question_id"],
-            核心問題="先完成的核心問題",
-            文本="先完成的文本",
-            subquestions=[],
-            情境=[c.value for c in sampled_params.情境],
-            題型種類=sampled_params.題型種類.value,
-            題型=sampled_params.題型[0].value,
-            題目=["先完成的題目"],
-            正確解題分析=["解析"],
-        )
-
-    fake_spec = dataclasses.replace(SUBJECTS["social_studies"], do_generate=fake_do_generate)
-
-    async def injected_stream(params, config_arg, app_state, **kwargs):
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        asyncio.get_running_loop().set_default_executor(executor)
-        try:
-            async for event in generate_question_stream(
-                params,
-                config_arg,
-                app_state,
-                subjects={"social_studies": fake_spec},
-                **kwargs,
-            ):
-                yield event
-        finally:
-            executor.shutdown(wait=True)
-
-    app = create_app()
-    app.dependency_overrides[get_async_session] = override_session
-    app.dependency_overrides[get_config] = lambda: config
-    limiter.reset()
-
-    from server.generate import routes as gen_routes
-
-    original = gen_routes.generate_question_stream
-    original_session_factory = gen_routes.AsyncSessionLocal
-    gen_routes.generate_question_stream = injected_stream  # type: ignore[assignment]
-    gen_routes.AsyncSessionLocal = SessionLocal  # type: ignore[assignment]
-    try:
-        token = create_jwt(user_id, "u@example.com", config=config)
-        with TestClient(app) as client:
-            response = client.get(
-                "/api/generate",
-                params=_complete_query_params(
-                    {
-                        "subject": "social_studies",
-                        "count": 2,
-                        "seed": 41,
-                        "skip_verify": True,
-                    }
-                ),
-                headers={"Authorization": f"Bearer {token}"},
-            )
-    finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
-        gen_routes.AsyncSessionLocal = original_session_factory  # type: ignore[assignment]
-        limiter.reset()
-
-    assert response.status_code == 200
-    assert "generation_failed" in response.text
-
-    async def read_records() -> list[GenerationRecord]:
-        async with SessionLocal() as session:
-            return (
-                (await session.execute(
-                    select(GenerationRecord).order_by(GenerationRecord.created_at.asc())
-                ))
-                .scalars()
-                .all()
-            )
-
-    rows = asyncio.run(read_records())
-    assert len(rows) == 2
-    assert [row.status for row in rows].count("completed") == 1
-    assert [row.status for row in rows].count("failed") == 1
-    failed = next(row for row in rows if row.status == "failed")
-    assert failed.error == "Question generation failed (RuntimeError)"
-    assert failed.params_json["count"] == 2
-    assert failed.question_json is None
-    asyncio.run(engine.dispose())
-
 
 def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
     """Slice 5: GET /generate?reporting_scale=4 → params.reporting_scale == '4'."""
@@ -2359,15 +2029,15 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         with TestClient(app) as client:
@@ -2379,11 +2049,11 @@ def test_generate_route_forwards_reporting_scale_to_natural_sciences() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     assert captured["params"].reporting_scale == "4"
 
 
@@ -2420,7 +2090,7 @@ def test_generate_422_emits_warning_free_of_user_content(caplog) -> None:
                     # Malformed JSON with embedded sentinel so any echo would be detectable.
                     response = client.get(
                         "/api/generate",
-                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 2},
+                        params={"per_question_params": f"{{{SENTINEL}", "stream_version": 3},
                     )
         finally:
             gen_routes.logger.removeHandler(caplog.handler)
@@ -2476,15 +2146,15 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
     from server.generate import routes as gen_routes
 
     async def fake_stream(params, *_args, **_kwargs):
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
     app = create_app()
     app.dependency_overrides[get_async_session] = override_session
     app.dependency_overrides[get_config] = lambda: config
     limiter.reset()
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         token = create_jwt(user_id, "u@example.com", config=config)
         gen_routes.logger.addHandler(caplog.handler)
@@ -2499,11 +2169,11 @@ def test_generate_valid_request_emits_no_validation_warning(caplog) -> None:
         finally:
             gen_routes.logger.removeHandler(caplog.handler)
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
 
     # No validation WARNING must be emitted for a valid request.
     route_validation_warnings = [

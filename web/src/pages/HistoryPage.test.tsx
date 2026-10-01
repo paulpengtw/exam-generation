@@ -13,6 +13,7 @@ vi.mock("../store/authStore", () => ({
 }));
 
 const listHistoryMock = vi.hoisted(() => vi.fn());
+const listRunsMock = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 vi.mock("../api/client", () => ({
   ApiError: class ApiError extends Error {
     detail: string;
@@ -24,6 +25,13 @@ vi.mock("../api/client", () => ({
     }
   },
   listHistory: listHistoryMock,
+  listRuns: listRunsMock,
+}));
+vi.mock("../lib/historyBadge", () => ({
+  initLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
+  setLastSeenAt: vi.fn(),
+  getLastSeenAt: vi.fn().mockReturnValue("2020-01-01T00:00:00Z"),
+  findNewestCompletedAt: vi.fn().mockReturnValue(null),
 }));
 
 import HistoryPage from "./HistoryPage";

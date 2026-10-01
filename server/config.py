@@ -76,6 +76,11 @@ class ServerConfig(Config):
     llm_exchange_retention_days: int = 30
     drain_telemetry_token: str = ""  # DRAIN_TELEMETRY_TOKEN; empty = endpoint disabled
     creative_planning: bool = True
+    queue_limit: int = 5  # QUEUE_LIMIT: max queued runs per teacher
+    # 生成執行 host (ADR 0034): whether this process runs run_host_loop, and how
+    # many runs it executes at once.
+    generation_host_enabled: bool = True
+    generation_host_concurrency: int = 3
     effort_plan: str = DEFAULT_EFFORT_PLAN  # Planning effort (LLM_EFFORT_PLAN)
     effort_execute: str = DEFAULT_EFFORT_EXECUTE  # Execution effort (LLM_EFFORT_EXECUTE)
     # Verify/correct model and effort fields inherit the shared defaults from Config.
@@ -174,10 +179,16 @@ class ServerConfig(Config):
             creative_planning=os.environ.get("CREATIVE_PLANNING", "1")
             not in ("0", "false", "False", ""),
             drain_telemetry_token=os.environ.get("DRAIN_TELEMETRY_TOKEN", ""),
+            generation_host_enabled=os.environ.get("GENERATION_HOST_ENABLED", "1").strip()
+            not in ("0", "false", "False", ""),
+            generation_host_concurrency=int(
+                os.environ.get("GENERATION_HOST_CONCURRENCY", "3")
+            ),
             effort_plan=os.environ.get("LLM_EFFORT_PLAN", DEFAULT_EFFORT_PLAN),
             effort_execute=os.environ.get("LLM_EFFORT_EXECUTE", DEFAULT_EFFORT_EXECUTE),
             effort_verify=os.environ.get("LLM_EFFORT_VERIFY", DEFAULT_EFFORT_VERIFY),
             effort_correct=os.environ.get("LLM_EFFORT_CORRECT", DEFAULT_EFFORT_CORRECT),
+            queue_limit=int(os.environ.get("QUEUE_LIMIT", "5")),
         )
         # When LLM_MODELS_ALLOWED is unset/empty fall back to the built-in
         # roster; when set it replaces the roster entirely (no merge).
