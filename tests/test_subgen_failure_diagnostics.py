@@ -165,6 +165,7 @@ def _generate(
     subject: str,
     mode: str,
     *,
+    tmp_path: Path,
     retries: int,
     observer: _ObserverCapture,
     state: _CallState,
@@ -186,7 +187,11 @@ def _generate(
         return sub_client
 
     question = generate_one(
-        config=Config(data_dir=Path("data"), subgen_retries=retries),
+        config=Config(
+            data_dir=Path("data"),
+            output_dir=tmp_path,
+            subgen_retries=retries,
+        ),
         client=_TextClient(subject, observer),
         params=sample_params(seed=11, content_type="純文字"),
         question_id=f"diagnostics_{subject}_{mode}",
@@ -228,6 +233,7 @@ def test_exhausted_slot_reports_final_failure_cause_without_private_warning_data
     retries: int,
     cause: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING, logger="src.common.generation_core")
     observer = _ObserverCapture()
@@ -236,6 +242,7 @@ def test_exhausted_slot_reports_final_failure_cause_without_private_warning_data
     question = _generate(
         subject,
         mode,
+        tmp_path=tmp_path,
         retries=retries,
         observer=observer,
         state=state,
@@ -270,6 +277,7 @@ def test_exhausted_slot_reports_final_failure_cause_without_private_warning_data
 def test_schema_failure_reports_bad_question_field_and_type(
     subject: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING)
     observer = _ObserverCapture()
@@ -278,6 +286,7 @@ def test_schema_failure_reports_bad_question_field_and_type(
     question = _generate(
         subject,
         "bad_question",
+        tmp_path=tmp_path,
         retries=0,
         observer=observer,
         state=state,
@@ -304,6 +313,7 @@ def test_schema_failure_reports_bad_question_field_and_type(
 def test_visual_discard_waits_for_a_constructed_row_before_warning(
     subject: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING)
     observer = _ObserverCapture()
@@ -312,6 +322,7 @@ def test_visual_discard_waits_for_a_constructed_row_before_warning(
     question = _generate(
         subject,
         "visual_then_recover",
+        tmp_path=tmp_path,
         retries=1,
         observer=observer,
         state=state,
@@ -332,6 +343,7 @@ def test_falsey_primary_visual_alias_falls_back_to_valid_chart(
     subject: str,
     mode: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING)
     observer = _ObserverCapture()
@@ -340,6 +352,7 @@ def test_falsey_primary_visual_alias_falls_back_to_valid_chart(
     question = _generate(
         subject,
         mode,
+        tmp_path=tmp_path,
         retries=0,
         observer=observer,
         state=state,
@@ -356,6 +369,7 @@ def test_falsey_primary_visual_alias_falls_back_to_valid_chart(
 def test_unusable_slot_recovery_keeps_budget_without_drop_diagnostic(
     subject: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING, logger="src.common.generation_core")
     observer = _ObserverCapture()
@@ -364,6 +378,7 @@ def test_unusable_slot_recovery_keeps_budget_without_drop_diagnostic(
     question = _generate(
         subject,
         "recover",
+        tmp_path=tmp_path,
         retries=1,
         observer=observer,
         state=state,
@@ -385,6 +400,7 @@ def test_malformed_visual_spec_retains_subquestion_and_logs_safe_discard(
     subject: str,
     mode: str,
     caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
 ) -> None:
     caplog.set_level(logging.WARNING, logger="src.common.generation_core")
     observer = _ObserverCapture()
@@ -393,6 +409,7 @@ def test_malformed_visual_spec_retains_subquestion_and_logs_safe_discard(
     question = _generate(
         subject,
         mode,
+        tmp_path=tmp_path,
         retries=0,
         observer=observer,
         state=state,

@@ -60,7 +60,9 @@ def test_ss_parse_args_text_instruction_is_captured() -> None:
     assert ns.text_instruction == "請聚焦地方自治"
 
 
-def test_ss_dry_run_with_text_instruction_contains_value(monkeypatch, capsys) -> None:
+def test_ss_dry_run_with_text_instruction_contains_value(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """--text-instruction value appears in the dry-run 文本生成器 user prompt (SS)."""
     import src.social_studies.cli as cli
     from src.config import Config
@@ -73,6 +75,7 @@ def test_ss_dry_run_with_text_instruction_contains_value(monkeypatch, capsys) ->
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
@@ -111,7 +114,9 @@ def test_ns_parse_args_text_instruction_is_captured() -> None:
     assert ns.text_instruction == "請聚焦電磁波"
 
 
-def test_ns_dry_run_with_text_instruction_contains_value(monkeypatch, capsys) -> None:
+def test_ns_dry_run_with_text_instruction_contains_value(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """--text-instruction value appears in the dry-run 文本生成器 user prompt (NS)."""
     import src.natural_sciences.cli as cli
     from src.config import Config
@@ -124,6 +129,7 @@ def test_ns_dry_run_with_text_instruction_contains_value(monkeypatch, capsys) ->
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
@@ -159,7 +165,9 @@ def test_ns_dry_run_with_text_instruction_contains_value(monkeypatch, capsys) ->
 # ---------------------------------------------------------------------------
 
 
-def test_ss_parity_cli_dry_run_matches_build_prompt_previews(monkeypatch, capsys) -> None:
+def test_ss_parity_cli_dry_run_matches_build_prompt_previews(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """SS CLI dry-run 文本生成器 user prompt is byte-identical to server build_prompt_previews.
 
     Both sides resolve the same partial payload
@@ -183,7 +191,9 @@ def test_ss_parity_cli_dry_run_matches_build_prompt_previews(monkeypatch, capsys
     _GRADE = 8
     instruction = "請聚焦地方自治中的證據比較"
 
-    config = Config(data_dir=Path("data"), creative_planning=False)
+    config = Config(
+        data_dir=Path("data"), output_dir=tmp_path, creative_planning=False
+    )
     monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda cls, _ef=None: config))
 
     # ── CLI side: run main with --dry-run and capture the 文本生成器 user prompt ──
@@ -229,7 +239,9 @@ def test_ss_parity_cli_dry_run_matches_build_prompt_previews(monkeypatch, capsys
     )
 
 
-def test_ns_parity_cli_dry_run_matches_build_prompt_previews(monkeypatch, capsys) -> None:
+def test_ns_parity_cli_dry_run_matches_build_prompt_previews(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """NS CLI dry-run 文本生成器 user prompt is byte-identical to server build_prompt_previews.
 
     Both sides resolve the same partial payload
@@ -251,7 +263,9 @@ def test_ns_parity_cli_dry_run_matches_build_prompt_previews(monkeypatch, capsys
     _GRADE = 8
     instruction = "請聚焦電磁波的能量傳遞概念"
 
-    config = Config(data_dir=Path("data"), creative_planning=False)
+    config = Config(
+        data_dir=Path("data"), output_dir=tmp_path, creative_planning=False
+    )
     monkeypatch.setattr(cli.Config, "from_env", classmethod(lambda cls, _ef=None: config))
 
     # ── CLI side: run main with --dry-run and capture the 文本生成器 user prompt ──
@@ -316,7 +330,9 @@ def test_ns_omitting_text_instruction_flag_gives_none_in_parse_args() -> None:
     assert ns.text_instruction is None
 
 
-def test_ss_omitting_flag_does_not_add_text_instruction_section(monkeypatch, capsys) -> None:
+def test_ss_omitting_flag_does_not_add_text_instruction_section(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """Omitting --text-instruction on SS CLI produces no 文本出題指示 section."""
     import src.social_studies.cli as cli
     from src.config import Config
@@ -327,6 +343,7 @@ def test_ss_omitting_flag_does_not_add_text_instruction_section(monkeypatch, cap
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
@@ -344,7 +361,9 @@ def test_ss_omitting_flag_does_not_add_text_instruction_section(monkeypatch, cap
     assert "文本出題指示" not in user_prompt
 
 
-def test_ns_omitting_flag_does_not_add_text_instruction_section(monkeypatch, capsys) -> None:
+def test_ns_omitting_flag_does_not_add_text_instruction_section(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """Omitting --text-instruction on NS CLI produces no 文本出題指示 section."""
     import src.natural_sciences.cli as cli
     from src.config import Config
@@ -355,6 +374,7 @@ def test_ns_omitting_flag_does_not_add_text_instruction_section(monkeypatch, cap
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
@@ -372,7 +392,9 @@ def test_ns_omitting_flag_does_not_add_text_instruction_section(monkeypatch, cap
     assert "文本出題指示" not in user_prompt
 
 
-def test_ss_blank_text_instruction_acts_like_omission(monkeypatch, capsys) -> None:
+def test_ss_blank_text_instruction_acts_like_omission(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """Blank/whitespace --text-instruction on SS CLI behaves like omission."""
     import src.social_studies.cli as cli
     from src.config import Config
@@ -383,6 +405,7 @@ def test_ss_blank_text_instruction_acts_like_omission(monkeypatch, capsys) -> No
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
@@ -401,7 +424,9 @@ def test_ss_blank_text_instruction_acts_like_omission(monkeypatch, capsys) -> No
     assert "文本出題指示" not in user_prompt
 
 
-def test_ns_blank_text_instruction_acts_like_omission(monkeypatch, capsys) -> None:
+def test_ns_blank_text_instruction_acts_like_omission(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     """Blank/whitespace --text-instruction on NS CLI behaves like omission."""
     import src.natural_sciences.cli as cli
     from src.config import Config
@@ -412,6 +437,7 @@ def test_ns_blank_text_instruction_acts_like_omission(monkeypatch, capsys) -> No
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),

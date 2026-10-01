@@ -290,7 +290,9 @@ def test_natural_sciences_cli_callback_defaults_to_on() -> None:
     assert parse_args(["generate"]).core_question_callback is True
 
 
-def test_natural_sciences_cli_opt_out_reaches_generation(monkeypatch, capsys) -> None:
+def test_natural_sciences_cli_opt_out_reaches_generation(
+    monkeypatch, capsys, tmp_path: Path
+) -> None:
     import src.natural_sciences.cli as cli
 
     captured: dict[str, bool] = {}
@@ -306,6 +308,7 @@ def test_natural_sciences_cli_opt_out_reaches_generation(monkeypatch, capsys) ->
         classmethod(
             lambda cls, _env_file=None: Config(
                 data_dir=Path("data"),
+                output_dir=tmp_path,
                 creative_planning=False,
             )
         ),
