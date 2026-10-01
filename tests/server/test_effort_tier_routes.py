@@ -287,7 +287,7 @@ from server.auth.tokens import create_jwt
 from server.db import get_async_session
 from server.models import Base, User
 from server.rate_limit import limiter
-from tests.server.generate_test_utils import complete_math_query_params
+from tests.server.generate_test_utils import complete_math_query_params, fake_acceptance
 
 try:
     from fastapi.testclient import TestClient
@@ -367,10 +367,10 @@ def test_generate_endpoint_rejects_invalid_effort_verify_format_422() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
@@ -379,7 +379,7 @@ def test_generate_endpoint_rejects_invalid_effort_verify_format_422() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -397,10 +397,10 @@ def test_generate_endpoint_rejects_invalid_effort_correct_format_422() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
@@ -409,7 +409,7 @@ def test_generate_endpoint_rejects_invalid_effort_correct_format_422() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -434,10 +434,10 @@ def test_generate_endpoint_rejects_explicitly_invalid_effort_verify_for_tier_mod
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
@@ -449,7 +449,7 @@ def test_generate_endpoint_rejects_explicitly_invalid_effort_verify_for_tier_mod
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -478,10 +478,10 @@ def test_generate_endpoint_rejects_inherited_effort_invalid_for_tier_model_422()
 
     async def fake_stream(params, *_args, **_kwargs):
         called["count"] += 1
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app, raise_server_exceptions=False) as client:
             r = client.get(
@@ -493,7 +493,7 @@ def test_generate_endpoint_rejects_inherited_effort_invalid_for_tier_model_422()
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
@@ -563,10 +563,10 @@ def test_generate_endpoint_all_params_unset_no_regression() -> None:
 
     async def fake_stream(params, *_args, **_kwargs):
         captured["params"] = params
-        yield {"event": "done", "data": ""}
+        return fake_acceptance(params)
 
-    original = gen_routes.generate_question_stream
-    gen_routes.generate_question_stream = fake_stream  # type: ignore[assignment]
+    original = gen_routes.accept_run
+    gen_routes.accept_run = fake_stream  # type: ignore[assignment]
     try:
         with TestClient(app) as client:
             r = client.get(
@@ -575,11 +575,11 @@ def test_generate_endpoint_all_params_unset_no_regression() -> None:
                 headers={"Authorization": f"Bearer {token}"},
             )
     finally:
-        gen_routes.generate_question_stream = original  # type: ignore[assignment]
+        gen_routes.accept_run = original  # type: ignore[assignment]
         limiter.reset()
         asyncio.run(engine.dispose())
 
-    assert r.status_code == 200
+    assert r.status_code == 202
     assert captured["params"].effort_verify is None
     assert captured["params"].effort_correct is None
 

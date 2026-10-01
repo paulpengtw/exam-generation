@@ -54,8 +54,9 @@ def transport_client(tmp_path, monkeypatch):
     app = create_app()
     app.dependency_overrides[get_config] = lambda: config
     app.dependency_overrides[get_async_session] = session_dependency
-    # The request and background persistence both use this real, isolated database.
-    monkeypatch.setattr("server.generate.routes.AsyncSessionLocal", sessions)
+    # Store the isolated session factory on app.state so _execute_run helpers in
+    # this and dependent test files can retrieve it without a dead monkeypatch.
+    app.state.test_async_session_local = sessions
 
     def deny_provider_call(*args, **kwargs):
         raise AssertionError("External LLM calls must be stubbed in transport tests")
@@ -146,7 +147,7 @@ def test_post_generation_rejects_an_unresolved_batch_before_saving_history(trans
             "learning_content": ["A-7-7"],
             "learning_performance": ["s-IV-12"],
             "core_competency": ["數-J-A2"],
-            "stream_version": 2,
+            "stream_version": 3,
         },
     )
     assert response.status_code == 422, response.text[:1000]
@@ -187,8 +188,8 @@ def test_nested_body_validation_preserves_field_paths_without_stringifying_input
 
 @pytest.mark.parametrize(("endpoint", "limit"), [("generate", 10), ("generate/preview", 30)])
 def test_switching_transport_cannot_double_the_request_allowance(transport_client, endpoint, limit):
-    # stream_version=2 so the 426 gate passes; the check here is about rate-limiting
-    _sv_params = {"stream_version": 2}
+    # stream_version=3 so the 426 gate passes; the check here is about rate-limiting
+    _sv_params = {"stream_version": 3}
     for index in range(limit):
         if index % 2:
             response = transport_client.post(f"/api/{endpoint}", json=_sv_params)
@@ -237,7 +238,7 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
     payload = json.loads(
         (Path(__file__).parents[1] / f"fixtures/transport-{fixture_name}-batch.json").read_text()
     )
-    payload.setdefault("stream_version", 2)  # #742: stream_version gate
+    payload.setdefault("stream_version", 3)  # #742: stream_version gate
     payload["text_instruction"] = "請保留完整批次和各小題的證據比較要求。" * 100
     assert len("/api/generate?" + urlencode(payload, doseq=True)) > 9489
 
@@ -249,11 +250,32 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
     preview = send("/api/generate/preview", payload)
     assert preview.status_code == 200, preview.text[:1000]
     response = send("/api/generate", payload)
-    assert response.status_code == 200, response.text[:1000]
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert "event: error" not in response.text, response.text[:1000]
-    assert response.text.count("event: result\r\n") == 2
-    assert response.text.count("event: done\r\n") == 1
+    assert response.status_code == 202, response.text[:1000]
+    run_id = response.json()["run_id"]
+    assert run_id  # non-empty string
+
+    # Execute the queued run in-process using the same isolated session factory.
+    from unittest.mock import MagicMock as _MagicMock
+
+    from server.generate.run import claim_next_run, execute_run
+
+    _sessions = transport_client.app.state.test_async_session_local
+    _config = transport_client.app.dependency_overrides[get_config]()
+    _app_state = _MagicMock()
+    _app_state.renderer_pool = None
+
+    async def _do_execute() -> None:
+        claimed = await claim_next_run(_sessions, host_id="test-host")
+        assert claimed is not None, "run was not queued"
+        await execute_run(
+            claimed,
+            app_state=_app_state,
+            config=_config,
+            session_factory=_sessions,
+            host_id="test-host",
+        )
+
+    asyncio.run(_do_execute())
 
     history = transport_client.get("/api/history").json()
     assert history["total"] == 2
@@ -282,11 +304,10 @@ def test_complete_batch_survives_generation_history_and_unchanged_reload(
     assert reloaded.status_code == 200, reloaded.text
     assert reloaded.json()["drawn"] == []
     assert semantic_params(reloaded.json()["payload"]) == semantic_params(saved)
-    gated_saved = {k: v for k, v in saved.items() if v is not None} | {"stream_version": 2}
+    gated_saved = {k: v for k, v in saved.items() if v is not None} | {"stream_version": 3}
     repeated = send("/api/generate", gated_saved)
-    assert repeated.status_code == 200
-    assert "event: error" not in repeated.text, repeated.text[:1000]
-    assert repeated.text.count("event: result\r\n") == 2
+    assert repeated.status_code == 202, repeated.text[:1000]
+    asyncio.run(_do_execute())  # execute the second queued run
     assert transport_client.get("/api/history").json()["total"] == 4
 
 
@@ -312,7 +333,7 @@ def test_body_and_legacy_requests_enforce_validation_before_generation(
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-social-batch.json").read_text()
     )
-    payload.setdefault("stream_version", 2)  # #742: stream_version gate
+    payload.setdefault("stream_version", 3)  # #742: stream_version gate
     payload.update(override)
     response = (
         transport_client.post(f"/api/{endpoint}", json=payload)
@@ -347,7 +368,7 @@ def test_post_reports_the_nested_field_that_prevents_generation(
     payload = json.loads(
         (Path(__file__).parents[1] / "fixtures/transport-natural-batch.json").read_text()
     )
-    payload.setdefault("stream_version", 2)  # #742: stream_version gate
+    payload.setdefault("stream_version", 3)  # #742: stream_version gate
     rows = json.loads(payload["per_question_params"])
     if problem == "unresolved":
         configs = json.loads(rows[0]["subquestion_configs"])
@@ -434,7 +455,7 @@ def test_legacy_get_keeps_admission_errors_ahead_of_subject_validation(
         params={
             "subject": "math",
             "subquestion_configs": "[]",
-            "stream_version": 2,  # #742: stream_version gate
+            "stream_version": 3,  # #742: stream_version gate
             **admission,
         },
     )

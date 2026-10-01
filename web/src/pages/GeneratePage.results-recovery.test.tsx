@@ -1,4 +1,3 @@
-import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouteObject, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,15 +26,13 @@ import type {
 import ReleaseNotice from "../components/ReleaseNotice";
 import QuestionCard from "../components/QuestionCard";
 import GeneratePage from "./GeneratePage";
+import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
+import { runSnapshot, runningQuestion } from "../test/runFixtures";
 
-const fetchEventSourceMock = vi.hoisted(() =>
-  vi.fn<(input: RequestInfo, init: FetchEventSourceInit) => Promise<void>>(),
-);
+let runServer: FakeRunServer;
+
 const buildOdtFromSnapshotsMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@microsoft/fetch-event-source", () => ({
-  fetchEventSource: fetchEventSourceMock,
-}));
 vi.mock("../utils/odt", () => ({
   buildOdtFromSnapshots: buildOdtFromSnapshotsMock,
   formatTimestamp: () => "recovery-test",
@@ -281,13 +278,14 @@ beforeEach(() => {
   useAuthStore.setState({ token: "token", user: USER });
   setRelease("current");
   buildOdtFromSnapshotsMock.mockReset().mockResolvedValue(new Blob(["odt"]));
-  fetchEventSourceMock.mockReset().mockResolvedValue(undefined);
+  runServer = installFakeRunServer();
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:recovery-test");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
 });
 
 afterEach(() => {
+  runServer.restore();
   window.getSelection()?.removeAllRanges();
   vi.restoreAllMocks();
   resetRecoveryStoreForTests();
@@ -442,12 +440,13 @@ describe("GeneratePage restored results acceptance boundaries", () => {
   });
 
   it("disables save-and-update in the real page while generation is active", async () => {
-    // Use a mock that never resolves so the SSE stream stays "open" and the
-    // generation operation remains registered for the duration of the check.
+    // The run stays "running" on the (fake) server, so it is still being
+    // watched and the generation operation remains registered for the duration
+    // of the check.
     // We must start with "current" release status so 771's preflight check does
     // not abort generation before beginOperation is called; we switch to
     // "update-required" only after the operation is confirmed active.
-    fetchEventSourceMock.mockReturnValue(new Promise<void>(() => {}));
+    runServer.setSnapshot("run-1", runSnapshot([runningQuestion("q-1")]));
     setRelease("current");
     const { unmount } = renderRecoveryPage();
     fireEvent.click(await screen.findByRole("button", { name: "Start generation" }));

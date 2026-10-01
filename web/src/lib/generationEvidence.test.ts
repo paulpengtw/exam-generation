@@ -5,6 +5,7 @@ import {
   createRunEvidence,
   applyV2Event,
   applyDegraded,
+  applyPollReadFailed,
   closeRun,
   selectEndedCount,
   selectFinalReceivedCount,
@@ -443,6 +444,8 @@ describe("closeRun and done event", () => {
   });
 
   it("marks questions without terminal as unknown", () => {
+    // closeRun = "run is definitively over". Questions with no terminal
+    // become "unknown". Stream loss uses applyStreamLost instead (different event).
     const state = freshRun();
     const closed = closeRun(state);
     expect(closed.questions["q_001"].processing).toBe("unknown");
@@ -469,6 +472,46 @@ describe("closeRun and done event", () => {
     const doneEv = makeEvent("done", { run_id: RUN_ID, event_seq: 10 }, {});
     const next = applyV2Event(state, doneEv);
     expect(next.closed).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyPollReadFailed
+// ---------------------------------------------------------------------------
+
+describe("applyPollReadFailed", () => {
+  it("marks questions without terminal as unknown", () => {
+    const state = freshRun();
+    const next = applyPollReadFailed(state);
+    expect(next.questions["q_001"].processing).toBe("unknown");
+    expect(next.questions["q_002"].processing).toBe("unknown");
+  });
+
+  it("does not change questions that already have a terminal (ended processing preserved)", () => {
+    let state = freshRun();
+    state = applyV2Event(state, makeEvent("question_terminal", { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 }, {
+      termination_reason: "normal", has_final: true, final_revision: 1,
+      delivery_status: "complete", expected: [], delivered: [], missing: [],
+      review: { status: "passed", content_revision: 1 },
+    }));
+    // q_001 has terminal → processing is "ended"
+    expect(state.questions["q_001"].processing).toBe("ended");
+    const next = applyPollReadFailed(state);
+    // q_001 has terminal → NOT changed by applyPollReadFailed
+    expect(next.questions["q_001"].processing).toBe("ended");
+    // q_002 has no terminal → becomes unknown
+    expect(next.questions["q_002"].processing).toBe("unknown");
+  });
+
+  it("is idempotent when processing is already unknown (from closeRun or prior applyPollReadFailed)", () => {
+    const state = freshRun();
+    const afterClose = closeRun(state);
+    // Both questions are already "unknown" after closeRun
+    expect(afterClose.questions["q_001"].processing).toBe("unknown");
+    const afterPollFailed = applyPollReadFailed(afterClose);
+    // applyPollReadFailed returns the same object — no change
+    expect(afterPollFailed).toBe(afterClose);
+    expect(afterPollFailed.questions["q_001"].processing).toBe("unknown");
   });
 });
 
@@ -814,6 +857,8 @@ describe("issue #747 A/B/C/D real-publisher transport fixture", () => {
     expect(c.terminal?.has_final).toBe(false);
     expect(d.content.receipt).toBe("final");
     expect(d.terminal).toBeNull();
+    // D received a final result but no question_terminal yet — after done/closeRun,
+    // processing becomes "unknown" (run is over and no terminal was received).
     expect(d.processing).toBe("unknown");
     expect(selectEndedCount(state)).toBe(3);
     expect(selectFinalReceivedCount(state)).toBe(3);
