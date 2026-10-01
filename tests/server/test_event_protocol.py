@@ -361,9 +361,9 @@ def test_client_update_required_body():
     body = client_update_required_body()
     assert body["detail"] == CLIENT_UPDATE_REQUIRED_DETAIL
     assert body["code"] == "CLIENT_UPDATE_REQUIRED"
-    assert body["supported_stream_versions"] == [2]
+    assert body["supported_stream_versions"] == [3]
 
 
 def test_protocol_version():
     assert PROTOCOL_VERSION == 2
-    assert 2 in SUPPORTED_STREAM_VERSIONS
+    assert 3 in SUPPORTED_STREAM_VERSIONS
