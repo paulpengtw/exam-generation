@@ -1,13 +1,6 @@
-import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
-import { describe, expect, it, vi } from "vitest";
-
-const fetchEventSourceMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-
-vi.mock("@microsoft/fetch-event-source", () => ({
-  fetchEventSource: fetchEventSourceMock,
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@sentry/react", () => ({
   captureException: vi.fn(),
@@ -29,6 +22,8 @@ vi.mock("../store/authStore", () => ({
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";
 import type { GenerateParams } from "../hooks/useGenerate";
+import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
+import { endedQuestion, runSnapshot } from "../test/runFixtures";
 
 const question = {
   id: "ref-live",
@@ -92,100 +87,71 @@ function LiveResultCard({ params = {} }: LiveResultCardProps) {
   );
 }
 
-function latestStreamOptions(): FetchEventSourceInit {
-  const call = fetchEventSourceMock.mock.lastCall;
-  if (!call) throw new Error("Expected the generation stream to open");
-  return call[1] as FetchEventSourceInit;
+let server: FakeRunServer;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  server = installFakeRunServer();
+  server.setAcceptance({
+    run_id: "run-1",
+    protocol_version: 3,
+    total: 1,
+    questions: [{ index: 0, question_id: "ref-live" }],
+  });
+});
+
+afterEach(() => {
+  server.restore();
+  vi.useRealTimers();
+});
+
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  });
 }
 
+// The persisted record arrives with the polled result: there is no in-progress
+// draft stage any more (a run is read from its saved state, not streamed), so
+// the "in-progress" line and live count updates of the SSE era do not exist.
 describe("live generation reference-record surfacing", () => {
-  it("shows in-progress line on draft, updates count on trail events, preserves section on result", async () => {
-    fetchEventSourceMock.mockClear();
+  it("shows the persisted reference examples on the result card once the run ends", async () => {
+    const ended = endedQuestion("ref-live", { question });
+    ended.result!.reference_example_record = { disabled: false, entries: [refEntry1, refEntry2] };
+    server.setSnapshot("run-1", runSnapshot([ended]));
     render(<LiveResultCard />);
-    await waitFor(() => expect(fetchEventSourceMock).toHaveBeenCalledOnce());
+    await flush();
+    expect(server.submits()).toHaveLength(1);
+    // Not yet: the run has not been read back.
+    expect(screen.queryByTestId("ref-record-counts")).not.toBeInTheDocument();
 
-    // Emit question_update (draft)
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "question_update",
-        data: JSON.stringify({ index: 0, phase: "draft", question }),
-      });
+    await flush(3_000);
+
+    const btn = screen.getByRole("button", {
+      name: "Show reference examples used during generation",
     });
-
-    // Draft card shows in-progress line
-    await screen.findByText("No reference example drawn yet (generation in progress).");
-
-    // Send two reference_example trail events
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "trail",
-        data: JSON.stringify(refEntry1),
-      });
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "trail",
-        data: JSON.stringify(refEntry2),
-      });
-    });
-
-    // After two entries, draft card should show count toggle button (still in-progress / collapsed)
-    await waitFor(() => {
-      const btn = screen.queryByRole("button", {
-        name: "Show reference examples used during generation",
-      });
-      expect(btn).toBeInTheDocument();
-      expect(btn?.textContent).toBe("Show reference examples used during generation");
-      expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("2 entries");
-    });
-
-    // Emit result (final)
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "result",
-        data: JSON.stringify(question),
-      });
-    });
-
-    // Final card still has section with count
-    await waitFor(() => {
-      const btn = screen.queryByRole("button", {
-        name: "Show reference examples used during generation",
-      });
-      expect(btn).toBeInTheDocument();
-      expect(btn?.textContent).toBe("Show reference examples used during generation");
-    });
+    expect(btn).toBeInTheDocument();
+    expect(screen.getByTestId("ref-record-counts")).toHaveTextContent("2 entries");
   });
 
-  it("disabled run shows disabled line on draft and final cards", async () => {
-    fetchEventSourceMock.mockClear();
+  it("disabled run shows the disabled line on the final card", async () => {
+    const ended = endedQuestion("ref-live", { question });
+    ended.result!.reference_example_record = { disabled: true, entries: [] };
+    server.setSnapshot("run-1", runSnapshot([ended]));
     render(<LiveResultCard params={{ disable_reference_fewshot: true }} />);
-    await waitFor(() => expect(fetchEventSourceMock).toHaveBeenCalledOnce());
+    await flush();
+    await flush(3_000);
 
-    // Emit question_update (draft)
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "question_update",
-        data: JSON.stringify({ index: 0, phase: "draft", question }),
-      });
-    });
+    expect(screen.getByText("Reference examples were turned off for this run.")).toBeInTheDocument();
+  });
 
-    // Draft card shows disabled line
-    await screen.findByText("Reference examples were turned off for this run.");
+  it("a result without a stored record still renders its card", async () => {
+    server.setSnapshot("run-1", runSnapshot([endedQuestion("ref-live", { question })]));
+    render(<LiveResultCard />);
+    await flush();
+    await flush(3_000);
 
-    // Emit result (final)
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "result",
-        data: JSON.stringify(question),
-      });
-    });
-
-    // Final card still shows disabled line
-    await screen.findByText("Reference examples were turned off for this run.");
+    expect(screen.getByTestId("question-card-content")).toBeInTheDocument();
   });
 });
