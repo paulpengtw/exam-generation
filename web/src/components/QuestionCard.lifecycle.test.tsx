@@ -350,7 +350,7 @@ describe("QuestionCard 人工審題修正 run lifecycle", () => {
 
     selectRange(getSelectionField("文本"), 0, 7);
 
-    const selections = within(screen.getByRole("list", { name: "Selections" }));
+    const selections = within(await screen.findByRole("list", { name: "Selections" }));
     expect(selections.getAllByRole("listitem")).toHaveLength(1);
     expect(selections.getByRole("listitem")).toHaveAttribute("data-quoted-text", "Updated");
   });
@@ -436,7 +436,7 @@ describe("QuestionCard 人工審題修正 run lifecycle", () => {
     await screen.findByText("Last attempted passage");
 
     selectRange(getSelectionField("文本"), 0, 4);
-    expect(within(screen.getByRole("list", { name: "Selections" })).getByRole("listitem"))
+    expect(within(await screen.findByRole("list", { name: "Selections" })).getByRole("listitem"))
       .toHaveAttribute("data-quoted-text", "Last");
   });
 });
