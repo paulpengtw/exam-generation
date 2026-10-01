@@ -183,15 +183,21 @@ def test_completed_planner_exchange_survives_later_generation_failure(planner_ca
     )
     assert rows[0]["agent"] == "planner"
     assert rows[0]["exchange_order"] == 1
-    assert "error" not in (rows[0]["response_body"] or {}), "planner success row must not have error"
+    assert "error" not in (rows[0]["response_body"] or {}), (
+        "planner success row must not have error"
+    )
     assert rows[0]["response_body"]["reasoning"] == "planning evidence"
     assert rows[1]["agent"] == "generator"
     assert rows[1]["exchange_order"] == 2
-    assert "error" in (rows[1]["response_body"] or {}), "generator failure row must carry response_body['error']"
+    assert "error" in (rows[1]["response_body"] or {}), (
+        "generator failure row must carry response_body['error']"
+    )
     assert rows[1]["prompt_tokens"] is None
     assert rows[2]["agent"] == "generator"
     assert rows[2]["exchange_order"] == 3
-    assert "error" in (rows[2]["response_body"] or {}), "generator failure row must carry response_body['error']"
+    assert "error" in (rows[2]["response_body"] or {}), (
+        "generator failure row must carry response_body['error']"
+    )
     assert rows[2]["prompt_tokens"] is None
     history = client.get("/api/history").json()
     detail = client.get(f"/api/history/{history['items'][0]['id']}").json()
@@ -221,7 +227,9 @@ def test_failed_planner_falls_back_to_generation_without_fabricating_exchange(
     # Row 0: planner failure
     assert rows[0]["agent"] == "planner"
     assert rows[0]["exchange_order"] == 1
-    assert "error" in (rows[0]["response_body"] or {}), "planner failure row must carry response_body['error']"
+    assert "error" in (rows[0]["response_body"] or {}), (
+        "planner failure row must carry response_body['error']"
+    )
     assert rows[0]["prompt_tokens"] is None
     # Remaining 8 rows: all generation successes (no "error" key)
     gen_rows = rows[1:]

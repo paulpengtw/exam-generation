@@ -1294,7 +1294,9 @@ def test_generate_stream_writes_llm_exchange_rows(tmp_path) -> None:
 
     # creative_planning=False ensures only the two fake observer events are
     # recorded: one generator row and one verifier row, in that order.
-    assert len(rows) == 2, f"expected 2 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    assert len(rows) == 2, (
+        f"expected 2 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    )
     assert rows[0].agent == "generator"
     assert rows[0].exchange_order == 1
     assert rows[0].purpose == "generate"
@@ -1484,7 +1486,9 @@ def test_generate_stream_shares_recorder_across_batch_workers(
     # creative_planning=False means no planner row is written.
     # Each of the 2 fake workers emits exactly one generator event and one
     # verifier event, so the total is always exactly 4 rows with orders [1..4].
-    assert len(rows) == 4, f"expected 4 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    assert len(rows) == 4, (
+        f"expected 4 rows, got {len(rows)}: {[(r.agent, r.exchange_order) for r in rows]}"
+    )
     orders = [r.exchange_order for r in rows]
     assert sorted(orders) == [1, 2, 3, 4], f"non-contiguous exchange orders: {orders}"
     agents = [r.agent for r in rows]

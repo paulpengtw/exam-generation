@@ -255,15 +255,16 @@ def test_failed_generation_keeps_its_advertised_log_and_completed_exchange(
     assert detail["generation_log_id"] == log_id
     exchanges = math_client.get(f"/api/generation-logs/{log_id}/exchanges").json()
     # Exactly 2 rows: generator success (order 1) then verifier failure (order 2).
-    assert len(exchanges) == 2, (
-        f"expected 2 rows, got {len(exchanges)}: {[(r['agent'], r['exchange_order']) for r in exchanges]}"
-    )
+    agents_orders = [(r["agent"], r["exchange_order"]) for r in exchanges]
+    assert len(exchanges) == 2, f"expected 2 rows, got {len(exchanges)}: {agents_orders}"
     assert exchanges[0]["agent"] == "generator"
     assert exchanges[0]["exchange_order"] == 1
     assert "error" not in (exchanges[0]["response_body"] or {})
     assert exchanges[1]["agent"] == "verifier"
     assert exchanges[1]["exchange_order"] == 2
-    assert "error" in (exchanges[1]["response_body"] or {}), "verifier failure row must carry response_body['error']"
+    assert "error" in (exchanges[1]["response_body"] or {}), (
+        "verifier failure row must carry response_body['error']"
+    )
     assert exchanges[1]["prompt_tokens"] is None
     assert exchanges[1]["completion_tokens"] is None
 
