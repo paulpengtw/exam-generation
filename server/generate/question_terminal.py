@@ -170,7 +170,11 @@ def _compute_expected_delivered_missing(
         if filename and output_dir is not None:
             img_path = _Path(output_dir) / filename
             if img_path.exists():
-                delivered.append(slot)
+                if img_path.stat().st_size > 0:
+                    delivered.append(slot)
+                    return
+                # File exists but is 0 bytes — counts as a render failure
+                missing.append({**slot, "reason": "empty_image"})
                 return
         missing.append({**slot, "reason": reason})
 
@@ -249,7 +253,7 @@ def _compute_expected_delivered_missing(
 
                 if has_final and question is not None:
                     config = configs[slot_index] if slot_index < len(configs) else None
-                    adopted = bool(
+                    spec_adopted = bool(
                         sub is not None
                         and (
                             getattr(sub, "chart_spec", None) is not None
@@ -263,11 +267,21 @@ def _compute_expected_delivered_missing(
                             or _config_value(config, "figure_kind")
                         )
                     )
+                    # Structured per-slot reason:
+                    # • spec_adopted → spec was set but render failed or produced
+                    #   no file (or a 0-byte file, handled inside _add_image_slot)
+                    # • explicitly_visual but no spec → LLM omitted the spec
+                    if spec_adopted:
+                        img_reason = "render_failed"
+                    elif explicitly_visual:
+                        img_reason = "spec_missing"
+                    else:
+                        img_reason = "image not delivered"
                     _add_image_slot(
                         subquestion_id=subquestion_id,
                         filename=getattr(sub, "圖片", None) if sub is not None else None,
-                        adopted=adopted or explicitly_visual,
-                        reason="image not delivered",
+                        adopted=spec_adopted or explicitly_visual,
+                        reason=img_reason,
                         subquestion_index=slot_index,
                     )
 
@@ -279,7 +293,7 @@ def _compute_expected_delivered_missing(
                     getattr(question, "chart_spec", None) is not None
                     or getattr(question, "image_spec", None) is not None
                 ),
-                reason="image not delivered",
+                reason="render_failed",
             )
     elif has_final and question is not None:
         # Flat question: an image slot exists only when the pipeline adopted an
@@ -292,7 +306,7 @@ def _compute_expected_delivered_missing(
             subquestion_id=None,
             filename=getattr(question, "圖片", None),
             adopted=has_image_spec,
-            reason="image not delivered",
+            reason="render_failed",
         )
 
     return expected, delivered, missing

@@ -855,7 +855,7 @@ def test_terminal_social_group_tracks_adopted_image_by_fixed_slot() -> None:
         "question_id": question_id,
         "subquestion_id": f"{question_id}-sq001",
         "subquestion_index": 0,
-        "reason": "image not delivered",
+        "reason": "render_failed",
     }]
 
 
@@ -1040,7 +1040,7 @@ def test_terminal_natural_sciences_tracks_fixed_subquestion_image_slot(tmp_path:
         "question_id": question_id,
         "subquestion_id": f"{question_id}-sq001",
         "subquestion_index": 0,
-        "reason": "image not delivered",
+        "reason": "render_failed",
     }]
 
 
