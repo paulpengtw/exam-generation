@@ -12,7 +12,16 @@ CoverageMode = Literal["balanced", "random"]
 TargetSurface = Literal["紙本", "數位"]
 
 
-def build_sse_error(code: str, message: str) -> dict[str, Any]:
+def build_sse_error(
+    code: str,
+    message: str,
+    *,
+    failure_class: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    tier: str | None = None,
+    retry_after_seconds: int | None = None,
+) -> dict[str, Any]:
     """Return a structured SSE error payload dict.
 
     Both raise sites (per-question worker and outer stream) call this helper so
@@ -27,8 +36,27 @@ def build_sse_error(code: str, message: str) -> dict[str, Any]:
     must pass a short human-readable sentence (optionally with the exception class
     name, which is safe) and log the full traceback separately via
     ``logger.exception``.
+
+    Optional kwargs (issue #946 — omitted from dict when None):
+    - *failure_class*:       one of the ten taxonomy codes from
+      :func:`src.llm_client.classify_provider_error`.
+    - *provider*:            provider string, e.g. ``"anthropic"``.
+    - *model*:               model id string.
+    - *tier*:                call tier, e.g. ``"execute"`` / ``"verify"``.
+    - *retry_after_seconds*: integer seconds hint from provider.
     """
-    return {"code": code, "message": message}
+    d: dict[str, Any] = {"code": code, "message": message}
+    if failure_class is not None:
+        d["failure_class"] = failure_class
+    if provider is not None:
+        d["provider"] = provider
+    if model is not None:
+        d["model"] = model
+    if tier is not None:
+        d["tier"] = tier
+    if retry_after_seconds is not None:
+        d["retry_after_seconds"] = retry_after_seconds
+    return d
 
 
 # Canonical set of valid subject values — derived from the SubjectSpec registry so

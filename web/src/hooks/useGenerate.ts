@@ -360,6 +360,8 @@ export interface UseGenerateReturn {
   llmCalls: LlmCallEvent[];
   agentLanes: AgentLane[];
   errorMessage: string | null;
+  /** issue #946 — taxonomy code when errorMessage comes from a structured error event. */
+  errorFailureClass: string | null;
   startedAt: number | null;
   finishedAt: number | null;
   generationLogId: string | null;
@@ -410,6 +412,56 @@ export function parseErrorEventData(raw: string): string {
     // not JSON — fall through
   }
   return raw;
+}
+
+/**
+ * Parse an SSE error event's raw data string into a structured payload.
+ *
+ * Issue #946: extends ``parseErrorEventData`` to also extract the optional
+ * ``failure_class`` field so the UI can show a localized class label.
+ *
+ * Returns ``{ message, failureClass }`` where ``failureClass`` is ``null``
+ * when absent or unrecognized.
+ */
+export interface ErrorPayload {
+  message: string;
+  failureClass: string | null;
+}
+
+const TAXONOMY_CODES = new Set([
+  "auth_config",
+  "quota_billing_exhausted",
+  "rate_limited",
+  "overloaded",
+  "timeout",
+  "connection",
+  "context_length",
+  "content_filtered",
+  "malformed_response",
+  "unknown",
+]);
+
+export function parseErrorPayload(raw: string): ErrorPayload {
+  const fallback: ErrorPayload = { message: raw || "Unknown error", failureClass: null };
+  if (!raw) return { message: "Unknown error", failureClass: null };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed !== null && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      const msg =
+        typeof obj.message === "string" && obj.message !== ""
+          ? obj.message
+          : raw;
+      const fc =
+        typeof obj.failure_class === "string" && TAXONOMY_CODES.has(obj.failure_class)
+          ? obj.failure_class
+          : null;
+      return { message: msg, failureClass: fc };
+    }
+  } catch {
+    // not JSON — fall through
+  }
+  return fallback;
 }
 
 /** Parse the typed started-event payload while accepting legacy empty payloads. */
@@ -629,6 +681,7 @@ export function useGenerate(): UseGenerateReturn {
   const evidenceRef = useRef<RunEvidenceState | null>(null);
   const [llmCalls, setLlmCalls] = useState<LlmCallEvent[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorFailureClass, setErrorFailureClass] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const [generationLogId, setGenerationLogId] = useState<string | null>(null);
@@ -696,6 +749,7 @@ export function useGenerate(): UseGenerateReturn {
     setEvidence(null);
     evidenceRef.current = null;
     setErrorMessage(null);
+    setErrorFailureClass(null);
     setStartedAt(null);
     setFinishedAt(null);
     setGenerationLogId(null);
@@ -1285,8 +1339,10 @@ export function useGenerate(): UseGenerateReturn {
             rebuildDisplayResultsFromAdapter(nextAdapter);
           } catch { /* ignore malformed results */ }
           break;
-        case "error":
-          setErrorMessage(parseErrorEventData(data ?? ""));
+        case "error": {
+          const errPayload = parseErrorPayload(data ?? "");
+          setErrorMessage(errPayload.message);
+          setErrorFailureClass(errPayload.failureClass);
           setStatus("error");
           if (startedRef.current) {
             setResultsCompletion("error");
@@ -1295,6 +1351,7 @@ export function useGenerate(): UseGenerateReturn {
           setFinishedAt(Date.now());
           endOperation("failed");
           break;
+        }
         case "done": {
           // Update legacy adapter with "done" event if active
           if (legacyAdapterRef.current) {
@@ -1554,6 +1611,7 @@ export function useGenerate(): UseGenerateReturn {
     llmCalls,
     agentLanes,
     errorMessage,
+    errorFailureClass,
     startedAt,
     finishedAt,
     generationLogId,

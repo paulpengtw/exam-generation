@@ -2135,6 +2135,12 @@ def test_service_worker_error_event_is_structured(tmp_path) -> None:
     assert "message" in data
     assert "Traceback (most recent call last)" not in data["message"]
     assert '  File "' not in data["message"]
+    # issue #946: failure_class must be a recognized taxonomy code
+    assert "failure_class" in data, f"failure_class missing from error payload: {data!r}"
+    from src.llm_client import _TAXONOMY_CODES
+    assert data["failure_class"] in _TAXONOMY_CODES, (
+        f"unexpected failure_class {data['failure_class']!r}"
+    )
 
 
 def test_route_outer_error_event_is_structured() -> None:
@@ -2203,6 +2209,10 @@ def test_route_outer_error_event_is_structured() -> None:
     assert parsed["code"] == "stream_failed"
     assert "Traceback (most recent call last)" not in parsed["message"]
     assert '  File "' not in parsed["message"]
+    # issue #946: failure_class must be present and recognized
+    assert "failure_class" in parsed, f"failure_class missing from stream_failed payload: {parsed!r}"
+    from src.llm_client import _TAXONOMY_CODES
+    assert parsed["failure_class"] in _TAXONOMY_CODES
 
 
 def test_generate_route_persists_one_failed_record_after_prior_success(tmp_path) -> None:

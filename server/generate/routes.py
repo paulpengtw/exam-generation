@@ -47,6 +47,7 @@ from server.generate.subjects import SUBJECTS
 from server.models import GenerationLog, LLMExchange, User
 from server.rate_limit import jwt_user_key, limiter
 from src.common.resolver import ResolveConflictError, resolve
+from src.llm_client import classify_provider_error as _classify_provider_error
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["generate"])
@@ -571,9 +572,11 @@ async def _generate(
             raise
         except Exception as exc:
             status = "failed"
+            _sfc = _classify_provider_error(exc)
             error_payload = build_sse_error(
                 "stream_failed",
                 f"Stream error ({type(exc).__name__})",
+                failure_class=_sfc,
             )
             error_msg = error_payload["message"]
             logger.exception("generate_endpoint stream error")
@@ -667,11 +670,13 @@ async def plan_core_questions_endpoint(
         import sentry_sdk as _sentry
         _sentry.capture_exception(exc)
         if is_provider_failure:
+            _pfc = getattr(exc, "failure_class", None) or "unknown"
             return JSONResponse(
                 status_code=502,
                 content={
                     "detail": "Planner provider call failed",
                     "code": "PLANNER_PROVIDER_ERROR",
+                    "failure_class": _pfc,
                 },
             )
         return JSONResponse(

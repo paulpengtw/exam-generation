@@ -652,6 +652,12 @@ def test_slice4b_error_event_has_v2_context(tmp_path) -> None:
     p = err["payload"]
     assert p.get("code") == "generation_failed", f"error code must be 'generation_failed'; got {p.get('code')!r}"  # noqa: E501
     assert "message" in p, f"error payload must have 'message': {p}"
+    # issue #946: failure_class taxonomy code must be present
+    assert "failure_class" in p, f"failure_class missing from generation_failed payload: {p!r}"
+    from src.llm_client import _TAXONOMY_CODES
+    assert p["failure_class"] in _TAXONOMY_CODES, (
+        f"unexpected failure_class value {p['failure_class']!r}"
+    )
 
     # Stream still ends (break on error behavior unchanged)
     assert events[-1]["event"] in ("done", "error"), (
