@@ -70,6 +70,7 @@ def _request_event(
     agent: str = "generator",
     purpose: str = "generate",
     model: str = "claude-opus-4-6",
+    requested_model: str | None = None,
 ) -> dict:
     ev: dict[str, Any] = {
         "type": "llm_request",
@@ -79,6 +80,8 @@ def _request_event(
         "messages": [{"role": "user", "content": "hello"}],
         "params": {"max_tokens": 8192},
     }
+    if requested_model is not None:
+        ev["requested_model"] = requested_model
     if run_id is not None and call_id is not None:
         ev["context"] = {"run_id": run_id, "call_id": call_id}
     return ev
@@ -139,6 +142,26 @@ class TestFlushFailureWithPriorRequest:
         row = rows[0]
         assert row.get("prompt_tokens") is None
         assert row.get("completion_tokens") is None
+
+    def test_failure_request_body_keeps_requested_model(self) -> None:
+        """A failed substituted call preserves requested_model in request_body."""
+        rows: list[dict] = []
+        rec = _make_recorder(rows)
+
+        run_id = "run-substituted"
+        call_id = "call-substituted"
+        rec(_request_event(
+            run_id=run_id,
+            call_id=call_id,
+            model="claude-opus-4-6",
+            requested_model="claude-fable-5",
+        ))
+        rec(_failure_event(run_id=run_id, call_id=call_id, model="claude-opus-4-6"))
+
+        assert len(rows) == 1
+        request_body = rows[0]["request_body"]
+        assert request_body["model"] == "claude-opus-4-6"
+        assert request_body["requested_model"] == "claude-fable-5"
 
 
 # ---------------------------------------------------------------------------

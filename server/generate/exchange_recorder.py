@@ -205,6 +205,11 @@ class ExchangeRecorder:
                     "messages": req.get("messages"),
                     "params": req.get("params"),
                     "model": req.get("model"),
+                    **(
+                        {"requested_model": req["requested_model"]}
+                        if req.get("requested_model") is not None
+                        else {}
+                    ),
                 }
                 if req is not None
                 else None
@@ -298,6 +303,11 @@ class ExchangeRecorder:
                     "messages": req.get("messages"),
                     "params": req.get("params"),
                     "model": req.get("model"),
+                    **(
+                        {"requested_model": req["requested_model"]}
+                        if req.get("requested_model") is not None
+                        else {}
+                    ),
                 }
                 if req is not None
                 else None

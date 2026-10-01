@@ -1141,6 +1141,7 @@ class LLMClient:
         options: dict,
         agent_override: str | None = None,
         call_scope: CallScope | None = None,
+        requested_model: str | None = None,
     ) -> str:
         """Stream via Anthropic SDK, emitting deltas to observer. Returns assembled content."""
         content_parts: list[str] = []
@@ -1214,6 +1215,9 @@ class LLMClient:
             }
 
         content = "".join(content_parts)
+        _rm_extra: dict = (
+            {"requested_model": requested_model} if requested_model is not None else {}
+        )
         if call_scope is not None:
             self._emit_call_event(
                 "llm_response",
@@ -1224,6 +1228,7 @@ class LLMClient:
                 content=content,
                 reasoning="".join(reasoning_parts) or None,
                 usage=usage,
+                **_rm_extra,
             )
         else:
             self._emit({
@@ -1234,6 +1239,7 @@ class LLMClient:
                 "content": content,
                 "reasoning": "".join(reasoning_parts) or None,
                 "usage": usage,
+                **_rm_extra,
             })
         return content
 
@@ -1246,6 +1252,7 @@ class LLMClient:
         call_scope: "CallScope | None",
         purpose: str,
         agent: str,
+        requested_model: str | None = None,
     ) -> None:
         """Extract, log, and optionally emit llm_failure detail. Never raises.
 
@@ -1270,6 +1277,8 @@ class LLMClient:
             )
             if self._observer:
                 detail_dict = dataclasses.asdict(detail)
+                if requested_model is not None:
+                    detail_dict["requested_model"] = requested_model
                 self._emit_call_event(
                     "llm_failure",
                     call_scope,
@@ -1315,7 +1324,8 @@ class LLMClient:
         # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
         _requested_model = model
         model = self.config.dispatch_model(model)
-        if model != _requested_model:
+        _is_substituted = model != _requested_model
+        if _is_substituted:
             logger.warning(
                 "fable_downgrade: substituting %s → %s",
                 _requested_model,
@@ -1329,6 +1339,8 @@ class LLMClient:
                 "stream": True,
                 "stream_options": {"include_usage": True},
             })
+        # requested_model is added to events only when a substitution occurred (#942).
+        _rm_extra: dict = {"requested_model": _requested_model} if _is_substituted else {}
         if self._observer:
             self._emit_call_event(
                 "llm_request",
@@ -1338,15 +1350,19 @@ class LLMClient:
                 model=model,
                 messages=self._summarize_for_observer(messages),
                 params=dict(options),
+                **_rm_extra,
             )
 
+        _passed_requested = _requested_model if _is_substituted else None
         try:
             if provider == "anthropic":
                 return self._anthropic_call(
-                    messages, model, purpose, options, agent_override, agent, call_scope
+                    messages, model, purpose, options, agent_override, agent, call_scope,
+                    requested_model=_passed_requested,
                 )
             return self._openai_compat_call(
-                provider, messages, model, purpose, options, agent, call_scope
+                provider, messages, model, purpose, options, agent, call_scope,
+                requested_model=_passed_requested,
             )
         except Exception as exc:
             self._report_provider_failure(
@@ -1356,6 +1372,7 @@ class LLMClient:
                 call_scope=call_scope,
                 purpose=purpose,
                 agent=agent,
+                requested_model=_passed_requested,
             )
             raise
 
@@ -1368,6 +1385,7 @@ class LLMClient:
         agent_override: str | None,
         agent: str,
         call_scope: CallScope | None = None,
+        requested_model: str | None = None,
     ) -> str:
         """Call the Anthropic API (streaming or non-streaming)."""
         system = ""
@@ -1385,7 +1403,8 @@ class LLMClient:
 
         if self._observer and self.config.llm_stream:
             return self._generate_streaming(
-                system, anthropic_messages, model, purpose, options, agent_override, call_scope
+                system, anthropic_messages, model, purpose, options, agent_override, call_scope,
+                requested_model=requested_model,
             )
 
         system_param = (
@@ -1402,7 +1421,7 @@ class LLMClient:
         content = "".join(getattr(block, "text", "") for block in response.content)
         if self._observer:
             u = response.usage
-            response_fields = {
+            response_fields: dict = {
                 "purpose": purpose,
                 "agent": agent,
                 "model": model,
@@ -1417,6 +1436,8 @@ class LLMClient:
                     "cache_creation": getattr(u, "cache_creation_input_tokens", 0) or 0,
                 },
             }
+            if requested_model is not None:
+                response_fields["requested_model"] = requested_model
             if call_scope is not None:
                 self._emit_call_event("llm_response", call_scope, **response_fields)
             else:
@@ -1431,6 +1452,7 @@ class LLMClient:
         purpose: str,
         agent: str,
         call_scope: CallScope | None = None,
+        requested_model: str | None = None,
     ) -> str:
         """Stream via OpenAI-compat surface, emitting deltas to observer.
 
@@ -1495,7 +1517,7 @@ class LLMClient:
                     })
 
         content = "".join(content_parts)
-        response_fields = {
+        response_fields: dict = {
             "purpose": purpose,
             "agent": agent,
             "model": model,
@@ -1503,6 +1525,8 @@ class LLMClient:
             "reasoning": "".join(reasoning_parts) or None,
             "usage": usage,
         }
+        if requested_model is not None:
+            response_fields["requested_model"] = requested_model
         if call_scope is not None:
             self._emit_call_event("llm_response", call_scope, **response_fields)
         else:
@@ -1518,6 +1542,7 @@ class LLMClient:
         options: dict,
         agent: str,
         call_scope: CallScope | None = None,
+        requested_model: str | None = None,
     ) -> str:
         """Call through the OpenAI-compatible surface (gemini/openai providers).
 
@@ -1534,14 +1559,15 @@ class LLMClient:
 
         if self._observer and self.config.llm_stream:
             return self._openai_compat_streaming(
-                oc, kwargs, model, purpose, agent, call_scope
+                oc, kwargs, model, purpose, agent, call_scope,
+                requested_model=requested_model,
             )
 
         response = oc.chat.completions.create(**kwargs)
         choices = response.choices if response.choices else []
         content = (choices[0].message.content or "") if choices else ""
         if self._observer:
-            response_fields = {
+            response_fields: dict = {
                 "purpose": purpose,
                 "agent": agent,
                 "model": model,
@@ -1549,6 +1575,8 @@ class LLMClient:
                 "reasoning": None,
                 "usage": _openai_usage_to_internal(getattr(response, "usage", None)),
             }
+            if requested_model is not None:
+                response_fields["requested_model"] = requested_model
             if call_scope is not None:
                 self._emit_call_event("llm_response", call_scope, **response_fields)
             else:
@@ -1807,12 +1835,18 @@ class LLMClient:
         # Fable downgrade (issue #940): transparently substitute fable → opus-4-6.
         _requested_call_model = call_model
         call_model = self.config.dispatch_model(call_model)
-        if call_model != _requested_call_model:
+        _tools_substituted = call_model != _requested_call_model
+        if _tools_substituted:
             logger.warning(
                 "fable_downgrade: substituting %s → %s",
                 _requested_call_model,
                 call_model,
             )
+
+        # requested_model is added to events only when a substitution occurred (#942).
+        _tools_rm_extra: dict = (
+            {"requested_model": _requested_call_model} if _tools_substituted else {}
+        )
 
         agent = _PURPOSE_TO_AGENT.get(purpose, purpose)
         operation_scope = self._operation_scope(scope, kind=purpose)
@@ -1851,6 +1885,7 @@ class LLMClient:
                 "model": call_model,
                 "messages": [{"role": "system", "content": system}, *messages],
                 "params": dict(options),
+                **_tools_rm_extra,
             })
 
         try:
@@ -1870,6 +1905,7 @@ class LLMClient:
                         model=call_model,
                         messages=[{"role": "system", "content": system}, *messages],
                         params=dict(options),
+                        **_tools_rm_extra,
                     )
 
                 response = self.client.messages.create(
@@ -1903,6 +1939,7 @@ class LLMClient:
                         ),
                         reasoning=None,
                         usage=None,
+                        **_tools_rm_extra,
                     )
 
                 stop_reason = getattr(response, "stop_reason", "end_turn")
@@ -1924,6 +1961,7 @@ class LLMClient:
                     "content": final_text,
                     "reasoning": None,
                     "usage": None,
+                    **_tools_rm_extra,
                 })
             return final_text, collected_citations
         except Exception as exc:
@@ -1934,6 +1972,9 @@ class LLMClient:
                 call_scope=call_scope,
                 purpose=purpose,
                 agent=agent,
+                requested_model=(
+                    _requested_call_model if _tools_substituted else None
+                ),
             )
             raise
 
