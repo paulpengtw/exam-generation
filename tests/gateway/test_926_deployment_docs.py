@@ -7,7 +7,6 @@ fresh-state-dir method and its pitfalls are documented.
 
 from pathlib import Path
 
-
 DEPLOYMENT_MD = Path(__file__).parent.parent.parent / "DEPLOYMENT.md"
 
 
@@ -75,7 +74,10 @@ def test_pitfalls_no_volume_loses_record():
     text = _text()
     assert "without a volume" in text.lower() or (
         "without" in text and "volume" in text and "paused" in text
-    ), "The pitfall about losing the policy record on every deploy without a volume must be documented"
+    ), (
+        "The pitfall about losing the policy record on every deploy"
+        " without a volume must be documented"
+    )
 
 
 def test_pitfalls_unset_build_id_no_record():
@@ -85,7 +87,10 @@ def test_pitfalls_unset_build_id_no_record():
     # The pitfall paragraph must mention that no record is created when the var is unset
     assert "no policy record is" in text or "no record is created" in text or (
         "GATEWAY_RELEASED_BUILD_ID" in text and "unset" in text
-    ), "The pitfall about GATEWAY_RELEASED_BUILD_ID being unset creating no record must be documented"
+    ), (
+        "The pitfall about GATEWAY_RELEASED_BUILD_ID being unset"
+        " creating no record must be documented"
+    )
 
 
 def test_railway_deployment_steps_mention_gateway_state_dir():
@@ -95,7 +100,11 @@ def test_railway_deployment_steps_mention_gateway_state_dir():
     assert railway_section != -1, "Railway deployment steps section not found"
     # Find end of that subsection (next ### or ##)
     next_section = text.find("\n##", railway_section + 1)
-    section_text = text[railway_section:next_section] if next_section != -1 else text[railway_section:]
+    section_text = (
+        text[railway_section:next_section]
+        if next_section != -1
+        else text[railway_section:]
+    )
     assert "GATEWAY_STATE_DIR" in section_text, (
         "Railway deployment steps must mention GATEWAY_STATE_DIR as an optional variable"
     )
