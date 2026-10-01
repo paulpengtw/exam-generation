@@ -1,13 +1,6 @@
-import type { FetchEventSourceInit } from "@microsoft/fetch-event-source";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
-import { describe, expect, it, vi } from "vitest";
-
-const fetchEventSourceMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-
-vi.mock("@microsoft/fetch-event-source", () => ({
-  fetchEventSource: fetchEventSourceMock,
-}));
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@sentry/react", () => ({
   captureException: vi.fn(),
@@ -30,6 +23,8 @@ vi.mock("../store/authStore", () => ({
 
 import QuestionCard from "../components/QuestionCard";
 import { useGenerate } from "../hooks/useGenerate";
+import { installFakeRunServer, type FakeRunServer } from "../test/fakeRunServer";
+import { endedQuestion, runSnapshot } from "../test/runFixtures";
 
 const question = {
   id: "ss-live-policy",
@@ -78,32 +73,42 @@ function LiveResultCard() {
   );
 }
 
-function latestStreamOptions(): FetchEventSourceInit {
-  const call = fetchEventSourceMock.mock.lastCall;
-  if (!call) throw new Error("Expected the generation stream to open");
-  return call[1] as FetchEventSourceInit;
+let server: FakeRunServer;
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  server = installFakeRunServer();
+});
+
+afterEach(() => {
+  server.restore();
+  vi.useRealTimers();
+});
+
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+  });
 }
 
 describe("live generation result figure-policy surfacing", () => {
-  it("renders the persisted warning in the result card after the trail event arrives", async () => {
-    fetchEventSourceMock.mockClear();
-    render(<LiveResultCard />);
-    await waitFor(() => expect(fetchEventSourceMock).toHaveBeenCalledOnce());
-
-    act(() => {
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "result",
-        data: JSON.stringify(question),
-      });
-      latestStreamOptions().onmessage?.({
-        id: "",
-        event: "trail",
-        data: JSON.stringify(warning),
-      });
+  it("renders the persisted warning in the result card once the polled result carries its trail", async () => {
+    const ended = endedQuestion("ss-live-policy", { question });
+    ended.result!.figure_policy_trail = [warning];
+    server.setSnapshot("run-1", runSnapshot([ended]));
+    server.setAcceptance({
+      run_id: "run-1",
+      protocol_version: 3,
+      total: 1,
+      questions: [{ index: 0, question_id: "ss-live-policy" }],
     });
+    render(<LiveResultCard />);
+    await flush();
+    expect(server.submits()).toHaveLength(1);
+    await flush(3_000);
 
-    const banner = await screen.findByRole("alert", {
+    const banner = screen.getByRole("alert", {
       name: "Figure-kind degradation warning",
     });
     expect(banner).toHaveTextContent("題幹");

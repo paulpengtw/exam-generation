@@ -8,6 +8,7 @@ from server.config import ServerConfig
 from server.models import (
     Base,
     GenerationLog,
+    GenerationQuestionState,
     GenerationRecord,
     GenerationRecordStatus,
     GenerationStatus,
@@ -45,8 +46,58 @@ def test_model_table_names_and_status_values() -> None:
         "generation_logs",
         "generation_records",
         "llm_exchanges",
+        "generation_question_states",
     }
-    assert list(GenerationStatus.enums) == ["started", "completed", "failed"]
+    assert list(GenerationStatus.enums) == [
+        "started",
+        "completed",
+        "failed",
+        "queued",
+        "running",
+        "cancelled",
+    ]
+
+
+def test_generation_log_run_columns() -> None:
+    cols = GenerationLog.__table__.c
+    assert cols["heartbeat_at"].nullable is True
+    assert cols["attempts"].nullable is False
+    assert cols["claimed_by"].nullable is True
+    assert cols["cancel_requested"].nullable is False
+    assert cols["submission_key"].nullable is True
+    unique_sets = {
+        tuple(c.name for c in constraint.columns)
+        for constraint in GenerationLog.__table__.constraints
+        if constraint.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("user_id", "submission_key") in unique_sets
+
+
+def test_generation_question_state_columns() -> None:
+    cols = GenerationQuestionState.__table__.c
+    for name in (
+        "generation_log_id",
+        "question_id",
+        "index",
+        "processing",
+        "current_step",
+        "termination_reason",
+        "terminal_json",
+        "generation_record_id",
+        "error",
+        "updated_at",
+    ):
+        assert name in cols
+    assert cols["generation_log_id"].nullable is False
+    assert cols["question_id"].nullable is False
+    assert cols["processing"].nullable is False
+    assert cols["termination_reason"].nullable is True
+    unique_sets = {
+        tuple(c.name for c in constraint.columns)
+        for constraint in GenerationQuestionState.__table__.constraints
+        if constraint.__class__.__name__ == "UniqueConstraint"
+    }
+    assert ("generation_log_id", "question_id") in unique_sets
 
 
 def test_model_key_columns() -> None:

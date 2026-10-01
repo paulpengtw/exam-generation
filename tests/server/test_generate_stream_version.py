@@ -43,7 +43,7 @@ def test_get_without_stream_version_returns_426():
     body = resp.json()
     assert body["detail"] == CLIENT_UPDATE_REQUIRED_DETAIL
     assert body["code"] == "CLIENT_UPDATE_REQUIRED"
-    assert 2 in body["supported_stream_versions"]
+    assert 3 in body["supported_stream_versions"]
 
 
 def test_post_without_stream_version_returns_426():
