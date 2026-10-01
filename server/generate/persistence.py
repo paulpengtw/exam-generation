@@ -503,7 +503,8 @@ async def persist_failed_generation_record(
     user_id: uuid.UUID,
     generation_log_id: uuid.UUID | None,
     subject: str,
-    params: Any,
+    params: Any = None,
+    params_json_raw: dict | None = None,
     error: str,
     session_factory: Any,
 ) -> None:
@@ -512,8 +513,18 @@ async def persist_failed_generation_record(
     Failed-run history is best effort for the same reason as successful result
     persistence: a database problem must not prevent the stream from reporting
     its server-side error to the caller.
+
+    Pass either a parsed *params* (``GenerateParams`` instance) or a raw
+    *params_json_raw* dict for cases where the params failed to parse (e.g.
+    schema drift across a deploy).  A duplicate insert for the same
+    ``(generation_log_id, question_id="")`` pair is silently absorbed by the
+    unique constraint, so calling this twice leaves exactly one record.
     """
     try:
+        if params is not None:
+            stored_params_json: dict = params.model_dump(mode="json")
+        else:
+            stored_params_json = dict(params_json_raw) if params_json_raw else {}
         figure_policy_trail_json = await _staged_figure_policy_trail(
             generation_log_id,
             session_factory,
@@ -527,7 +538,7 @@ async def persist_failed_generation_record(
             generation_log_id=generation_log_id,
             subject=subject,
             question_id="",
-            params_json=params.model_dump(mode="json"),
+            params_json=stored_params_json,
             question_json=None,
             verification_trail_json=None,
             figure_policy_trail_json=figure_policy_trail_json,

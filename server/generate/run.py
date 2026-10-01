@@ -34,6 +34,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1153,6 +1154,16 @@ async def execute_run(
         status = "failed"
         error = "time_limit"
         logger.info("run %s reached 2h time limit; terminating", claimed.run_id)
+    except ValidationError as exc:  # issue #930 — schema drift across a deploy
+        status = "failed"
+        error = "run_settings_parse_failure"
+        # Log enough for operators to spot schema drift without leaking param content.
+        logger.warning(
+            "generation run %s: params_json failed GenerateParams validation "
+            "(%d error(s)) — possible schema drift; params is left unparsed",
+            claimed.run_id,
+            exc.error_count(),
+        )
     except Exception as exc:  # noqa: BLE001 — the run must still reach an end state
         status = "failed"
         error = f"Run execution failed ({type(exc).__name__})"
@@ -1173,12 +1184,17 @@ async def execute_run(
     # Issue #911: time-limit and recovery_exhausted use a specific terminal reason.
     unfinished_reason = error or "question ended without a terminal"
     await recorder.fail_unfinished(unfinished_reason)
-    if status == "failed" and params is not None:
+    if status == "failed":
+        # issue #930: when params_json failed to parse, use the raw dict so we
+        # still write exactly one failure record (idempotent via unique constraint).
         await persist_failed_generation_record(
             user_id=claimed.user_id,
             generation_log_id=claimed.run_id,
-            subject=params.subject,
+            subject=params.subject if params is not None else str(
+                claimed.params_json.get("subject", "")
+            ),
             params=params,
+            params_json_raw=claimed.params_json if params is None else None,
             error=error or "Generation failed",
             session_factory=session_factory,
         )
