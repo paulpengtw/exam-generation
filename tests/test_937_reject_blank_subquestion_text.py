@@ -15,7 +15,6 @@ from src.natural_sciences.sampler import sample_params as ns_sample_params
 from src.social_studies.cli import _parse_subquestion as ss_parse_subquestion
 from src.social_studies.sampler import sample_params as ss_sample_params
 
-
 # ---------------------------------------------------------------------------
 # Helpers: minimal valid subquestion raw dicts
 # ---------------------------------------------------------------------------
