@@ -1141,6 +1141,10 @@ describe("recovery flow — scenario 2: quota failure", () => {
       {},
       { timeout: 5000 },
     );
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
+    }, { timeout: 5000 });
+    await act(async () => {});
 
     // Spy on setItem to make the save fail, targeting only the snapshot write so
     // background React effects (model/effort useEffect writes) cannot consume
@@ -1155,6 +1159,7 @@ describe("recovery flow — scenario 2: quota failure", () => {
 
     // Click the 儲存草稿並更新 button in ReleaseNotice
     const saveButton = screen.getByRole("button", { name: /Save Draft & Update|儲存草稿並更新/i });
+    await waitFor(() => expect(saveButton).toBeEnabled(), { timeout: 5000 });
     await act(async () => {
       fireEvent.click(saveButton);
     });

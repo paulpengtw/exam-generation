@@ -274,8 +274,13 @@ describe("ParamForm difficulty dropdown", () => {
 
     await screen.findByRole("button", { name: /generate/i });
     fireEvent.click(screen.getByRole("button", { name: /generate/i }));
-    await screen.findByRole("button", { name: /confirm/i });
-    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    const confirmButton = await screen.findByRole(
+      "button",
+      { name: /confirm/i },
+      { timeout: 5000 },
+    );
+    await waitFor(() => expect(confirmButton).toBeEnabled(), { timeout: 5000 });
+    fireEvent.click(confirmButton);
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
     await act(async () => {

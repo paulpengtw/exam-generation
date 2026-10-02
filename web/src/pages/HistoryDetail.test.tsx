@@ -177,12 +177,16 @@ describe("HistoryDetail", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole(
+    const completedRegenerateButton = await screen.findByRole(
       "button",
       { name: /Reload saved parameters/i },
       { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
-    fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
+    await waitFor(
+      () => expect(completedRegenerateButton).toBeEnabled(),
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
+    );
+    fireEvent.click(completedRegenerateButton);
 
     await waitFor(
       () =>
@@ -235,12 +239,16 @@ describe("HistoryDetail", () => {
       </MemoryRouter>,
     );
 
-    await screen.findByRole(
+    const abortedRegenerateButton = await screen.findByRole(
       "button",
       { name: /Reload saved parameters/i },
       { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
-    fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
+    await waitFor(
+      () => expect(abortedRegenerateButton).toBeEnabled(),
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
+    );
+    fireEvent.click(abortedRegenerateButton);
 
     await waitFor(
       () =>
