@@ -568,6 +568,11 @@ def _ffr(counts: dict[str, int]) -> str:
     return f"{counts['FP'] / denom:.0%}"
 
 
+def _md_cell(value: object) -> str:
+    """Escape pipe characters so a value is safe inside a markdown table cell."""
+    return str(value).replace("|", "\\|")
+
+
 def cmd_score(
     units: list[dict[str, Any]],
     cache_path: pathlib.Path,
@@ -640,9 +645,9 @@ def cmd_score(
             counts = _score_rule(rule, judged, all_flags)
             n = len(judged)
             rule_lines.append(
-                f"| {stratum_name} | {n} | {counts['TP']} | {counts['FP']} | "
+                f"| {_md_cell(stratum_name)} | {n} | {counts['TP']} | {counts['FP']} | "
                 f"{counts['FN']} | {counts['TN']} | {counts['errors']} | "
-                f"{_recall(counts)} | {_ffr(counts)} |"
+                f"{_md_cell(_recall(counts))} | {_md_cell(_ffr(counts))} |"
             )
 
         # Trap-set false positives
@@ -725,8 +730,8 @@ def cmd_score(
             continue
         resp = cache_lookup(cache, u["unit_key"], u["prompt_sha"]) or {}
         lines.append(
-            f"| {u['unit_key']} | {resp.get('specificity_violation', '?')} | "
-            f"{resp.get('counting_violation', '?')} | {resp.get('verdict', '?')} |"
+            f"| {_md_cell(u['unit_key'])} | {_md_cell(resp.get('specificity_violation', '?'))} | "
+            f"{_md_cell(resp.get('counting_violation', '?'))} | {_md_cell(resp.get('verdict', '?'))} |"
         )
 
     # Fix the checker_example_details lookup
