@@ -28,15 +28,16 @@ _TEXT_SHELL_THREE_SLOTS = {
 
 
 class _FakeTextClient:
-    def __init__(self) -> None:
+    def __init__(self, text_shell: dict | None = None) -> None:
         self.image_calls: list[tuple[str, Path]] = []
+        self.text_shell = text_shell or _TEXT_SHELL_THREE_SLOTS
 
     def get_observer(self):
         return None
 
     def generate_json(self, system, user, images=None, **kwargs):
         del system, user, images, kwargs
-        return _TEXT_SHELL_THREE_SLOTS
+        return self.text_shell
 
     def generate_image(self, prompt: str, output_path) -> str:
         path = Path(output_path)
@@ -128,6 +129,38 @@ class _ReversedSchemaFaithfulSubClient(_SchemaFaithfulSubClient):
         return response
 
 
+class _AlwaysVisualSubClient:
+    """Emit a valid visual for every slot, including pure-text slots."""
+
+    def set_observer(self, obs) -> None:
+        del obs
+
+    def generate_json(self, system, user, images=None, agent_override=None, **kwargs):
+        del system, user, images, kwargs
+        idx = int(agent_override.split("#")[1]) if agent_override else 1
+        return {
+            "序號": idx,
+            "年級": 99,
+            "科目": ["model subject"],
+            "科學能力": ["model competency"],
+            "出題概念": f"科學概念{idx}",
+            "題型": "Simple multiple-choice",
+            "題目": f"第{idx}題（A）甲（B）乙（C）丙（D）丁",
+            "答案": "A",
+            "答案解析": "解析",
+            "評分規準": [],
+            "題目內容類型": "含圖片",
+            "image_generation_mode": "gpt_image",
+            "圖片": f"model-slot-{idx}.png",
+            "chart_spec": {
+                "render_mode": "gpt_image",
+                "figure_kind": f"槽位{idx}圖",
+                "description": f"第{idx}格的模型圖片",
+                "data": {},
+            },
+        }
+
+
 def _params(content_type: str, image_generation_mode: str = "gpt_image"):
     return sample_params(
         seed=1,
@@ -212,6 +245,106 @@ def test_ns_image_generation_mode_alone_does_not_render_for_pure_text(
     assert question.subquestions[0].chart_spec is None
     assert text_client.image_calls == []
     assert not (tmp_path / "ns_mode_only_test_sq1.png").exists()
+
+
+def test_ns_six_slot_contract_suppresses_model_visuals_for_pure_text_slots(
+    tmp_path: Path,
+) -> None:
+    from server.generate.question_terminal import _QuestionPositionResolution
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "ns_six_slot_visual_contract"
+    text_shell = {
+        "核心問題": "測試核心問題",
+        "文本": "測試文本素材",
+        "取材來源": ["測試來源"],
+        "subquestions": [
+            {
+                "序號": idx,
+                "題型": "Simple multiple-choice",
+                "出題概念": f"概念{idx}",
+            }
+            for idx in range(1, 7)
+        ],
+    }
+    text_client = _FakeTextClient(text_shell)
+    params = sample_params(
+        seed=1,
+        content_type="純文字",
+        sub_question_count=6,
+        subquestion_configs=[
+            {
+                "question_type": "Simple multiple-choice",
+                "content_type": "含圖片",
+                "image_generation_mode": "gpt_image",
+                "figure_kind": "槽位1圖",
+            },
+            {
+                "question_type": "Simple multiple-choice",
+                "content_type": "graphs/charts/tables",
+                "image_generation_mode": "gpt_image",
+                "figure_kind": "槽位2圖",
+            },
+            *[
+                {
+                    "question_type": "Simple multiple-choice",
+                    "content_type": "純文字",
+                    "image_generation_mode": "gpt_image",
+                }
+                for _ in range(4)
+            ],
+        ],
+    )
+
+    question = generate_one(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=text_client,
+        params=params,
+        question_id=question_id,
+        skip_verify=True,
+        disable_reference_fewshot=True,
+        sub_client_factory=lambda: _AlwaysVisualSubClient(),
+        image_generation_mode="gpt_image",
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert [sub.序號 for sub in question.subquestions] == list(range(1, 7))
+    assert len(text_client.image_calls) == 2
+    assert [path.name for _prompt, path in text_client.image_calls] == [
+        f"{question_id}_sq1.png",
+        f"{question_id}_sq2.png",
+    ]
+    for position, subquestion in enumerate(question.subquestions[2:], start=3):
+        assert subquestion.題目內容類型 == "純文字"
+        assert subquestion.chart_spec is None
+        assert subquestion.圖片 is None
+        assert not (tmp_path / f"{question_id}_sq{position}.png").exists()
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=1,
+        question=question,
+        params=params,
+        output_dir=tmp_path,
+        resolution=_QuestionPositionResolution(
+            announced_slots=[
+                {
+                    "subquestion_index": index,
+                    "id": f"{question_id}-sq{index + 1:03d}",
+                    "序號": index + 1,
+                }
+                for index in range(6)
+            ],
+            resolved_subquestion_configs=params.subquestion_configs,
+            resolved_subquestion_count=6,
+            has_per_question_resolution=True,
+        ),
+    )
+    assert [
+        slot["subquestion_index"] for slot in payload["expected"] if slot["kind"] == "image"
+    ] == [0, 1]
 
 
 def test_ns_visual_subq_prompt_uses_inherited_image_generation_mode(

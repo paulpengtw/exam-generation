@@ -23,7 +23,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.common.correction_decision import CorrectionDecision
+from src.common.correction_decision import CorrectionDecision, CorrectionRejection
 from src.common.figure_policy_trail import FigurePolicyTrailEvent
 from src.common.generation_events import (
     CONTENT_SIGNATURE_EXCLUDED_KEYS,
@@ -198,6 +198,46 @@ class SubquestionParseError(ValueError):
             if character.isalnum() or character in {".", "_", "-"}
         )[:64] or "validation_error"
         return cls(f"子題欄位「{field}」驗證失敗（{error_type}）")
+
+
+def _reapply_fixed_subquestion_contracts(
+    question: Any,
+    *,
+    question_id: str,
+    params: Any,
+    fixed_identity: bool,
+) -> CorrectionRejection | None:
+    """Restore fixed-slot pins on a correction candidate before adoption."""
+    subquestion_configs = getattr(params, "subquestion_configs", []) or []
+    for row_index, subquestion in enumerate(
+        getattr(question, "subquestions", []) or []
+    ):
+        plan_index = getattr(subquestion, "_plan_index", None)
+        plan_position = (
+            plan_index - 1
+            if isinstance(plan_index, int) and not isinstance(plan_index, bool)
+            and plan_index >= 1
+            else row_index
+        )
+        slot_config = (
+            subquestion_configs[plan_position]
+            if plan_position < len(subquestion_configs)
+            else None
+        )
+        issue = apply_fixed_subquestion_contract(
+            subquestion,
+            question_id=question_id,
+            plan_position=plan_position,
+            slot_config=slot_config,
+            fixed_identity=fixed_identity,
+        )
+        if issue is not None:
+            return CorrectionRejection(
+                code="fixed_slot_contract",
+                path=f"subquestions[{row_index}]",
+                message=issue,
+            )
+    return None
 
 
 def _emit_update(callback: Callable | None, question: Any, phase: str) -> Any:
@@ -1118,6 +1158,26 @@ def generate_with_corrections_core(
         )
         decision = decisions[-1] if decisions else None
         rejected = decision is not None and decision.outcome == "rejected"
+        if not rejected and spec.fixed_subquestion_identity:
+            contract_candidate = (
+                corrected.model_copy(deep=True)
+                if hasattr(corrected, "model_copy")
+                else corrected
+            )
+            contract_rejection = _reapply_fixed_subquestion_contracts(
+                contract_candidate,
+                question_id=question_id,
+                params=params,
+                fixed_identity=spec.fixed_subquestion_identity,
+            )
+            if contract_rejection is not None:
+                decision = CorrectionDecision(
+                    outcome="rejected",
+                    reason=contract_rejection,
+                )
+                rejected = True
+            else:
+                corrected = contract_candidate
         if rejected:
             reason = decision.reason
             emit_stage(

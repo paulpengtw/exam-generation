@@ -54,6 +54,11 @@ def apply_fixed_subquestion_contract(
         configured_content_type = getattr(slot_config, "content_type", None)
         if configured_content_type is not None:
             subquestion.題目內容類型 = configured_content_type
+        if configured_content_type == "純文字":
+            subquestion.chart_spec = None
+            if hasattr(subquestion, "image_spec"):
+                subquestion.image_spec = None
+            subquestion.圖片 = None
 
     if not is_open_response(getattr(subquestion, "題型", None)):
         return None

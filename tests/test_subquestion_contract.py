@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
@@ -119,6 +121,37 @@ def test_fixed_slot_contract_restores_identity_type_and_content_pins() -> None:
     assert subquestion._plan_index == 2
     assert subquestion.題型 == QuestionType("Constructed response")
     assert subquestion.題目內容類型 == "純文字"
+
+
+def test_fixed_slot_contract_clears_every_visual_alias_for_pure_text() -> None:
+    subquestion = SimpleNamespace(
+        id="model-owned",
+        序號=99,
+        _plan_index=99,
+        題型="Simple multiple-choice",
+        題目內容類型="含圖片",
+        chart_spec=object(),
+        image_spec=object(),
+        圖片="model-owned.png",
+        評分規準=[],
+    )
+
+    reason = apply_fixed_subquestion_contract(
+        subquestion,
+        question_id="q-fixed",
+        plan_position=2,
+        slot_config=SimpleNamespace(
+            question_type="Simple multiple-choice",
+            content_type="純文字",
+        ),
+        fixed_identity=True,
+    )
+
+    assert reason is None
+    assert subquestion.題目內容類型 == "純文字"
+    assert subquestion.chart_spec is None
+    assert subquestion.image_spec is None
+    assert subquestion.圖片 is None
 
 
 @pytest.mark.parametrize(
