@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import pytest
 
+from src.common.generation_core import SubquestionParseError
 from src.natural_sciences.cli import _parse_subquestion
 from src.natural_sciences.sampler import sample_params
+from src.natural_sciences.schemas import ScienceCompetency
 
 
 def _params(grade: int = 11, q_type: str = "Simple multiple-choice"):
@@ -122,3 +124,71 @@ def test_parse_subquestion_grade_forced_for_all_pisa_types(
     assert sq.年級 == 11, (
         f"{q_type}: expected 年級=11, got 年級={sq.年級}"
     )
+
+
+def test_parse_subquestion_normalizes_scalar_student_example() -> None:
+    raw = _base_raw()
+    raw["題型"] = "Constructed response"
+    raw["評分規準"] = [
+        {"code": "2", "規準說明": "完整說明", "學生作答實例": "學生回答"}
+    ]
+
+    sq = _parse_subquestion(
+        raw,
+        "q1",
+        _params(q_type="Constructed response"),
+        1,
+    )
+
+    assert sq.評分規準[0].學生作答實例 == ["學生回答"]
+
+
+@pytest.mark.parametrize("invalid", [7, {"private": "response"}])
+def test_parse_subquestion_rejects_non_string_scalar_student_example(
+    invalid: object,
+) -> None:
+    raw = _base_raw()
+    raw["題型"] = "Constructed response"
+    raw["評分規準"] = [
+        {"code": "2", "規準說明": "完整說明", "學生作答實例": invalid}
+    ]
+
+    with pytest.raises(SubquestionParseError):
+        _parse_subquestion(
+            raw,
+            "q1",
+            _params(q_type="Constructed response"),
+            1,
+        )
+
+
+def test_parse_subquestion_forces_competency_and_configured_curriculum_pins() -> None:
+    competency = list(ScienceCompetency)[1]
+    params = sample_params(
+        grade=11,
+        seed=7,
+        q_type=["Simple multiple-choice"],
+        science_competency=[competency],
+        learning_content=["Ab-Ⅳ-1"],
+        learning_performance=["tr-Ⅳ-1"],
+        sub_question_count=3,
+        subquestion_configs=[
+            {
+                "learning_content": ["Ab-Ⅳ-1"],
+                "learning_performance": ["tr-Ⅳ-1"],
+            },
+            {},
+            {},
+        ],
+    )
+    raw = _base_raw()
+    raw["科學能力"] = ["模型自選能力"]
+    raw["學習內容"] = [{"編碼": "模型自選內容", "說明": "private"}]
+    raw["學習表現"] = [{"編碼": "模型自選表現", "說明": "private"}]
+
+    sq = _parse_subquestion(raw, "q1", params, 1)
+
+    assert sq.年級 == 11
+    assert sq.科學能力 == [competency.value]
+    assert [ref.編碼 for ref in sq.學習內容] == ["Ab-Ⅳ-1"]
+    assert [ref.編碼 for ref in sq.學習表現] == ["tr-Ⅳ-1"]
