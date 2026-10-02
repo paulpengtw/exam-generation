@@ -268,10 +268,8 @@ describe("ParamForm difficulty dropdown", () => {
   });
 
   it("keeps the confirmation editable when generation admission rejects before streaming", async () => {
-    const onSubmit = vi.fn().mockResolvedValue({
-      outcome: "rejected",
-      reason: "client build is outdated",
-    });
+    const admission = deferred<{ outcome: "rejected"; reason: string }>();
+    const onSubmit = vi.fn(() => admission.promise);
     render(<ParamForm subject="math" onSubmit={onSubmit} disabled={false} />);
 
     await screen.findByRole("button", { name: /generate/i });
@@ -280,8 +278,16 @@ describe("ParamForm difficulty dropdown", () => {
     fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
-    expect(screen.getByRole("button", { name: "form.btn_back_edit" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /confirm/i })).toBeEnabled();
+    await act(async () => {
+      admission.resolve({
+        outcome: "rejected",
+        reason: "client build is outdated",
+      });
+    });
+    expect(
+      await screen.findByRole("button", { name: "form.btn_back_edit" }),
+    ).toBeEnabled();
+    expect(await screen.findByRole("button", { name: /confirm/i })).toBeEnabled();
   });
 });
 
