@@ -19,8 +19,7 @@ import logging
 import sys
 from collections.abc import Callable, Sequence
 from contextlib import contextmanager
-from enum import Enum
-from typing import Any, get_args
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -35,6 +34,12 @@ from src.common.generation_events import (
 )
 from src.common.kwarg_compat import accepts_kwarg
 from src.common.subject_spec import SubjectGenerationSpec
+from src.common.subquestion_contract import apply_fixed_subquestion_contract
+from src.common.subquestion_failure import (
+    SubquestionFailureCode,
+    sanitize_exception_class,
+    sanitize_failure_detail,
+)
 from src.common.verification_trail import (
     VerificationTrailEvent,
     make_correction_trail_entry,
@@ -215,27 +220,6 @@ def _record_update_revision(
         if revision_state is not None:
             revision_state[0] = result
     return current_revision
-
-
-def _apply_fixed_subquestion_identity(
-    subquestion: Any,
-    question_id: str,
-    plan_position: int,
-    *,
-    enabled: bool,
-) -> Any:
-    """Apply the program-owned identity for one normalized grouped slot."""
-    if not enabled:
-        return subquestion
-    slot_number = plan_position + 1
-    subquestion.id = f"{question_id}-sq{slot_number:03d}"
-    subquestion.序號 = slot_number
-    # ``_plan_index`` is intentionally one-based because subject config lists
-    # and the existing renderer filenames are one-based.  It is independent
-    # from the zero-based transport ``subquestion_index`` in the manifest.
-    if hasattr(subquestion, "_plan_index"):
-        subquestion._plan_index = slot_number
-    return subquestion
 
 
 def _emit_trail(
@@ -587,15 +571,24 @@ def generate_one_core(
         plan_position, sq_plan = plan_item
         idx = plan_position + 1
         agent_id = f"sub_generator#{idx}"
+        slot_cfg = (
+            subquestion_configs[idx - 1]
+            if 1 <= idx <= len(subquestion_configs)
+            else None
+        )
         if use_embedded_subquestions:
             try:
                 parsed = spec.parse_subquestion_fn(sq_plan, question_id, params, idx)
-                return _apply_fixed_subquestion_identity(
+                contract_issue = apply_fixed_subquestion_contract(
                     parsed,
-                    question_id,
-                    plan_position,
-                    enabled=spec.fixed_subquestion_identity,
+                    question_id=question_id,
+                    plan_position=plan_position,
+                    slot_config=slot_cfg,
+                    fixed_identity=spec.fixed_subquestion_identity,
                 )
+                if contract_issue is not None:
+                    raise SubquestionParseError(contract_issue)
+                return parsed
             except SubquestionParseError as exc:
                 # Embedded responses predate the retrying LLM path; preserve
                 # their existing drop-on-parse-failure behavior while keeping
@@ -608,7 +601,6 @@ def generate_one_core(
                 )
                 return None
 
-        slot_cfg = subquestion_configs[idx - 1] if 1 <= idx <= len(subquestion_configs) else None
         sub_user, sub_images, sub_ref_draws = spec.build_subquestion_user_fn(
             text_raw, params, few_shot_dir, sq_plan, slot_cfg,
             image_generation_mode, disable_reference_fewshot,
@@ -635,9 +627,19 @@ def generate_one_core(
         attempts = 1 + max(0, config.subgen_retries)
         result = None
         last_failure_reason = ""
+        last_failure_code: SubquestionFailureCode = "unknown"
+        retry_feedback: str | None = None
         superseded_operation_id: str | None = None
         for attempt in range(1, attempts + 1):
             last_failure_reason = ""
+            attempt_user = sub_user
+            if retry_feedback is not None:
+                attempt_user = (
+                    f"{sub_user}\n\n"
+                    "前次回應未通過固定小題評分規準格式驗證："
+                    f"{retry_feedback}\n"
+                    "請只修正上述格式問題，並重新輸出完整的單一 JSON 物件。"
+                )
             sub_scope = (
                 first_sub_scope
                 if attempt == 1
@@ -666,13 +668,17 @@ def generate_one_core(
             try:
                 sq_raw = sub_client.generate_json(
                     sub_system,
-                    sub_user,
+                    attempt_user,
                     images=sub_images or None,
                     agent_override=agent_id,
                     scope=sub_scope,
                 )
             except Exception as e:
-                last_failure_reason = f"provider call raised {type(e).__name__}"
+                last_failure_code = "provider_failure"
+                last_failure_reason = (
+                    f"provider call raised {sanitize_exception_class(e)}"
+                )
+                retry_feedback = None
                 print(
                     f"  Sub-generator {agent_id} attempt {attempt}/{attempts} failed: "
                     f"{last_failure_reason}",
@@ -685,24 +691,43 @@ def generate_one_core(
                         sq_raw, question_id, params, idx
                     )
                 except SubquestionParseError as e:
-                    last_failure_reason = e.reason
+                    last_failure_code = "validation_exhausted"
+                    last_failure_reason = (
+                        sanitize_failure_detail(e.reason)
+                        or "subquestion response failed validation"
+                    )
+                    retry_feedback = last_failure_reason
                     result = None
                 except Exception as e:
+                    last_failure_code = "parser_failure"
                     last_failure_reason = (
-                        f"subquestion parser raised {type(e).__name__}"
+                        "subquestion parser raised "
+                        f"{sanitize_exception_class(e)}"
                     )
+                    retry_feedback = None
                     result = None
                 if result is not None:
-                    result = _apply_fixed_subquestion_identity(
+                    contract_issue = apply_fixed_subquestion_contract(
                         result,
-                        question_id,
-                        plan_position,
-                        enabled=spec.fixed_subquestion_identity,
+                        question_id=question_id,
+                        plan_position=plan_position,
+                        slot_config=slot_cfg,
+                        fixed_identity=spec.fixed_subquestion_identity,
                     )
+                    if contract_issue is not None:
+                        last_failure_code = "validation_exhausted"
+                        last_failure_reason = (
+                            sanitize_failure_detail(contract_issue)
+                            or "subquestion response failed validation"
+                        )
+                        retry_feedback = last_failure_reason
+                        result = None
                 if result is None and not last_failure_reason:
+                    last_failure_code = "unknown"
                     last_failure_reason = (
                         "subquestion response did not satisfy the expected schema"
                     )
+                    retry_feedback = None
             if result is not None:
                 emit_stage(
                     obs,
@@ -712,44 +737,6 @@ def generate_one_core(
                     scope=sub_scope,
                     attempt=attempt,
                 )
-                configured_type = (
-                    slot_cfg.question_type
-                    if slot_cfg is not None else None
-                )
-                if configured_type is not None:
-                    field = type(result).model_fields.get("題型")
-                    enum_type = field.annotation if field is not None else None
-                    enum_candidates = (
-                        get_args(enum_type) if enum_type is not None else ()
-                    )
-                    enum_type = next(
-                        (
-                            candidate
-                            for candidate in enum_candidates
-                            if isinstance(candidate, type)
-                            and issubclass(candidate, Enum)
-                        ),
-                        enum_type,
-                    )
-                    try:
-                        coerced_type = (
-                            enum_type(configured_type)
-                            if enum_type is not None else None
-                        )
-                    except (TypeError, ValueError) as e:
-                        print(
-                            f"  Could not enforce 題型 for {agent_id}: {e}",
-                            file=sys.stderr,
-                        )
-                    else:
-                        if coerced_type is None:
-                            print(
-                                f"  Could not enforce 題型 for {agent_id}: "
-                                "field has no declared enum type",
-                                file=sys.stderr,
-                            )
-                        else:
-                            result.題型 = coerced_type
             if result is not None:
                 return result
             if attempt < attempts:
@@ -759,9 +746,10 @@ def generate_one_core(
                     f" (attempt {attempt + 1}/{attempts})...",
                     file=sys.stderr,
                 )
+        failure_detail = sanitize_failure_detail(last_failure_reason)
         _drop_msg = (
-            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {last_failure_reason}"
-            if last_failure_reason
+            f"子題 {idx} 生成失敗（{attempts} 次嘗試）: {failure_detail}"
+            if failure_detail
             else f"子題 {idx} 生成失敗（{attempts} 次嘗試）"
         )
         logger.warning(
@@ -769,8 +757,14 @@ def generate_one_core(
             question_id,
             agent_id,
             attempts,
-            last_failure_reason or "subquestion response did not satisfy the expected schema",
+            failure_detail or "subquestion response did not satisfy the expected schema",
         )
+        failure_event: dict[str, object] = {
+            "code": "subquestion_exhausted",
+            "failure_code": last_failure_code,
+        }
+        if failure_detail is not None:
+            failure_event["failure_detail"] = failure_detail
         emit_stage(
             obs,
             agent_id,
@@ -778,6 +772,7 @@ def generate_one_core(
             "error",
             scope=sub_scope,
             message=_drop_msg,
+            **failure_event,
         )
         print(
             f"  Sub-generator {agent_id} dropped after {attempts} attempt(s)",
