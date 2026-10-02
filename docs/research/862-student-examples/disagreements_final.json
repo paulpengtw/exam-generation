@@ -1,0 +1,80 @@
+[
+  {
+    "id": "fasting-method|0|4|2|0",
+    "set": "ns",
+    "rule": "r1",
+    "level": "2",
+    "text": "選B，說明斷食縮短胰島素分泌時間，圖三也顯示同熱量下縮短進食窗口效果更好",
+    "labeller_label": "narration",
+    "labeller_borderline": true,
+    "labeller_reason": "「選B，說明斷食縮短…」以「說明」轉述作答，非學生原文",
+    "checker_flag": false,
+    "checker_reason": "",
+    "checker_example_details": "[學生作答實例檢核] [1] 的 E2 含評語「但未提圖三數據」；請刪除該句，只保留學生會寫的「選B，因為斷食會減少胰島素分泌」。"
+  },
+  {
+    "id": "weather-proverbs|0|4|1|0",
+    "set": "ns",
+    "rule": "r2",
+    "level": "1",
+    "text": "圖形形狀正確但未標明縱軸單位或刻度數值",
+    "labeller_label": "generic",
+    "labeller_borderline": false,
+    "labeller_reason": "可貼到任何作圖題",
+    "checker_flag": false,
+    "checker_reason": "「圖形形狀正確但未標明縱軸單位」是對作答的評語",
+    "checker_example_details": "[學生作答實例檢核] [1] 的 E2 含評語（「正確」「未標明」）；請改為中性描述學生畫了什麼，例如「畫出2-4小時內升到約100的尖峰曲線，縱軸沒有寫單位與刻度數字」。"
+  },
+  {
+    "id": "社會領域_row4|0|4|1|0",
+    "set": "ss",
+    "rule": "r2",
+    "level": "1",
+    "text": "我覺得先討論比較好，因為有人反對。",
+    "labeller_label": "generic",
+    "labeller_borderline": true,
+    "labeller_reason": "可貼到任何公共議題題目，未用本文本資料",
+    "checker_flag": false,
+    "checker_reason": "",
+    "checker_example_details": "[學生作答實例檢核] [0] 的 E3 含「我不知道」，且「停車場看起來很好玩」偏離題意；請改寫為學生合理會寫的錯誤方向，例如把里長的做法當成拖延、與公民角色無關。"
+  },
+  {
+    "id": "社會領域_row4|0|4|2|0",
+    "set": "ss",
+    "rule": "r2",
+    "level": "2",
+    "text": "我支持先重新評估，因為基地十年淹水三次，若直接興建可能增加災害風險。",
+    "labeller_label": "generic",
+    "labeller_borderline": true,
+    "labeller_reason": "淹水三次；但答的是興建立場，答非本小題所問（公民角色）",
+    "checker_flag": false,
+    "checker_reason": "",
+    "checker_example_details": "[學生作答實例檢核] [0] 的 E3 含「我不知道」，且「停車場看起來很好玩」偏離題意；請改寫為學生合理會寫的錯誤方向，例如把里長的做法當成拖延、與公民角色無關。"
+  },
+  {
+    "id": "jumping-bottle-cap|0|3|0|1",
+    "set": "ns",
+    "rule": "r3",
+    "level": "0",
+    "text": "1.表(二) ；因為計錄比較詳細",
+    "labeller_label": "filler",
+    "labeller_borderline": true,
+    "labeller_reason": "選了與 [2] 實例相同的表，不是錯誤答案（至多 [1]）",
+    "checker_flag": false,
+    "checker_reason": "",
+    "checker_example_details": "[學生作答實例檢核] [2]的E1與[0]的E3只寫「例如:」，請改寫成學生口吻、用到表(一)小傑／小柏紀錄表差異的真實作答，[0]實例須是合理的錯誤想法。"
+  },
+  {
+    "id": "truck-cornering|0|3|0|1",
+    "set": "ns",
+    "rule": "r3",
+    "level": "0",
+    "text": "只採認識的民眾意見",
+    "labeller_label": "filler",
+    "labeller_borderline": true,
+    "labeller_reason": "以是否認識為標準，近乎玩笑，非本題可能引出的迷思",
+    "checker_flag": false,
+    "checker_reason": "",
+    "checker_example_details": "[學生作答實例檢核] [2]的E1與[1]的E2未用到貨車、民眾意見或行車紀錄器，請改寫成本題情境；E2並刪除「但未說明如何判斷」評語。"
+  }
+]

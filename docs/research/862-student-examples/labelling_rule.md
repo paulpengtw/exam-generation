@@ -1,6 +1,6 @@
 # Labelling rule: 學生作答實例 judgement rules (#862)
 
-**Version 1, posted on #862 before any labelling.**
+**Version 2, amended 2026-10-03 after the owner's spot-check (verdicts on [#879](https://github.com/paulpengtw/exam-generation/issues/879)).** Version 1 was posted on #862 before labelling and is in this file's git history. Every change is listed under "Changes from version 1" at the end. Later slices that reuse this procedure (#863, #884) must reuse **this** version.
 
 This rule is for the **independent labeller** only. It produces the reference labels that the checker's per-example flags are compared against. It is written separately from the checker's prompt, and the labeller never sees the checker's verdicts. It reuses the procedure of [#861's labelling rule, version 2](../861-specificity-measurement/labelling_rule.md): one written rule, a short quoted reason per label, borderline marks, and every disagreement listed for the owner.
 
@@ -31,10 +31,12 @@ The three rules come from the 【具體性】 and 【學生作答實例】 claus
 **Label: `this_item` or `generic`.** Applies to every example at every level.
 
 - **The test is #861's paste test.** Take an open-response 小題 on an unrelated topic. If the example could be pasted there unchanged, it is **`generic`**.
-- **`this_item`**: it uses at least one thing that belongs to this 小題 or its 文本: a datum or value, a variable, a named thing or person, an option it offers, or the item's own concept.
-- **`generic`**: placeholders (「例如：」「完整正確回答」「（空白）」), 「不知道」, and content that fits any item (「數據沒有意義」「因為很重要」「我覺得都對」).
-- **Correctness is not judged.** A wrong answer that uses this item's terms is `this_item`.
-- **Same 文本, different question.** An example that uses the 題組's data but answers a different question than this 小題's stem still passes the paste test, so it is labelled `this_item`. It is marked **borderline**, with the reason 「答非本小題所問」, so the spot-check can rule on whether rule 2 should also catch it.
+- **`this_item`**: it uses at least one of this 小題's or its 文本's **data, variables or names**: a datum or value, a variable, a named thing or person, or an option it offers. **And** it answers the question this 小題's stem asks.
+- **`generic`**: placeholders (「例如：」「完整正確回答」「（空白）」), 「不知道」, and content that fits any item (「數據沒有意義」「因為很重要」「我覺得都對」). Also:
+  - **The item's concept or topic alone is not enough.** 「只採可直接觀察的事實，排除推測與情緒性陳述」 names 客觀科學論述 but none of the item's 貨車, 民眾 or 行車紀錄器, so it is `generic`.
+  - **Grading a drawing in words that fit any graph** (「圖形形狀正確但未標明縱軸單位或刻度數值」) is `generic` as well as `narration`.
+  - **Same 文本, different question.** An example that uses the 題組's data but answers a different question than this 小題's stem is `generic` (「答非本小題所問」).
+- **Correctness is not judged.** A wrong answer that uses this item's data, variables or names, and is aimed at this 小題's question, is `this_item`.
 
 ## Rule 3: plausible [0]
 
@@ -56,3 +58,12 @@ The labeller also writes **at least 15 trap examples**: genuine student-voice an
 ## Output per example
 
 `{id, rule1, rule2, rule3, borderline: [rules], reason: {rule: quoted deciding phrase}}`
+
+## Changes from version 1
+
+| # | Change | Source |
+|---|---|---|
+| 1 | Rule 2: **the item's concept or topic alone no longer counts**. An example must use the item's data, variables or names, which is the block's own wording (「資料、變因或名稱」). | Owner, disagreements #2 and #3 (`truck-cornering\|0\|3` [2] and [1]): checker right. These were labeller errors. |
+| 2 | Rule 2: **an example must answer this 小題's question.** Same 文本, different question is `generic`. Version 1 passed it as borderline. | Owner, `社會領域_row4\|0\|4` [2], which was off the list: the labeller and the checker had both passed it. |
+| 3 | Rule 2: a graph-grading phrase that fits any graphing item is `generic` as well as `narration`. | Owner, disagreement #4: labeller right. Spelled out, not changed. |
+| — | **Kept as in version 1:** 「選B，說明…」 is narration (#1); a [0] example that is not wrong is `filler` (#6); an answer close to a joke is `filler` (#7); an answer with no datum or name from the 文本 is `generic` (#5). | Owner: labeller right on #1, #4, #5, #6 and #7. |

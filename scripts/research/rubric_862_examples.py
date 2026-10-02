@@ -70,7 +70,9 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_CACHE_PATH = OUT_DIR / "checker_responses.jsonl"
 PROMPTS_PATH = OUT_DIR / "prompts.jsonl"
 MATRICES_PATH = OUT_DIR / "matrices.md"
+MATRICES_PASS1_PATH = OUT_DIR / "matrices_pass1.md"
 DISAGREEMENTS_PATH = OUT_DIR / "disagreements.json"
+DISAGREEMENTS_FINAL_PATH = OUT_DIR / "disagreements_final.json"
 
 SYSTEM_PATH = OUT_DIR / "checker_system.txt"
 USER_TEMPLATE_PATH = OUT_DIR / "checker_user_template.txt"
@@ -508,6 +510,7 @@ def _score_rule(
     rule: str,
     labelled_entries: list[dict[str, Any]],
     unit_flags: dict[str, dict[str, Any]],  # ex_id -> flag_dict
+    label_field: str = "labels",
 ) -> dict[str, int]:
     """Score one rule over a list of labelled entries.  Returns count dict."""
     cfg = _RULE_CFG[rule]
@@ -518,7 +521,7 @@ def _score_rule(
 
     for entry in labelled_entries:
         ex_id = entry["id"]
-        labels = entry["labels"]
+        labels = entry.get(label_field) or entry["labels"]
 
         if rule == "r3":
             if labels["r3"] == "n/a":
@@ -576,6 +579,7 @@ def _md_cell(value: object) -> str:
 def cmd_score(
     units: list[dict[str, Any]],
     cache_path: pathlib.Path,
+    label_set: str = "final",
 ) -> None:
     cache = load_cache(cache_path)
 
@@ -593,6 +597,18 @@ def cmd_score(
     # Load labelled set
     labelled_data = json.loads(LABELLED_SET_PATH.read_text(encoding="utf-8"))
     labelled_entries = labelled_data["entries"]
+
+    # Determine label field and output paths based on label_set
+    if label_set == "pass1":
+        label_field = "labels"
+        out_matrices_path = MATRICES_PASS1_PATH
+        out_disagreements_path = DISAGREEMENTS_PATH
+        label_set_desc = "pass-1 labeller labels"
+    else:
+        label_field = "final_labels"
+        out_matrices_path = MATRICES_PATH
+        out_disagreements_path = DISAGREEMENTS_FINAL_PATH
+        label_set_desc = "final labels (owner verdicts applied)"
 
     # Build combined flag lookup: ex_id -> flag_dict
     # and also unit_lookup: unit_key -> unit
@@ -638,11 +654,13 @@ def cmd_score(
 
         for stratum_name, stratum_entries in strata:
             if rule == "r3":
-                judged = [e for e in stratum_entries if e["labels"]["r3"] != "n/a"]
+                judged = [
+                    e for e in stratum_entries if (e.get(label_field) or e["labels"])["r3"] != "n/a"
+                ]
             else:
                 judged = stratum_entries
 
-            counts = _score_rule(rule, judged, all_flags)
+            counts = _score_rule(rule, judged, all_flags, label_field=label_field)
             n = len(judged)
             rule_lines.append(
                 f"| {_md_cell(stratum_name)} | {n} | {counts['TP']} | {counts['FP']} | "
@@ -651,7 +669,11 @@ def cmd_score(
             )
 
         # Trap-set false positives
-        trap_judged = [e for e in trap_entries if rule != "r3" or e["labels"]["r3"] != "n/a"]
+        trap_judged = [
+            e
+            for e in trap_entries
+            if rule != "r3" or (e.get(label_field) or e["labels"])["r3"] != "n/a"
+        ]
         trap_flagged_ids = []
         for entry in trap_judged:
             flag_dict = all_flags.get(entry["id"])
@@ -675,7 +697,7 @@ def cmd_score(
         positive_label = cfg["positive_label"]
         for entry in labelled_entries:
             ex_id = entry["id"]
-            labels = entry["labels"]
+            labels = entry.get(label_field) or entry["labels"]
 
             if rule == "r3":
                 if labels["r3"] == "n/a":
@@ -746,18 +768,20 @@ def cmd_score(
     disagreements.sort(key=lambda x: (x["rule"], x["id"]))
 
     # Write outputs
-    matrices_text = "# 學生作答實例 checker matrices — #862\n\n" + "\n".join(lines) + "\n"
-    MATRICES_PATH.write_text(matrices_text, encoding="utf-8")
+    matrices_text = (
+        f"# 學生作答實例 checker matrices — #862 ({label_set_desc})\n\n" + "\n".join(lines) + "\n"
+    )
+    out_matrices_path.write_text(matrices_text, encoding="utf-8")
 
-    DISAGREEMENTS_PATH.write_text(
+    out_disagreements_path.write_text(
         json.dumps(disagreements, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
 
     # Print to stdout
     print(matrices_text)
-    print(f"\nDisagreements written to {DISAGREEMENTS_PATH}")
-    print(f"Matrices written to {MATRICES_PATH}")
+    print(f"\nDisagreements written to {out_disagreements_path}")
+    print(f"Matrices written to {out_matrices_path}")
 
 
 def _find_unit_key(ex_id: str, unit_by_key: dict[str, dict]) -> str:
@@ -806,6 +830,17 @@ def main() -> None:
         default=str(DEFAULT_CACHE_PATH),
         help=f"Cache file path (default: {DEFAULT_CACHE_PATH}).",
     )
+    parser.add_argument(
+        "--labels",
+        choices=["final", "pass1"],
+        default="final",
+        help=(
+            "Label set to score against: 'final' uses final_labels (owner verdicts applied,"
+            " falling back to labels if absent) and writes matrices.md + disagreements_final.json;"
+            " 'pass1' uses the original pass-1 labeller labels and writes"
+            " matrices_pass1.md + disagreements.json (default: final)."
+        ),
+    )
 
     args = parser.parse_args()
     cache_path = pathlib.Path(args.cache)
@@ -822,7 +857,7 @@ def main() -> None:
         cmd_live(units, cache_path)
 
     if args.score:
-        cmd_score(units, cache_path)
+        cmd_score(units, cache_path, label_set=args.labels)
 
     if not any([args.emit_prompts, args.import_responses, args.live, args.score]):
         parser.print_help()

@@ -6,17 +6,17 @@
 
 ## Summary
 
-Three of the four judgment rules that [#653](https://github.com/paulpengtw/exam-generation/issues/653) set for 學生作答實例 were measured, one matrix per rule. Positive means a violation, so the checker should flag it.
+After the owner's spot-check on [#879](https://github.com/paulpengtw/exam-generation/issues/879) (2026-10-03), three of the four judgment rules that [#653](https://github.com/paulpengtw/exam-generation/issues/653) set for 學生作答實例 are measured, one matrix per rule. Positive means a violation, so the checker should flag it.
 
 | Rule | In-scope recall | In-scope false flags | Trap false flags | Recommendation |
 |---|---|---|---|---|
 | **擬答** (student voice) | 17 / 18 (94%) | 0 / 45 | **0 / 18** | **fail** |
-| **Answers this 小題** | 3 / 5 (60%) | 2 / 58 | **0 / 18** | **note only** |
-| **Plausible [0]** | 5 / 7 (71%) | 0 / 18 | **0 / 6** | **fail** |
+| **Answers this 小題** | 5 / 8 (63%) | 0 / 55 | **0 / 18** | **fail**, with amended text |
+| **Plausible [0]** | 5 / 7 (71%) | 0 / 18 | **0 / 6** | **fail**, with amended text |
 
-- **The trap set never tripped the checker.** It saw 18 genuine answers to judging 小題 full of grading words (「推論二錯誤」「證據不足」「這樣驗證不正確」「說明是正確的」) and flagged none. The ban on comments about the answer is not working as a word list. This was the risk #653 named.
-- **Six of the seven disagreements fall on entries the labeller had marked borderline.** The numbers therefore move inside a narrow range (below), and the spot-check decides where they land.
-- **The numbers are provisional.** The checker ran as Claude Code subagents, so the result needs a real-harness re-run before #860 wires anything, as #981 is doing for #861.
+- **The checker never flags a good example.** After the spot-check it has 0 false flags on every rule, and no trap tripped it. The 18 traps are genuine answers to judging 小題, full of grading words about the item (「推論二錯誤」「證據不足」「這樣驗證不正確」「說明是正確的」), so the comment ban is not working as a word list. This was the risk #653 named.
+- **Every remaining miss is a shape the criterion text doesn't name.** The amendment below names each one: 「說明…」 narration, an answer to a different question, an answer with no datum from the 文本, and a [0] that is not wrong.
+- **The numbers are provisional.** The checker ran as Claude Code subagents, so the amended text needs a real-harness run before #860 wires anything, as #981 is doing for #861.
 
 ## Method
 
@@ -39,7 +39,7 @@ The owner chose this method on 2026-10-03: a **Claude Code approximation, withou
 - **Trap set: 18.** These are student-voice answers written by the labeller for 6 judging 小題, under each 小題's real 規準說明, in separate checker calls ([`trap_set.json`](862-student-examples/trap_set.json)).
 - **Cache.** The cache is keyed on the unit and a hash of the prompt, so changing the criterion text invalidates it (the #651 cache did not).
 
-## Matrices (labeller's labels; positive = violation)
+## Pass-1 matrices, before the spot-check (labeller's labels; positive = violation)
 
 ### 擬答 (student voice)
 
@@ -86,27 +86,79 @@ Each example is quoted verbatim. "B" means the labeller marked it borderline. Ma
 
 One more case did not reach the list, because the labeller and the checker agreed on it. `社會領域_row4|0|4` [2] 「我支持先重新評估，因為基地十年淹水三次…」 uses this 文本's data, but it answers a different question (a stance on building, where the stem asks about the citizen's role). Both passed it under 本小題. **Should 本小題 also catch an answer to a different question in the same 題組?** The labelling rule marked it borderline so this question reaches the owner.
 
+## The owner's spot-check (#879, 2026-10-03)
+
+The owner ruled on all 7 disagreements, and on one entry off the list. Machine-readable copy: [`owner_verdicts.json`](862-student-examples/owner_verdicts.json).
+
+| # | Entry | Rule | Verdict | Who was right |
+|---|---|---|---|---|
+| 1 | `fasting-method\|0\|4` [2] | 擬答 | narration | labeller |
+| 2 | `truck-cornering\|0\|3` [2] | 本小題 | generic | **checker** |
+| 3 | `truck-cornering\|0\|3` [1] | 本小題 | generic | **checker** |
+| 4 | `weather-proverbs\|0\|4` [1] | 本小題 | generic | labeller |
+| 5 | `社會領域_row4\|0\|4` [1] | 本小題 | generic | labeller |
+| 6 | `jumping-bottle-cap\|0\|3` [0], 2nd example | plausible [0] | filler | labeller |
+| 7 | `truck-cornering\|0\|3` [0], 2nd example | plausible [0] | filler | labeller |
+| 8 | `社會領域_row4\|0\|4` [2] (off the list) | 本小題 | generic | neither: both had passed it |
+
+**Tally.** The labeller was right on 5 and the checker on 2. None was "the rule is ambiguous": each question the owner settled became a rule change.
+
+**Rule changes.** The labelling rule is amended to [version 2](862-student-examples/labelling_rule.md). #863 and #884 must reuse it.
+- For 本小題, an example must use the item's **data, variables or names**, the block's own words. The item's concept alone no longer counts (#2, #3).
+- An example must **answer this 小題's question**; same 文本, different question is generic (#8).
+- A [0] example that is **not wrong** fails plausible [0] (#6), as version 1 already said.
+
+No other label changes under version 2. The labeller rechecked every `this_item` label that rested on a thin tie, and each uses one of the item's names or variables.
+
+### Final matrices (owner's verdicts; positive = violation)
+
+| Rule | Stratum | n | TP | FP | FN | TN | Recall | False-flag rate |
+|---|---|---|---|---|---|---|---|---|
+| 擬答 | In scope | 63 | 17 | 0 | 1 | 45 | 94% | 0% |
+| 擬答 | Trap set | 18 | 0 | 0 | 0 | 18 | — | 0% |
+| 本小題 | In scope | 63 | 5 | 0 | 3 | 55 | 63% | 0% |
+| 本小題 | Trap set | 18 | 0 | 0 | 0 | 18 | — | 0% |
+| Plausible [0] | In scope | 25 | 5 | 0 | 2 | 18 | 71% | 0% |
+| Plausible [0] | Trap set | 6 | 0 | 0 | 0 | 6 | — | 0% |
+
+The per-stratum split (自然科學 / 社會領域) is in [`matrices.md`](862-student-examples/matrices.md).
+
 ## Recommendation
 
-**擬答: fail.** The checker caught 17 of 18 with no false flag, and passed all 18 traps. That includes the hardest shape, a trailing coder note (「（無說明）」「（未說明哪個變因受控制）」), and narration by 「說…」 on [0] examples. The checker's `details` sentences are usable as written. Proposed wording for the corrector:
+All three rules show the profile #861 found for 【具體性】: no false flags, and misses that each have a nameable shape. The recommendation is the same: **fail semantics, with the criterion text amended to name the missed shapes, then confirmed on the real harness.**
+
+**擬答: fail.** It caught 17 of 18 and passed all 18 traps. That includes the hardest shapes: a trailing coder note (「（無說明）」「（未說明哪個變因受控制）」), narration by 「說…」, and an X/Y placeholder. The one miss is 「選B，說明…」. Proposed addition to the criterion text:
+
+> 以「說明…」「指出…」轉述學生做了什麼，屬描述，不是擬答。
+
+`details` sentence for the corrector:
 
 > [學生作答實例檢核] [<級距>] 的實例 <n> 含對作答的評語「<評語>」（或為轉述、佔位字樣）；請刪去評語，改寫成學生口吻的作答原文。繪圖、標示題改為中性描述學生畫了什麼。
 
-**Answers this 小題: note only.** It is the weakest of the three, and it adds little on its own:
-- Every true positive was also caught by 擬答 or plausible [0]: 「例如:」 twice, and 「數據沒有意義」.
-- Both false flags come from the checker reading 「本小題」 as the scenario's nouns, which is disagreements #2 and #3.
+**Answers this 小題: fail, with amended text.** It caught 5 of 8. The three misses are an answer to a different question (#8), a civic answer with no datum from the 文本 (#5), and a graph-grading phrase that 擬答 already catches (#4). One of its catches, `truck-cornering|0|3` [2], is made by no other rule. Proposed additions:
 
-As a fail criterion it would cost corrector retries on good examples, for almost no added catch. Revisit it if the spot-check rules the concept out (#2 and #3 then become true positives) and the real-harness run holds.
+> 只寫出本題的概念或主題，而未用到本題的資料、變因或名稱，仍屬可貼到任何題目。
+> 實例必須回答本小題的提問；用到同一題組的文本卻回答另一個問題，也屬違反。
 
-**Plausible [0]: fail.** It caught 5 of 7 with no false flag on 18 real negatives and 6 traps; both misses are borderline. The base is small (25 level-0 examples), so the real-harness re-run should add generated [0] examples before this is final. Proposed wording for the corrector:
+`details` sentence for the corrector:
 
-> [學生作答實例檢核] [0] 的實例 <n> 不是學生合理會寫的錯誤答案（<理由：空白、不知道、與題目無關或荒謬>）；請改寫成本小題最可能引出的錯誤觀念，例如 <本題的典型迷思>。
+> [學生作答實例檢核] [<級距>] 的實例 <n> 未用到本題的資料、變因或名稱（或答的不是本小題的提問）；請改寫成回答本小題、用到 <本題的資料或名稱> 的作答。
+
+**Plausible [0]: fail, with amended text.** It caught 5 of 7, and both misses are now confirmed filler. One is a [0] that is not wrong (#6); the criterion text never says a [0] must be wrong. The other is close to a joke (#7), which text alone may not fix. Proposed addition:
+
+> [0] 實例必須是錯誤答案；依本規準可得 [1] 或 [2] 的作答不得放在 [0]。
+
+`details` sentence for the corrector:
+
+> [學生作答實例檢核] [0] 的實例 <n> 不是學生合理會寫的錯誤答案（<空白、不知道、與題目無關、荒謬，或其實並未答錯>）；請改寫成本小題最可能引出的錯誤觀念。
+
+The base is small (25 level-0 examples), so the real-harness run should add generated [0] examples before this is final.
 
 **Wiring note for #860.** Keep example findings on their own `details` line, separate from the 【具體性】 and counting line. In this run 5 units failed on their rubric text and also had example flags: `fasting-method|0|3`, `jumping-bottle-cap|0|3`, `typhoon-database|0|4`, `wind-corridor-effect|0|1` and `社會領域_row4|0|4`. In each of them the two lines carried different instructions.
 
 ## Limits
 
 - **Approximation.** The checker ran as Claude Code subagents with Claude Code's own wrapper, so the matrices must be re-confirmed on the real harness (a follow-up slice, like #981).
-- **Small positives.** 本小題 has 5 in-scope positives and plausible [0] has 7. A single flip moves recall by 14–20 points.
+- **Small positives.** 本小題 has 8 in-scope positives and plausible [0] has 7. A single flip moves recall by 13–14 points.
 - **The labeller wrote the traps.** By construction they are clean answers. They measure false flags only, not recall.
 - **Not measured here:** 最小對照 (#863), the fixed 1 / 2 / 1 counts (a deterministic hook), the 額外項目 rules (#874), and 常見錯誤 agreement with [0] (#884).

@@ -1,4 +1,4 @@
-# 學生作答實例 checker matrices — #862 (final labels (owner verdicts applied))
+# 學生作答實例 checker matrices — #862 (pass-1 labeller labels)
 
 ### Rule r1 (not_student_voice)
 
@@ -15,9 +15,9 @@
 
 | Stratum | n | TP | FP | FN | TN | errors | recall | false-flag rate |
 |---|---|---|---|---|---|---|---|---|
-| ns | 57 | 5 | 0 | 1 | 51 | 0 | 83% | 0% |
-| ss | 6 | 0 | 0 | 2 | 4 | 0 | 0% | 0% |
-| in-scope (ns+ss) | 63 | 5 | 0 | 3 | 55 | 0 | 62% | 0% |
+| ns | 57 | 3 | 2 | 1 | 51 | 0 | 75% | 4% |
+| ss | 6 | 0 | 0 | 1 | 5 | 0 | 0% | 0% |
+| in-scope (ns+ss) | 63 | 3 | 2 | 2 | 56 | 0 | 60% | 3% |
 | trap | 18 | 0 | 0 | 0 | 18 | 0 | n/a | 0% |
 
 **Trap-set false positives (r2):** 0/18 flagged. None.
