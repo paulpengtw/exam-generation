@@ -77,6 +77,10 @@ function LocationSpy() {
   );
 }
 
+// History loading and the subsequent router state update are asynchronous; keep
+// the event-bound assertions tolerant of slower CI without adding a sleep.
+const HISTORY_NAVIGATION_TIMEOUT = 5000;
+
 describe("HistoryDetail", () => {
   it("renders the stored question and downloads via snapshot when question_json is available", async () => {
     // issue #751: history download uses snapshot path when question_json is present
@@ -173,16 +177,19 @@ describe("HistoryDetail", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Reload saved parameters/i }))
-        .toBeInTheDocument(),
+    await screen.findByRole(
+      "button",
+      { name: /Reload saved parameters/i },
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
     fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("loc-state").textContent).toContain(
-        '"topic":"climate"',
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("loc-state").textContent).toContain(
+          '"topic":"climate"',
+        ),
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
     firstRender.unmount();
 
@@ -228,16 +235,19 @@ describe("HistoryDetail", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /Reload saved parameters/i }))
-        .toBeInTheDocument(),
+    await screen.findByRole(
+      "button",
+      { name: /Reload saved parameters/i },
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
     fireEvent.click(screen.getByRole("button", { name: /Reload saved parameters/i }));
 
-    await waitFor(() =>
-      expect(screen.getByTestId("loc-state").textContent).toContain(
-        '"topic":"aborted climate"',
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId("loc-state").textContent).toContain(
+          '"topic":"aborted climate"',
+        ),
+      { timeout: HISTORY_NAVIGATION_TIMEOUT },
     );
     expect(screen.getByTestId("loc-state").textContent).toContain(
       '"core_question":"aborted core"',
