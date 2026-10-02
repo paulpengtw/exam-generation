@@ -1,0 +1,4376 @@
+{
+ "labeller_model": "claude-opus-5-5 (Claude Code main session)",
+ "checker_model": "claude-sonnet-4-6 (Claude Code subagents, harness prompts verbatim except the specificity_violation field description)",
+ "corpus_ref": "origin/staging@946fb32",
+ "entries": [
+  {
+   "key": "black-white-car-heat|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明黑色車溫度高於白色車，並能以輻射熱吸收（顏色影響反射率）合理解釋差異原因\n[1] 說明溫度差異正確但原因說明不完整（如只說「黑色吸熱多」未說明機制）\n[0] 溫度差異方向錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 黑色車溫度高、輻射吸收；[1] 「只說『黑色吸熱多』未說明機制」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "black-white-car-heat|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選小宗，並合理說明黑色材質使得各顏色車的這些部位吸熱相似，故溫度無明顯差異\n[1] 選小宗但說明不完整，或說明邏輯不夠清晰\n[0] 選小奇或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「選小宗但說明不完整」borrows: choice is item content and [2] names the full reason (黑色材質吸熱相似)"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "black-white-car-heat|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選擇(A)氣球是否爆炸\n[0] 選擇其他選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "black-white-car-heat|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說明應記錄爆炸時間，並解釋時間可作為比較不同顏色車升溫快慢的量化指標\n[1] 提出記錄爆炸時間但未說明原因，或原因說明不完整\n[0] 提出非時間的數據或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提出記錄爆炸時間但未說明原因」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "black-white-car-heat|0|5",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選支持，並引用爆炸溫度相近、爆炸時間不同的數據為依據合理說明\n[1] 選支持但說明原因不完整，或只引用一項數據\n[0] 選推翻或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只引用一項數據」 against [2] 爆炸溫度相近、爆炸時間不同"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "black-white-car-heat|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確評估所有四項的可行性並說明原因，邏輯一致且無明顯錯誤\n[1] 正確評估三項，或全部評估但有一項說明有誤\n[0] 少於三項正確評估或多項方向錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "candle-burning|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」、[1]「部分正確」、[0]「錯誤或空白」均為可套用任何題目的泛用措辭，應改寫為：[2]能說明具體量測方式（如以量尺測量底面半徑與高度後用πr²h計算，或以量筒裝水讀出體積），步驟邏輯清楚；[1]量測方向正確但缺少關鍵步驟（如未說明如何取得r或h的數值）。"
+   }
+  },
+  {
+   "key": "candle-burning|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明正確答案是哪一項（如(1)和(4)）及各自依據，[1] 應指出本題最常見的缺口（如選出其中一項正確選項但遺漏另一項，或多選了無法直接由數據支持的選項）。"
+   }
+  },
+  {
+   "key": "candle-burning|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確理由（容積越大，密閉空間含氧量越多，蠟燭燃燒所需氧氣供應時間越長）；[1] 應指名常見缺口，如「提到容積與氧氣有關，但未說明氧氣消耗速率或總量的關係」。"
+   }
+  },
+  {
+   "key": "candle-burning|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明正確答案的具體範圍（如從圖三趨勢插值推算出約多少秒），[1] 應指出本題最常見的缺口（如嘗試讀圖但讀值方法有誤或結果明顯偏離合理範圍）。"
+   }
+  },
+  {
+   "key": "cardboard-box-oven|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選出小紅（導熱性），並能清楚說明導熱佳的材料將熱量散去使紙箱不超過燃點，同時能指出其他選項不符實驗結果\n[1] 選出小紅（導熱性），但說明不完整，或未能對比其他選項\n[0] 選錯人選，或說明與科學事實不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「選出小紅（導熱性）…未能對比其他選項」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "cardboard-box-oven|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能明確指出A烤箱效果較佳，並說明原因為開洞促進熱對流，引用數據（溫度或雞肉溫度）支持論點\n[1] 能指出A烤箱效果較佳，但理由不完整，或未引用具體數據\n[0] 判斷錯誤或未提出合理理由",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能指出A烤箱效果較佳…未引用具體數據」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "cardboard-box-oven|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能根據數據具體比較C、D烤箱的溫度或雞肉溫度差異，並指出較佳的設計及對應的科學解釋（熱對流路徑或洞的位置分佈）\n[1] 能比較C、D烤箱的結果，但說明不完整或未有清楚的科學解釋\n[0] 未能依據數據進行比較，或結論與數據矛盾",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] names 熱對流路徑或洞的位置分佈; [1] 「能比較C、D烤箱的結果，但說明不完整」 only borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "crazy-track|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出CD兩項，且未多選\n[1] 選出CD其中一項正確，且未選其他錯誤選項\n[0] 其他答案或選錯項目",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "crazy-track|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 答出「起始高度」或同義表述\n[0] 答出球的質量或其他因素，或未回答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top [1] 「答出『起始高度』」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "crazy-track|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確提及控制起始高度相同，且改變球的質量進行比較\n[1] 提及控制某一變因或改變質量，但說明不完整\n[0] 未能說明控制變因，或答案無關",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提及控制某一變因或改變質量」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "crazy-track|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能從數據中正確歸納出起始高度影響速率或飛行距離的結論，且論述完整\n[1] 提出部分合理結論但不完整，或表述不夠清晰\n[0] 未能從數據得出合理結論，或答案與數據矛盾",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] specific (起始高度影響速率或飛行距離) but [1] 「提出部分合理結論但不完整，或表述不夠清晰」 names nothing of this item"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [1] 改為指明本題最可能出現的缺口，例如：「提出高度影響速率或飛行距離的結論，但未以表格數據支持論述或因果連結不完整」，不得使用「部分合理結論但不完整」等可套用任何題目的字樣。"
+   }
+  },
+  {
+   "key": "crazy-track|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 預測能成功，並正確引用「起始高度相同、質量不影響速率/飛行距離」作為理由\n[1] 預測正確但理由不完整或僅部分正確\n[0] 預測錯誤，或理由與實驗結果不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「預測正確但理由不完整」 borrows: prediction (能成功) and [2] reason are item content"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "crazy-track|0|7",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 提出合理的科學原因（如摩擦力與質量相關），並有科學概念支撐\n[1] 提出部分合理原因但說明不足，或僅描述現象而未解釋科學原理\n[0] 未提出任何科學原因，或答案與科學知識不符",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 摩擦力與質量相關 only as an example; [1] 「提出部分合理原因但說明不足，或僅描述現象而未解釋科學原理」 is generic"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 兩個判斷均為「不」（即兩個結論均不能從圖表直接得出）\n[0] 其他答案組合",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|2",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選A，同時從孢子含量（A<C）及致死率（A=C）兩個面向說明A的效益最佳\n[1] 選A，但僅從孢子含量或致死率其中一個面向說明\n[0] 選其他配方，或理由說明錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「僅從孢子含量或致死率其中一個面向說明」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|3",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 同時提及保護行避免藥液污染，以及多區塊設計避免位置效應（兩個條件均提及）\n[1] 僅提及兩個條件之一\n[0] 未提出合理好處，或說明無關",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「僅提及兩個條件之一」 refers back to the two conditions named in [2] (保護行、多區塊)"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說明C組為對照組，並能從數據趨勢（蟲數自然增加）解釋對照組的意義\n[1] 說明C組為對照組，但數據說明不正確或不完整\n[0] 選錯用意或數據說明錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「說明C組為對照組，但數據說明不正確」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|5",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能同時指出：(1)施藥前初始蟲數不同，加總會造成基準不一致；(2)加總方式忽略了個別趨勢變化（如抗藥性）\n[1] 僅提出兩個問題之一，或說明部分正確\n[0] 認為推論正確，或未能指出統計問題",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「僅提出兩個問題之一」 refers back to the two problems named in [2]"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": true,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]應直接列出兩個具體缺陷（初始蟲數基準不一、加總遮蔽個別趨勢變化），[1]應描述最可能出現的單一缺口（例：只指出加總基準問題，未察覺趨勢被遮蔽），並刪除「說明部分正確」等可套用任何題目的泛用措辭。"
+   }
+  },
+  {
+   "key": "entomopathogenic-fungi|0|6",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能同時從單次最佳（B組）與逐次穩定（A組）的數據提出整合性建議（先B後A）\n[1] 提出部分正確建議，但僅基於單次表現或逐次表現其中一項；或建議完整但理由不完整\n[0] 無法清楚說明數據趨勢，或提出不合理的施藥建議",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「僅基於單次表現或逐次表現其中一項」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fasting-method|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三題全部根據圖表數據正確判斷\n[1] 答對兩題\n[0] 只答對一題或全部錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fasting-method|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確指出小基較好，並說明原因涉及控制變因混淆（用餐次數改變時也改變了總時間）\n[1] 指出小基較好但說明理由不完整或僅部分正確\n[0] 選擇小丁或無法說明理由",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「指出小基較好但說明理由不完整」 borrows; [2] names 控制變因混淆"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fasting-method|0|3",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確寫出兩個合理且有所不同的結論，且均基於組間比較\n[1] 只寫出一個正確結論，或兩個結論大意相同\n[0] 結論錯誤或無法從實驗數據支持",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「正確寫出兩個合理且有所不同的結論，且均基於組間比較」 names no conclusion of this item"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": true,
+    "verdict": "fail",
+    "details": "[評分規準檢核] 題幹只固定結論數量而非集合成員，不得以數量區分級距；同時[2]未指名本題具體結論內容；應改為：[2]說明兩個不同面向的組間比較結論（例：熱量限制對減重的效果大於單純運動），[1]描述只寫出其中一個正確的飲食或運動面向結論、未利用四組條件進行跨組比較。"
+   }
+  },
+  {
+   "key": "fasting-method|0|4",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選出B計畫，並援引至少兩份圖表資訊說明原因（胰島素分泌時間縮短 + 圖三數據支持）\n[1] 選出B計畫但只援引一份圖表或說明不完整\n[0] 選擇A或C計畫，或無法說明科學依據",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「選出B計畫但只援引一份圖表」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fishing-harbor-renovation|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 清楚說明假說涉及顏色（白vs黑）對室內溫度的影響方向（白色升溫較少或溫度較低）\n[1] 提到顏色影響溫度，但假說方向不明確或過於籠統\n[0] 假說內容錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提到顏色影響溫度，但假說方向不明確」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fishing-harbor-renovation|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確繪製折線圖，橫軸時間、縱軸溫度，兩組數據均正確標示並有完整圖例\n[1] 圖形類型正確但標示不完整（如缺圖例或軸標題），或數據有小誤差\n[0] 圖形類型選擇錯誤或數據嚴重錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 折線圖、時間／溫度、兩組; [1] 「圖形類型正確但標示不完整（如缺圖例或軸標題）」 is graph-generic, borrows from [2]"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fishing-harbor-renovation|0|3",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 分別描述蓄熱與散熱兩個階段的差異，且比較方向正確（黑色蓄熱多、散熱慢）\n[1] 只描述一個階段，或描述兩個階段但比較不完整\n[0] 比較方向錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只描述一個階段」 of 蓄熱／散熱"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fishing-harbor-renovation|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選擇(B)窯烤比薩—窯體顏色的選擇\n[0] 選擇其他選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "fishing-harbor-renovation|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 向光面建議白色且說明反射减熱；背光面提出合理建議並結合日夜溫差小的特點說明\n[1] 向光面建議正確，但背光面建議缺乏說明或未考慮日夜溫差的條件\n[0] 向光面建議錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「背光面建議缺乏說明或未考慮日夜溫差」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」及[1]「部分正確」為通用套語，未指名「結果二」應寫出何種具體觀察；請改寫為：[2] 能從表(一)歸納出另一個實驗結果（如吉利丁與果凍粉均無法使木瓜或鳳梨成功凝結）；[1] 方向正確但描述不完整，例如僅提及一種水果或未對照兩種材料。"
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」及[1]「部分正確」為通用套語，未指名應判斷「不支持」及應引用的表(二)具體數據；請改寫為：[2] 判斷為「不支持」，並引用表(二)中即使增加吉利丁用量，木瓜或鳳梨仍無法凝結的數據；[1] 判斷正確但未能正確引用表(二)數據，或說明未能指出加量後結果不變的關鍵觀察。"
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指明正確答案（水果的種類）及判斷依據（表三中僅此變因改變且結果不同），[1] 應說明本題最常見缺口（如選出正確因素但未能說明其他因素被控制的依據）。"
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|7",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明酵素的具體功能內容（如分解吉利丁中的蛋白質，使其無法形成凝膠網絡），[1] 應指出本題最常見的缺口（如提到分解蛋白質但未說明如何導致果凍無法凝結）。"
+   }
+  },
+  {
+   "key": "homemade-fruit-jelly|0|8",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應明確寫出本題正確推論（如「加熱會讓鳳梨中的酵素活性降低，使果凍凝結」），[1] 應說明最可能出現的缺口，不得使用「完整正確回答／部分正確」等可套用於任何題目的通用字樣。"
+   }
+  },
+  {
+   "key": "hot-pack|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選擇實驗設計，且能合理說明需控制空氣（氧氣）量等變因不變的原因\n[1] 正確選擇實驗設計，但說明原因不完整或缺乏變因控制的概念\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 空氣（氧氣）量; [1] 「正確選擇實驗設計，但說明原因不完整或缺乏變因控制的概念」 names neither the design nor the gap"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 同時考量升溫效率（溫度適中不超60°C）、保溫時間及成本，提出完整合理的說明\n[1] 只提及其中一至兩項考量（如只提安全性或只提成本）\n[0] 未能合理說明或答案與資料不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只提及其中一至兩項考量（如只提安全性或只提成本）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確指出應比較含活性碳與不含活性碳（其他條件相同）的實驗組，並說明需控制其他變因\n[1] 選出部分正確的實驗組合，但未能清楚說明控制變因的概念\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 含／不含活性碳; [1] 「選出部分正確的實驗組合，但未能清楚說明控制變因的概念」 is generic"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選用折線圖，橫軸為時間、縱軸為溫度，兩組數據均正確繪出並有標示\n[1] 圖形類型正確但標示不完整，或數據繪製有小誤差\n[0] 圖形類型錯誤（如用長條圖）或數據錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 折線圖、時間／溫度; [1] 「圖形類型正確但標示不完整」 graph-generic, borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選(C)，並能根據圖中溫度上升速率的差異合理說明食鹽加速反應的原因\n[1] 正確選(C)但未能合理說明原因，或說明不完整\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「正確選(C)但未能合理說明原因」 borrows; [2] names 溫度上升速率的差異"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 根據圖中差異判定有未知成分，並合理推測其功能（如保溫、調控速率）\n[1] 判定有未知成分但功能推測不合理，或功能說明缺乏圖中證據支持\n[0] 判定錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「判定有未知成分但功能推測不合理」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "hot-pack|0|7",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確分析兩項以上做法的可行性，並能以碰撞學說（碰撞頻率或碰撞動能）合理說明原因\n[1] 正確分析一項做法，或分析正確但說明不完整\n[0] 分析錯誤或未作答",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 碰撞學說; [1] 「正確分析一項做法，或分析正確但說明不完整」 is generic"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應逐一列出題幹各做法的正確可行性判斷（如「搖晃→增加碰撞頻率→可行；冷藏→降低碰撞動能→不可行」），[1] 應指出哪種做法最常被誤判或機制說明的典型缺口（如只說「增加反應速率」未說明碰撞學說機制）。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確實驗目的（如「探討不同濃度的化合物A對癌細胞存活數的影響」）；[1] 應指名常見缺口，如「提到化合物A與癌細胞但未點出濃度變化的操控意圖」。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確關係（如「化合物A濃度越高，癌細胞存活率越低，呈負相關」）；[1] 應指名常見缺口，如「只描述趨勢方向但未說明程度差異或濃度範圍」。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確選項（根據圖一可推論化合物A具開發新藥的潛力，即對應「化合物A具有可開發成為對抗小細胞肺癌潛力的新藥物」）；[1] 應指名常見缺口，如「選出有潛力但混入使用時間或療程相關的錯誤推論」。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|5",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "lung-cancer-drug-1|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確欄位名稱（如「細胞種類／細胞類型」），說明需區分癌細胞與正常肺細胞；[1] 應指名常見缺口，如「填入細胞相關名稱但未能區分兩種細胞種類」。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-2|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確差異（實驗一使用癌細胞，實驗二使用正常肺部細胞）；[1] 應指名常見缺口，如「提到細胞類型不同但未能說明一為癌細胞、一為正常細胞」。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-2|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」、[1]「部分正確」、[0]「錯誤或空白」均為可套用任何題目的泛用措辭，應改寫為：[2]支持乙醫生，並引用12.5 nM時癌細胞存活率低而正常細胞存活率仍高的具體數據對比；[1]立場正確但未同時引用癌細胞與正常肺細胞兩條曲線的數據差異。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-2|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明正確答案是哪兩組（如標明具體組號或描述組別特徵：一組單用化合物A、一組合併兩種藥物），[1] 應指出本題最常見的缺口（如選出的兩組中有一組不符合單一變因對照原則）。"
+   }
+  },
+  {
+   "key": "lung-cancer-drug-2|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應依圖(三)明確寫出第一組與第三組的具體缺點（如第一組對正常肺部細胞毒性過高，第三組對癌細胞抑制效果不足），[1] 應說明最可能漏答的那一組缺點，不得使用「完整正確回答／部分正確」等通用字樣。"
+   }
+  },
+  {
+   "key": "moving-no-face|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能說明旋轉運動轉換為上下往返直線運動，並提及有機械結構在其中\n[1] 能描述無臉男的上下移動現象，但未能說明運動轉換的機制\n[0] 未能正確描述運動方式，或答案與觀察不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能描述無臉男的上下移動現象，但未能說明運動轉換的機制」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "moving-no-face|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確說明不能，並解釋齒條只能朝固定方向移動（無法往返）\n[1] 說明不能，但理由不充分或不清晰\n[0] 認為可以，或未作判斷",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「說明不能，但理由不充分」 borrows; [2] names 齒條只能朝固定方向移動"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "moving-no-face|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出ㄆㄇ兩項，未多選\n[1] 選出ㄆㄇ其中一項，未選錯誤選項\n[0] 其他答案組合",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "moving-no-face|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確提出增加偏心距離（轉軸偏離圓心更遠），說明合理\n[1] 提出相關調整但表述不夠精確（如「讓輪子更偏」等）\n[0] 提出不相關的調整方式，或未作回答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提出相關調整但表述不夠精確（如『讓輪子更偏』）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "moving-no-face|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 引用數據說明偏心距離越大落差越大，並明確指出增加偏心距離的結論\n[1] 結論正確但未充分引用數據支持\n[0] 未能從數據得出正確推論",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「結論正確但未充分引用數據支持」 borrows; [2] names 偏心距離越大落差越大"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "moving-no-face|0|7",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 寫出高低落差 = 2 × 偏心距離，或等效的正確關係式\n[1] 能說明兩者成正比關係，但未能寫出精確係數\n[0] 關係式錯誤或未作回答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能說明兩者成正比關係，但未能寫出精確係數」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "perfect-egg-cooking|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "perfect-egg-cooking|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」、[1]「部分正確」均為泛用措辭，應改寫為：[2]依照蛋白描述格式，正確指出蛋黃在特定時間點（如5分鐘）開始凝固並說明完全凝固的時間區間；[1]時間方向正確但起始點或完全凝固時間點描述不完整，或缺少「未凝固/完全凝固」狀態判定。"
+   }
+  },
+  {
+   "key": "perfect-egg-cooking|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明本題完整答案需指出哪些具體因素（如蛋殼導熱差異、去殼與否影響熱傳導），[1] 應指出本題最常見的缺口（如找到某一因素但未與小青實驗條件進行明確對比說明）。"
+   }
+  },
+  {
+   "key": "perfect-egg-cooking|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應說明四種蛋各對應哪個區（如全熟蛋→A區、溫泉蛋→B或C區等具體對應），[1] 應指出本題最常見的缺口（如有一兩個狀態判斷邊界條件時出現混淆）。"
+   }
+  },
+  {
+   "key": "perfect-egg-cooking|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指明正確答案為食譜一且說明關鍵依據（75度水保持低溫落在C區，食譜二沸水超出C區），[1] 應說明最常見缺口（如選對食譜但未連結圖(二)C區溫度範圍說明差異）。"
+   }
+  },
+  {
+   "key": "salt-soda|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確推測為二氧化碳，並能根據表中沙士與其他飲料成分差異合理說明\n[1] 正確推測為二氧化碳，但說明原因不完整或未引用表中資料\n[0] 推測錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「正確推測為二氧化碳，但…未引用表中資料」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "salt-soda|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確指出缺少「有鹽但無擾動」的對照組，說明無法排除鹽本身的效果\n[1] 提出缺少對照組或變因未完全控制，但說明不夠具體\n[0] 未能指出實驗設計缺陷或答非所問",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「提出缺少對照組或變因未完全控制，但說明不夠具體」 is close to generic; [2] names 有鹽但無擾動的對照組"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "salt-soda|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 根據常溫鹽與冰鹽結果相近，正確推論溫度差異不是造成氣泡增多的主因\n[1] 部分正確推論，但未能清楚說明與假設二的關聯\n[0] 推論錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「未能清楚說明與假設二的關聯」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "salt-soda|0|4",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確指出假設二為「鹽溶解時影響溶液溫度，進而改變CO2溶解度」，敘述合理\n[1] 提及溫度或溶解度其中一個概念，但假設表述不完整\n[0] 假設方向錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提及溫度或溶解度其中一個概念」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "salt-soda|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選擇長條圖，並能說明原因（三組為類別資料，比較各組數值）\n[1] 正確選擇長條圖但未說明原因\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「正確選擇長條圖但未說明原因」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "salt-soda|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出ACD三項，不多選不少選\n[1] 選出ACD中的兩項且無多選錯誤項\n[0] 選出少於兩項正確選項或有明顯錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "sea-ice-land-ice|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能說明木板因冰塊重量而下沉，排開更多水體積，因此水位上升\n[1] 能說明排水量增加使水位上升，但未能清楚解釋木板下沉的機制\n[0] 解釋錯誤或未作回答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能說明排水量增加…但未能清楚解釋木板下沉的機制」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "sea-ice-land-ice|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 海冰組和陸冰組預測及理由均正確，且引用阿基米德原理或質量守恆解釋\n[1] 兩組預測結果正確，但理由不完整或僅說明現象而未解釋原理\n[0] 預測錯誤或未作回答",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「兩組預測結果正確，但理由不完整或僅說明現象而未解釋原理」 borrows; [2] names 阿基米德原理或質量守恆"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "sea-ice-land-ice|0|3",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 兩項均選擇合理器材，且理由充分說明為何比木板更適合\n[1] 一項選擇及理由正確，另一項有誤或理由不充分\n[0] 選擇不合理或未作回答",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「兩項均選擇合理器材，且理由充分說明為何比木板更適合」 never says which 器材; [1] 「一項選擇及理由正確，另一項有誤」 generic"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "sea-ice-land-ice|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選出A和B，並正確說明兩者作為實驗組與對照組的設計邏輯及控制變因原則\n[1] 選出A和B，但理由說明不完整；或選出合理組合但說明混淆實驗組與對照組概念\n[0] 選錯圖組，或未能說明理由",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「選出A和B…；或…說明混淆實驗組與對照組概念」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出ABCD四項，不多不少\n[1] 選出三項正確選項且無錯誤選項\n[0] 少於三項正確或有明顯錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|2",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 五點全部正確依深度排列\n[1] 四點正確或有一處次序錯誤\n[0] 三點以下正確或排列方向完全錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「五點全部正確依深度排列」 restates the task without the order; [1] 「四點正確」 counts against it"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選出壓力（或密度），並合理說明其隨深度單調變化的原因\n[1] 選出正確參數但說明原因不完整\n[0] 選擇錯誤參數或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 壓力（或密度）; [1] 「選出正確參數但說明原因不完整」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確描繪高緯冷水下沉→底層向低緯流→低緯暖水上升→表層向高緯流的循環方向\n[1] 描繪方向部分正確（如只描繪其中一側流動）\n[0] 方向錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「描繪方向部分正確（如只描繪其中一側流動）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明水溫與密度的反向關係，並連結到水體的沉浮運動\n[1] 說明關係方向正確但未連結到流動現象，或描述不完整\n[0] 關係方向錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「說明關係方向正確但未連結到流動現象」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "seawater-vertical-properties|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選出等密度線方向正確的圖，並能說明溫鹽與密度的關係\n[1] 選出正確圖形但未能說明原因\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "soil-liquefaction|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選擇(D)\n[0] 選擇其他選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "soil-liquefaction|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出A和D兩項，不多不少\n[1] 選出A或D其中一項正確，且無多選錯誤項\n[0] 未選出正確選項或有明顯錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "soil-liquefaction|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選擇(D)\n[0] 選擇其他選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "soil-liquefaction|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確繪出兩條趨勢線，實驗組斜率小於對照組，並有適當的軸標題與線條名稱\n[1] 兩條線趨勢方向正確但相對斜率關係不正確，或缺乏標示\n[0] 趨勢方向錯誤或只繪出一條線",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「兩條線趨勢方向正確但相對斜率關係不正確」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "soil-liquefaction|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確指出小彥論述不合理（重量不等於穩定），並認同小禮地質取代的邏輯，且能說明各自的合理與不合理點\n[1] 正確評估其中一人的論述，另一人評估不完整\n[0] 兩人評估均錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「正確評估其中一人的論述」 refers to 小彥／小禮 named in [2]"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "truck-cornering|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 正確選出(A)，且說明中提及慣性向右偏移、底箱固定、繩子作用使上層進一步翻轉\n[1] 選出(A)但說明不完整，或說明正確但未選出(A)\n[0] 選錯或說明錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "truck-cornering|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明重心偏向右輪外側，且以力矩概念（翻覆力矩與復原力矩之比較）說明重心越高越易翻覆\n[1] 只正確回答其中一問，或說明概念方向正確但未使用力矩術語\n[0] 兩問均錯誤或說明與力學原理不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只正確回答其中一問，或…未使用力矩術語」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "truck-cornering|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確指出客觀科學論述的標準（可觀察/可驗證），並能正確區分事實陳述與推測陳述\n[1] 大致正確說明應採可觀察事實，但缺乏具體的判斷標準說明\n[0] 未能區分客觀事實與主觀推測，或判斷標準完全錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] names 可觀察/可驗證; [1] 「大致正確說明應採可觀察事實，但缺乏具體的判斷標準說明」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "typhoon-database|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選出「路徑 vs 累積雨量」的組合，並說明選擇理由涉及資料可量化性與變因的直接關係\n[1] 選出正確組合但未說明理由，或說明不完整\n[0] 選出不適合的組合（如災害程度），或無法說明變因關係",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「路徑 vs 累積雨量」; [1] 「選出正確組合但未說明理由」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "typhoon-database|0|3",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明降雨區轉移的至少兩個階段（東部→南部→西部或類似描述），並說明與地形或颱風位置的關係\n[1] 只說明一個降雨轉移階段，或方向大致正確但缺乏原因說明\n[0] 無法說明降雨區轉移情形，或方向完全錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只說明一個降雨轉移階段」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "typhoon-database|0|4",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能對三項推論提出具體判斷，並說明判斷標準（直接對應、有無替代解釋、是否過度外推）\n[1] 只評估部分推論，或判斷標準不明確\n[0] 無法評估推論合理性，或判斷完全錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] names the 判斷標準; [1] 「只評估部分推論」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應分別指名三項推論各自的正確判斷結果（例如推論一正確/不正確，原因為何），而非僅列出判斷標準；[1] 應指明最常見的缺口是哪一推論的評估不完整或缺少替代解釋的討論。"
+   }
+  },
+  {
+   "key": "vibrating-coin|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」及[1]「部分正確」為通用套語；請改寫為：[2] 研究問題明確包含操縱變因（如硬幣材質或質量）與應變變因（振動頻率或聲音大小），並以可操作的實驗語句呈現；[1] 提出研究問題但缺少操縱或應變變因其中之一，問題表述不完整。"
+   }
+  },
+  {
+   "key": "vibrating-coin|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "vibrating-coin|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」及[1]「部分正確」為通用套語，未指名應選哪兩枚硬幣及理由；請改寫為：[2] 選出材質相同但質量不同的兩枚硬幣（如1元與10元），並說明以材質為控制變因、質量為操縱變因的理由；[1] 選出正確硬幣但未說明控制變因邏輯，或理由僅描述外觀差異。"
+   }
+  },
+  {
+   "key": "vibrating-coin|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名關鍵理由（5元與10元硬幣材質成分不同，無法排除材質影響，故不能以質量單一因素解釋頻率差異）；[1] 應指名常見缺口，如「提到兩種硬幣不同但未說明材質成分為干擾變因」。"
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選擇(D)\n[0] 選擇其他選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明在脫水進程，並能合理利用慣性（或離心效應）說明水分被甩出通過孔槽的原理\n[1] 說明進程正確（脫水），但對慣性原理的說明不完整\n[0] 進程錯誤或完全未提及慣性原理",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「說明進程正確（脫水），但對慣性原理的說明不完整」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選擇鉛直方向的衣物速度，並能利用圖合理說明原因（如從零加速、拋體運動）\n[1] 選擇鉛直方向但說明不完整，或未能充分利用圖的資訊\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「選擇鉛直方向但說明不完整，或未能充分利用圖的資訊」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 判讀時間落於參考範圍內（約2分至3分40秒）\n[1] 時間跨越此範圍但包含此範圍，且橫跨時間未超過2分30秒\n[0] 時間範圍明顯錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「時間跨越此範圍但包含此範圍…未超過2分30秒」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|5",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 回答兩點以上，且能說明變因間的趨勢關聯（如重量越重→轉速越低）\n[1] 回答兩點但未說明趨勢，或只回答一點且有說明趨勢\n[0] 只回答一點且無趨勢說明，或答案錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] names 變因趨勢 only by example (重量越重→轉速越低); [1] 「回答兩點但未說明趨勢」 is count-shaped"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": true,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名本題型號B與A的具體差異觀察（如「脫水轉速隨衣物重量增加而降低」），[1] 應描述推理鏈的缺口（如觀察到變因差異但未說明趨勢方向或因果關係），不得以「回答兩點」計數區分等級。"
+   }
+  },
+  {
+   "key": "washing-machine-physics|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 提及轉速降低（根據圖），並說明轉速大時軸承需承受較大的作用力（向心力），故轉速低可延長使用年限\n[1] 提及轉速降低但未連結到軸承所受作用力的概念\n[0] 未能合理說明或答案與圖無關",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提及轉速降低但未連結到軸承所受作用力的概念」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "weather-proverbs|0|1",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確指出五月為梅雨鋒面、六月為太平洋高壓，並各說明一個導致不同天氣型態的機制\n[1] 只正確說明其中一個系統，或兩個都說出但機制解釋不完整\n[0] 無法正確識別天氣系統，或說明與實際相反",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只正確說明其中一個系統」 (梅雨鋒面／太平洋高壓)"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "weather-proverbs|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 兩種系統均正確標示位置（北方鋒面/東方高壓）、風向（南風箭頭）與天氣型態（多雨/晴朗）\n[1] 一種系統正確標示，另一種有誤；或兩種均標示但缺少風向或天氣型態說明\n[0] 兩種系統均標示錯誤，或圖示與說明完全不符天氣系統特性",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「一種系統正確標示…或缺少風向或天氣型態說明」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "weather-proverbs|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確將五項以上特性放入對應欄位（時間、季節、降雨型態、強度等）\n[1] 只正確歸類三至四項特性，或有部分混淆\n[0] 無法正確歸類或大部分特性放錯欄位",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "weather-proverbs|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 圖形正確呈現短暫（2-4小時範圍）且高強度（峰值≥50mm/hr）的急峰型降水，縱軸有單位及刻度，橫軸標示時間\n[1] 圖形大致正確但缺少縱軸單位/刻度，或時間範圍/強度有明顯偏差\n[0] 圖形無法反映短暫高強度的特性，或未標示任何軸線說明",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「缺少縱軸單位/刻度，或時間範圍/強度有明顯偏差」 against [2] 2-4小時、≥50mm/hr"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "wind-corridor-effect|0|1",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 提出至少兩種實驗（改變寬度、改變間距），並提到對照組設計\n[1] 只提出一種實驗，或遺漏對照組設計\n[0] 未能提出有效的實驗設計，或設計無法回答研究問題",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只提出一種實驗，或遺漏對照組設計」 against [2] 改變寬度、改變間距"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "wind-corridor-effect|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確指出操縱變因（積木寬度）與應變變因（縫隙風速），並完整陳述研究問題\n[1] 大致正確但表述不完整，或只指出操縱變因而未說明應變變因\n[0] 研究問題描述錯誤或與實驗設計不符",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只指出操縱變因而未說明應變變因」 against [2] 積木寬度／縫隙風速"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "wind-corridor-effect|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 明確以實驗數據對比對照組或趨勢說明是否支持定義，並說明判斷標準（縫隙風速是否高於空曠環境）\n[1] 大致正確說明數據趨勢，但未與天斬煞定義明確對接，或未提及對照組比較\n[0] 無法根據數據做出判斷，或判斷標準錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「未與天斬煞定義明確對接，或未提及對照組比較」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能運用關係式求出對應溫度數值（60℃）。\n[0] 無法藉由關係式求出數值，或計算錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「求出對應溫度數值（60℃）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 答案正確（不行），且原因說明正確完整（只能說明溫度與凹陷恢復的關係，無法確認壓力為主因）。\n[1] 答案正確（不行），但原因說明不完整。\n[0] 答案錯誤，或答案正確但原因說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「答案正確（不行），但原因說明不完整」 borrows from [2]'s stated reason"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 答案正確選出(B)(C)，且原因說明完整（需測量兩種壓力並互相比較）。\n[1] 知道需要測量壓力，但原因說明不完整；或未提及需要互相比較。\n[0] 答案錯誤，或選項正確但原因說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「知道需要測量壓力…；或未提及需要互相比較」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說明假設一是錯誤的，且可以加熱產生壓力的貢獻百分比（2%）完整說明原因。\n[1] 說明假設一是錯誤的，但未完整說明貢獻百分比的意義。\n[0] 答案錯誤，或答案正確但原因說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[1] 「說明假設一是錯誤的，但未完整說明貢獻百分比的意義」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 正確選出以乒乓球內的氣體壓力為控制變因，測量溫度和乒乓球可以恢復的凹陷程度的關係。\n[0] 選擇錯誤的控制變因或測量項目。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top names 氣體壓力為控制變因、溫度與凹陷程度"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "乒乓球|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 可以利用圖一和圖四的比較（斜率相近）判斷假設二是正確的，且說明完整。\n[1] 可以利用圖一和圖四的比較判斷假設二合理，但說明不夠完整。\n[0] 無法採用適當資料進行比較說明，或判斷錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「圖一和圖四的比較（斜率相近）」; [1] 「…但說明不夠完整」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "二氧化碳的產生與改變|0|1",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能指出圖中能影響光合作用效率的兩個變因（光強度、溫度）。\n[0] 無法完全指出影響光合作用效率的兩個變因，只說出一個或說錯。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「光強度、溫度」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "二氧化碳的產生與改變|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 挑選甲植物，指出是運用「固定自變項（二氧化碳濃度）條件下，應變項（光合作用效率）的表現結果」。\n[0] 未挑選甲植物或解釋錯誤；挑選甲植物但無法指出固定自變項條件的判斷方式。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「挑選甲植物…固定自變項（二氧化碳濃度）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "二氧化碳的產生與改變|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 指出呼吸作用速率比較快，並說明傍晚6點時呼吸作用消耗的糖量比光合作用產生的糖量多。\n[0] 指出光合作用速率比較快，或推論錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「呼吸作用速率比較快…消耗的糖量比…產生的糖量多」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "冰島冰河湖|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 可以根據題幹線索正確畫記冰山流動方向\n[1] 僅能標記部分冰山流動方向\n[0] 無法正確標記流動方向",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「根據題幹線索正確畫記冰山流動方向」 restates the task without the direction; [1] 「僅能標記部分冰山流動方向」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指明正確流向為何（如從冰河流入冰河湖、經出海口流向海岸鑽石沙灘），[1] 應說明最常見缺口（如只標出湖中方向但遺漏出海口至沙灘段），不得使用「正確畫記」「部分標記」等通用字樣。"
+   }
+  },
+  {
+   "key": "冰島冰河湖|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 可以提出驗證不同說法的資料蒐集方式，且能說明如何驗證\n[1] 僅能提出部分或單一的說法的資料蒐集方式/僅能提出資料蒐集方式，無法說明如何驗證\n[0] 無法選擇正確的對應資料",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「可以提出驗證不同說法的資料蒐集方式，且能說明如何驗證」 names no data to collect"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「提出驗證不同說法的資料蒐集方式，且能說明如何驗證」未指名各說法對應的具體資料種類；請改寫為：[2] 針對四位老師各說法分別提出對應佐證資料（如化學老師：長期氣溫趨勢；物理老師：潮汐時間表），並說明如何驗證；[1] 最常見缺口為僅涵蓋一至兩項說法，或提出資料卻缺乏如何驗證的邏輯連結。"
+   }
+  },
+  {
+   "key": "冰島冰河湖|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選出正確選項且能說出海水漲潮以致浮冰無法流出\n[1] 選出正確選項，但無法提出推論原因\n[0] 選項錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「海水漲潮以致浮冰無法流出」; [1] 「選出正確選項，但無法提出推論原因」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "冰島冰河湖|0|7",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能寫出正確位置，且說明原因\n[1] 僅能寫出正確位置\n[0] 位置錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「能寫出正確位置，且說明原因」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應描述本題太陽與月球的正確天球位置（如太陽近地平線附近、月球位置依仰角及子夜時刻推算的具體方向），而非僅寫「正確位置」；[1] 應說明最可能缺漏的推理步驟。"
+   }
+  },
+  {
+   "key": "冰雪奇鹽|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出B和D兩項。\n[0] 選擇其他選項。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "冰雪奇鹽|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 寫出操縱變因（電解質種類/物質種類）對應變變因（燒杯內物質溫度或溫度變化）的影響。\n[0] 未寫出操縱變因或應變變因，或使用非科學語言描述。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top names 物質種類 → 溫度變化"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "冰雪奇鹽|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 否，能根據圖文資訊指出有些非電解質（如甘油）也明顯能降低溫度。\n[0] 否但理由不正確；或是（無論任何理由）。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「有些非電解質（如甘油）也明顯能降低溫度」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "冰雪奇鹽|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能指出自變項（食鹽/電解質種類）在溶於水時的降溫狀況和加入冰中不同，即食鹽溶於水幾乎不降溫，推翻了食鹽吸熱最好的推測。\n[0] 未能指出兩種實驗方法中，對應變項（溫度變化量）造成的差異。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「食鹽溶於水幾乎不降溫」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|1",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能寫出（比較）三支試管中反應的差異，例如A無反應、B少量氣泡、C最劇烈。\n[0] 未寫出三支試管差異，或僅描述其中一支試管的現象。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「A無反應、B少量氣泡、C最劇烈」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出(B)(C)(D)(E)四項，全對才給分；僅依既有知識選CDE不給分。\n[0] 答案不完整或錯誤，例如僅選CDE（未根據影片判斷質量B）。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 明確指出溫度應為控制變因（固定溫度），例如「溫度要一樣」、「小龍的實驗設計溫度應該要固定」。\n[0] 未寫出溫度應固定，或僅指出有問題但未提出改善方案。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「溫度應為控制變因」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出(B)(C)兩項，並說明原因（反應物完全消耗所需時間或單位時間氣泡數）。\n[0] 選項錯誤或不完整。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 明確寫出操縱變因（表面積）對應變因（完全反應時間）的關係，並推論出反應速率快慢的因果關係（表面積愈大速率愈快）。\n[0] 僅描述實驗現象（鎂粉反應時間較短），未指出表面積與反應速率的關係。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「表面積愈大速率愈快」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "反應速率|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能指出改變質量的同時，表面積也改變了（同時改變了兩個變因）。\n[0] 未能指出表面積隨質量改變這一核心問題，或說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「改變質量的同時，表面積也改變了」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "塑膠線上版|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出丙酮、乙酸乙酯、環己烯三者\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "塑膠線上版|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明極性不能完全解釋，並引用具體實驗數據（中等極性溶劑也能溶解）作為支持\n[1] 有正確結論但論述不完整，或只說明部分情況\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「極性不能完全解釋…中等極性溶劑也能溶解」; [1] 「有正確結論但論述不完整，或只說明部分情況」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "大氣能見度|0|1",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 同時寫出AQI及相對溼度兩個條件\n[1] 只回答其中之一\n[0] 只回答其他答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「AQI及相對溼度」; [1] 「只回答其中之一」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "大氣能見度|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 有兩個階層且判斷項目與準則正確\n[1] 有兩個階層且判斷項目正確，但準則有誤\n[0] 階層只有一個或判斷項目有誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「有兩個階層且判斷項目與準則正確」 gives the shape, not the items or criteria"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "大氣能見度|0|3",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 表格全部答對\n[1] 答對七個欄位，一個欄位錯誤\n[0] 答對欄位少於七個",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「表格全部答對」 restates the task; [1] counts fields"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「表格全部答對」及[1]「答對七個欄位，一個欄位錯誤」未指名各欄位的正確計算值，也未指明最可能出錯的欄位；請改寫為：[2] 所有污染物副指標值及AQI最大值均按換算公式正確計算（宜列出期望值或換算步驟）；[1] 最常見缺口為AQI取各副指標最大值的步驟，或某特定污染物換算有誤，應逐一指名。"
+   }
+  },
+  {
+   "key": "拉塞福散射|0|2",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 第一個E且最後一個A\n[1] 僅答對其中一個\n[0] 兩者均錯",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「第一個E且最後一個A」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "拉塞福散射|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說出確認方向，並提出理由\n[1] 說出確認方向，但理由不充分\n[0] 其他",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「說出確認方向」; [1] 「說出確認方向，但理由不充分」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "日食|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 正確回答兩個問題均為「是」（靠近和靠近眼前均能遮住），或正確區分靠近vs.遠離的遮蓋效果差異。\n[0] 回答錯誤或說明不清楚。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top names the two answers"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "日食|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能描述太陽出現（日偏食），看到部分太陽，或描述所見到的太陽面積越來越大的過程。\n[0] 僅描述最終狀態（如「呈半圓形」），缺少過程性描述；或描述錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「太陽出現（日偏食）…面積越來越大的過程」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "日食|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出(B)(D)兩項，全對才給分。\n[0] 答案不完整或包含錯誤選項。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "日食|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 正確判斷「由左至右」，且理由說明正確（太陽下午西落，高度逐漸降低）。\n[0] 僅寫出「由左至右」而無正確理由，或判斷錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「由左至右…太陽下午西落」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐論證A線上版|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確引用兩組體重增加比例數據，說明有顯著差異是提出主張的依據\n[1] 有提到數據或差異，但未完整論述\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「引用兩組體重增加比例數據」; [1] 「有提到數據或差異，但未完整論述」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐論證A線上版|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選擇一個合適因素，正確引用表中數字，說明該因素如何導致不吃早餐組更容易增重\n[1] 選擇正確但未引用數字，或數字引用有誤但說明方向正確\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「選擇一個合適因素，正確引用表中數字，說明該因素如何導致…」 restates the task; names no factor-to-weight link"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐論證A線上版|0|4",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確選擇因素A，且分別說明B（導致省略早餐）和C（導致變胖）兩條推論路徑，論述合理\n[1] 選擇適當因素A，但只說明一條路徑或論述不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「正確選擇因素A，且分別說明B…和C…兩條推論路徑」 restates the answer frame; no content of a correct path"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐論證A線上版|0|5",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出選項1和選項3，且不選選項2和4\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "果凍|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 正確寫出應變變因為果凍的口感、結凍狀況，或明確寫出兩種不同果凍的比較結果。\n[0] 寫出操縱變因（果凍粉種類）、控制變因（份量、水量等）或其他錯誤答案，或答案太模糊（如「果凍粉口味」）。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「果凍的口感、結凍狀況」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "果凍|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出(B)(D)兩項，全對才給分。\n[0] 答案不完整或包含錯誤選項。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "果凍|0|5",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 同時寫出「蛋白質」和「酵素」兩個關鍵字（明膠的蛋白質被木瓜酵素分解），兩者都需寫出才給分。\n[0] 僅寫出蛋白質或僅寫出酵素其中一個，或說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「蛋白質」和「酵素」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "桔茶腐蝕保麗龍杯|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 明確指出金桔中的成分或特性，寫出酸性或腐蝕性兩個關鍵字之一即可給分。\n[0] 說明不完整、未指出酸性或腐蝕性，或回答與題意無關。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「酸性或腐蝕性」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "桔茶腐蝕保麗龍杯|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能比較不同酸度的腐蝕程度差異，指出加量桔茶比一般桔茶腐蝕嚴重（需有比較）。\n[0] 僅陳述單組實驗結果，無比較；或所選數據無法支持結論。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「加量桔茶比一般桔茶腐蝕嚴重」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "桔茶腐蝕保麗龍杯|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能正確選擇甲丙（或乙丁）進行比較，說明相同酸度但溫度不同導致腐蝕程度不同，不符合小傑的結論。\n[0] 選擇組別錯誤，或說明無法說明不符合之處。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「甲丙（或乙丁）…相同酸度但溫度不同」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "桔茶腐蝕保麗龍杯|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 明確指出不是酸性溶液就會腐蝕保麗龍（小欣的實驗結果與小傑的結論矛盾）。\n[0] 未能指出矛盾之處，或說明錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「不是酸性溶液就會腐蝕保麗龍」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "桔茶腐蝕保麗龍杯|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 根據報導推論出可能是金桔皮（或金桔）中的有機精油造成保麗龍杯腐蝕，關鍵詞：金桔皮/精油/皮中的成分。\n[0] 未提到精油或果皮成分，僅重述報導內容而無推論，或推論錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「金桔皮…有機精油」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "植物的特徵|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 同時選A、C者。\n[0] 非同時選A、C者。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "植物的特徵|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 敘述能夠呈現「紫花和紫花生得出白花，白花和白花生不出紫花」的觀察結果（具比較性或歸納性的陳述）。\n[0] 非具比較性的歸納描述，或答案不正確。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「紫花和紫花生得出白花…」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "植物的特徵|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 答案能顯示「讓紫花彼此持續配對多代，直到沒有產生白色的花朵」的意義。\n[0] 無法說明持續配對直到子代全為紫花的方法。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「讓紫花彼此持續配對多代…」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "植物的特徵|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 答案能顯示「紫花是顯性性狀或白花是隱性性狀」意義的描述。\n[0] 無法正確指出顯性或隱性，或結論不符合實驗結果。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「紫花是顯性性狀」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "氣候變遷|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 答出「人為」、「正營力」等定義性字詞\n[1] 寫出氣候變暖因素中的內容項目，未寫出定義性字詞\n[0] 錯誤答案或其他答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「人為」「正營力」; [1] 「寫出…內容項目，未寫出定義性字詞」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "氣候變遷|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選擇正確資料及寫出匹配之完整說明（圖一說明正營力大於負營力，或圖二說明工業革命後溫室氣體增加）\n[1] 選擇之資料能與說明匹配，但未能完整說明\n[0] 錯誤答案或其他答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] names 圖一／圖二 content; [1] 「選擇之資料能與說明匹配，但未能完整說明」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "氣候變遷|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能利用溫室氣體在大氣中停留時間及了解水氣比例未變動或以水循環進行完整說明\n[1] 能說明溫室氣體在大氣中長時間停留，了解水氣比例未變動，但無法完整說明\n[0] 錯誤答案或其他答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能說明溫室氣體在大氣中長時間停留…但無法完整說明」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "氣候變遷|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 解釋圖表時，能了解數據間的相關不能推論因果關係\n[1] 解釋圖表時，能運用不同趨勢來提出看法\n[0] 錯誤答案或其他答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「相關不能推論因果關係」; [1] 「能運用不同趨勢來提出看法」 near-generic"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名哪份具體資料（如「圖二近代工業革命後CO₂急速上升與溫度同步升高的趨勢」）以及如何用以反駁；[1] 應指名常見缺口，如「引用圖表資料但未說明相關性不等於因果關係的推論邏輯」。"
+   }
+  },
+  {
+   "key": "氣候變遷|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能說明數據趨勢，提出某年代（如1980年）之後的趨勢差異\n[1] 能說明數據趨勢\n[0] 錯誤答案或其他答案",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 1980年 only as an example; [1] 「能說明數據趨勢」 is generic"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": true,
+    "verdict": "fail",
+    "details": "[評分規準檢核] 以「能說明數據趨勢」對應[1]、「趨勢加上特定年代差異」對應[2]屬數量計點，應改為以推理鏈缺口描述：[1]改為「僅描述整體正相關趨勢，未指出1980年代後太陽輻射與地表均溫走勢背離的關鍵反例」，以論證缺口取代計數。"
+   }
+  },
+  {
+   "key": "氣候變遷|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 選2、4、5、6\n[0] 其他答案",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明目的是排除嗅覺/味覺干擾，確保只用視覺判斷，說明完整\n[1] 方向正確但說明不完整，如只說「排除其他感官」而未說明具體哪種感官\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只說『排除其他感官』而未說明具體哪種感官」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明是為了排除位置偏好的干擾，確認是數量偏好而非位置偏好\n[1] 提到重複實驗或控制變因，但未具體說明排除位置偏好\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「提到重複實驗或控制變因，但未具體說明排除位置偏好」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確描述烏賊偏好選擇較多蝦子的結果，並引用圖表數據支持\n[1] 有正確方向但未引用數據或描述不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「烏賊偏好選擇較多蝦子」; [1] 「有正確方向但未引用數據」 borrows"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整包含實驗設計排除干擾的說明、實驗結果描述和結論，論述連貫\n[1] 包含其中兩個要素，或論述不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「完整包含實驗設計排除干擾的說明、實驗結果描述和結論」 restates the stem's required parts"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確說明感數範圍（1-3隻）和算數範圍（4-5隻）\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "烏賊線上版|0|7",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出烏賊約人類兩歲智商、神經系統發達、聰明程度不輸兩歲童三項\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生活中的咖啡（一）|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出B（巧克力牛奶）和C（汽水）兩項。\n[0] 回答錯誤或只選一項。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生活中的咖啡（一）|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 指出「推翻」林老師的假設，並指出在同樣重量生豆烘焙過程中咖啡因未隨焙度增加而增加，或不同烘焙度數據間無正相關。\n[0] 指出「推翻」但說明錯誤；或指出「支持」林老師的假設。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「推翻…咖啡因未隨焙度增加而增加」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生活中的咖啡（一）|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 說明較多的物質A去促進肝糖的分解，進而產生較多的葡萄糖以獲得能量。\n[0] 回答理由錯誤或答案原因無來由，未依據圖示資訊說明。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「較多的物質A去促進肝糖的分解…葡萄糖」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生物防治2-1|0|1",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 同時從對作物與人的潛在危害說明\n[1] 僅從作物或人的潛在危害說明\n[0] 只重複題目文句，未提出具體影響",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「對作物與人的潛在危害」; [1] 「僅從作物或人」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生物防治2-1|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] ②③④全選\n[0] 其他答案",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生物防治2-1|0|3",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 同時提及在蟲卵中產卵及吸食卵液兩個答案\n[1] 僅提及其中一個條件\n[0] 其他",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「在蟲卵中產卵及吸食卵液」; [1] 「僅提及其中一個條件」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": true,
+    "verdict": "fail",
+    "details": "[評分規準檢核] 題目詢問「原因」屬開放集合，不應以列舉數量區分級距；建議改為依推理鏈完整性評分，[1]改為描述「提及在蟲卵中產卵但未連結吸食卵液導致椿象卵無法孵化的致死機制」，以缺口描述取代計數。"
+   }
+  },
+  {
+   "key": "生物防治2-1|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 研究問題能寫出特定的實驗條件下，自變項和依變項的關係\n[1] 研究問題只寫出自變項和依變項的關係，沒寫實驗條件\n[0] 其他",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「研究問題能寫出特定的實驗條件下，自變項和依變項的關係」 names no variable of this item"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生物防治2-1|0|5",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選蓖麻蠶卵/柞蠶卵，並能說明是同時針對羽化率及雌雄比的條件進行選擇\n[1] 選蓖麻蠶卵/柞蠶卵，僅以羽化率或雌雄比的條件進行選擇\n[0] 選柞蠶卵或選蓖麻蠶卵但理由錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「選蓖麻蠶卵/柞蠶卵…羽化率及雌雄比」; [1] 「僅以羽化率或雌雄比」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生物防治2-1|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說明所選因素影響交尾的關係，並能蒐集可說明此關係的資料\n[1] 說明所選因素影響交尾的關係，但蒐集的資料無法說明此關係\n[0] 無法說出所選因素影響交尾的關係",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「說明所選因素影響交尾的關係，並能蒐集可說明此關係的資料」 restates the task; names no factor or data"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生長素與向光性|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] (1)(2)全對且(3)(4)(5)全對\n[1] (1)(2)全對但(3)(4)(5)未全對，或(1)(2)未全對但(3)(4)(5)全對\n[0] (1)(2)未全對，(3)(4)(5)未全對",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生長素與向光性|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] X軸與Y軸標題正確，繪製折線圖，折線趨勢正確\n[1] X軸與Y軸標題正確但圖形錯誤，或圖形正確但標題錯誤\n[0] X軸、Y軸顛倒或圖形錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「X軸與Y軸標題正確，繪製折線圖，折線趨勢正確」 names neither axis nor trend"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生長素與向光性|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] a＜b且a＋b＜a'＋b'\n[1] 僅a＜b，或僅a＋b＜a'＋b'\n[0] 其他",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「a＜b且a＋b＜a'＋b'」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生長素與向光性|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] a=40；b=50；a'=45；b'=45全部正確\n[1] a、b正確但a'、b'錯誤，或a、b錯誤但a'、b'正確\n[0] 其他",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「a=40；b=50；a'=45；b'=45」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "生長素與向光性|0|7",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 說出a＋b＝a'＋b'且a＜b的關係，並說明光的作用\n[1] 僅說出a＋b＝a'＋b'的關係，或僅說出a＜b的關係，並說明光的作用\n[0] 其他或只寫出假說未說明理由",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「a＋b＝a'＋b'且a＜b…光的作用」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "筆芯電阻|0|1",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能夠寫出BCF三項，或能寫出ABCF中任三項（A需說明控制長度的方式）。\n[0] 未能完整寫出符合單一變因原則的三組筆芯。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「BCF三項」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "筆芯電阻|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1A] 明確寫出操縱變因（粗細）與應變變因（電阻大小）的關係，明確指出筆芯愈粗（細）電阻愈小（大）。\n[1B] 寫出操縱變因與應變變因的關係，但僅指出兩者有關係，未明確寫出方向性（粗→小，細→大）。\n[0] 未指出粗細與電阻的關係，或敘述錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1A] 「筆芯愈粗（細）電阻愈小（大）」; [1B] 「未明確寫出方向性」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "筆芯電阻|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能找出用一支筆芯完成三種長度的方法，如將鱷魚夾夾在不同位置（6/9/12cm），或先測長再截短的方式。\n[0] 方法無法實現三種長度的測量，如僅答「裁減」或「折斷」而未說明如何完成三組測量。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「將鱷魚夾夾在不同位置（6/9/12cm）」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "胡椒蛾的分子機制|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 圖示正確包含黑色等位基因促進黑色素合成、白色等位基因導致異常蛋白質兩條路徑，說明完整\n[1] 圖示包含一條正確路徑，或大致方向正確但細節不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「圖示包含一條正確路徑」 of the two named in [2]"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "胡椒蛾的分子機制|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明突變前產生正常蛋白質、突變後產生異常蛋白質，以及雜合時仍有正常表徵的機制\n[1] 只說明其中一個等位基因的情況，或方向正確但未完整論述\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「只說明其中一個等位基因的情況」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "胡椒蛾的分子機制|0|3",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確列舉三項以上符合Hardy-Weinberg條件違反的原因\n[1] 正確列舉一至二項原因\n[0] 未作答或全部錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「符合Hardy-Weinberg條件違反的原因」 names the concept, not the causes; [1] counts"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「正確列舉三項以上符合Hardy-Weinberg條件違反的原因」未逐一指名五個條件成員；請改寫為：[2] 從H-W五個條件（突變、自然選擇、非隨機交配、遺傳漂變/小族群、基因流動）中正確列舉至少三項並對應至本題情境；[1] 僅提及一至兩項，應指明最常被遺漏的條件（如基因流動或遺傳漂變）作為缺口描述。"
+   }
+  },
+  {
+   "key": "蛙勒|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 指出四處共同特色為「潮濕」或「有水」之處。\n[0] 未指出四處共同特色為「潮濕」或「有水」之處。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「潮濕」或「有水」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "蛙勒|0|2",
+   "bucket": "BORDERLINE",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 四個項目全部答對（項目4提及能增加受精機率或子代數目等意義）。\n[1] 部分項目答對，或項目4未能提及增加受精機率或子代數目等意義。\n[0] 多項答錯或全部答錯。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「項目4未能提及增加受精機率或子代數目」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "蛙勒|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 選A，並提出原因顯示為破壞原本生態平衡，或造成諸羅樹蛙本身無法適應而死亡。\n[0] 選A但理由不適當或未說明；或選B（無論任何理由）。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「選A…破壞原本生態平衡」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "蛙勒|0|4",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 必須完整寫出4月、5月、6月（三個月份）。\n[0] 非完整寫出四月、五月、六月的其他答案。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「4月、5月、6月」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "運動與健康-糖尿病患者的健康生活|0|3",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 依據表(一)的數據正確畫出兩條折線。\n[0] 僅畫出一條折線，或折線未能依據數據呈現。",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "0/1 scale; top 「依據表(一)的數據正確畫出兩條折線」 restates the task"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "運動與健康-糖尿病患者的健康生活|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 根據數值判斷：炯爸空腹血糖大於126，或喝完糖水後2小時血糖大於200，或描述完整的變化趨勢（血糖持續偏高無法恢復）。\n[0] 其他錯誤解釋或未用數據解釋。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「空腹血糖大於126，或…2小時血糖大於200」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "運動與健康-糖尿病患者的健康生活|0|5",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出(3)和(5)兩項。\n[0] 其他答案。",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "隕石探究|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 學生可以從資料文本，分析研究計畫的進行\n[0] 其他答案或錯誤答案",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "0/1 scale; top 「學生可以從資料文本，分析研究計畫的進行」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [1]「學生可以從資料文本，分析研究計畫的進行」為通用套語，未指名應選哪份資料及連結理由；請改寫為：[1] 能選出「火流星現象」（或對應正確資料）並說明其包含撞擊與爆炸特徵，與B階段兩種實驗設計對應；缺口描述應指出學生僅能選出資料卻未能說明與兩種實驗設計的具體連結。"
+   }
+  },
+  {
+   "key": "隕石探究|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 選擇不同形狀、實驗假設正確\n[1] 選擇不同形狀、實驗假設未完整\n[0] 其他答案或錯誤答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": true,
+    "reason": "[2] 「選擇不同形狀」 names the choice, not the hypothesis; [1] borrows"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應明確寫出本題正確的實驗假設內容（如「不同形狀的撞擊物會產生不同形狀的撞擊坑」），而非僅寫「實驗假設正確」這類通用字樣。"
+   }
+  },
+  {
+   "key": "隕石探究|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 學生可以依據結果判斷，並得出適當結論\n[0] 其他答案或錯誤答案",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "0/1 scale; top 「學生可以依據結果判斷，並得出適當結論」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [1] 應明確寫出本題適當結論的內容（如「未驗證假設，因為不同形狀橡皮擦撞擊後坑洞均接近圓形，與假設不符」），而非僅寫「得出適當結論」這類通用字樣。"
+   }
+  },
+  {
+   "key": "隕石探究|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 考慮無法排除原本變因，採新增變因方式，並從數值推論出體積與質量可能會影響\n[1A] 沒有考慮到無法排除原本變因，但從數值推論出體積與質量可能會影響\n[1B] 考慮無法排除原本計畫的變因，採新增變因方式，並從數值推論出體積或質量其一\n[0] 其他答案或錯誤答案",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1A]/[1B] name the missing piece (排除原本變因; 體積或質量其一)"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "隕石探究|0|6",
+   "bucket": "CLEAR",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能說明兩數值與入射角度關係\n[1] 僅說明一項數值與入射角度關係\n[0] 其他答案或錯誤答案",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「能說明兩數值與入射角度關係」 restates the task without the relationship"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "颱風資料庫|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確說明為第一類路徑，且說明判斷的欄位資料（如路徑座標、登陸地點等）\n[1] 只答出路徑類別或只說明欄位，未完整回答\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「第一類路徑…路徑座標、登陸地點」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "颱風資料庫|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出小風，且說明日累積雨量圖可讀出各地降水量\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "颱風資料庫|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 兩組都正確描述降雨特徵\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "颱風資料庫|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確判斷出錯的颱風，且說明與預期降雨模式不符的理由\n[1] 有正確方向但說明不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] 「正確判斷出錯的颱風」 never names it; [1] 「有正確方向但說明不完整」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指名正確答案（哪個颱風出錯）及其降雨異常的具體特徵（如「颱風X降雨分布與第一類路徑颱風的預期模式不符」）；[1] 應指名最常見缺口，如「指出颱風但未說明預期降雨模式的依據或對比」。"
+   }
+  },
+  {
+   "key": "颱風資料庫|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確判斷並引用圖表中具體數據說明理由，論述完整\n[1] 判斷方向正確但未引用圖表數據，或論述不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「正確判斷並引用圖表中具體數據說明理由，論述完整」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "alcohol-reaction|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出全部一級醇，無誤選\n[1] 選出部分正確答案，或有一項誤選\n[0] 無法正確識別一級醇結構",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "alcohol-reaction|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出(A)(B)，且未誤選其他選項\n[1] 只選出(A)或(B)其中一項，且無誤選\n[0] 未能選出正確選項，或誤選(C)(D)(E)",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "dented-ping-pong|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出AD兩項，未多選\n[1] 選出AD其中一項，未選錯誤選項\n[0] 其他答案組合",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "dented-ping-pong|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出BC兩項，未多選\n[1] 選出BC其中一項，未選錯誤選項\n[0] 其他答案組合",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "dented-ping-pong|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確判斷不能恢復，並引用表一數據說明60度對應的可復原深度小於3.9mm\n[1] 判斷正確但未能正確引用數據，或說明不完整\n[0] 判斷錯誤，或未說明理由",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「不能恢復…60度對應的可復原深度小於3.9mm」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "dented-ping-pong|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 能說明密閉球的想法成立，但同時指出破裂球的現象需要另一種機制（如球殼軟化）來解釋\n[1] 僅說明密閉球情況成立，或僅描述破裂球需更高溫，但未能整合兩種情況\n[0] 認為想法完全不成立或完全成立而未考量破裂球的反例，或未作說明",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「僅說明密閉球情況成立，或僅描述破裂球需更高溫」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "flame-oscillation|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確勾選所有符合的敘述，無誤選\n[1] 勾選大部分正確，僅1項錯誤或遺漏\n[0] 多項錯誤或未作答",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "flame-oscillation|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確畫出兩條反射光路徑（入射角=反射角），且兩條反射光的交點（成像A）位置標示正確\n[1] 反射光路徑大致正確，但成像A位置標示有偏差；或僅畫出一條正確反射光\n[0] 反射光路徑不符合反射定律，或未標示成像A位置",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「成像A位置標示有偏差；或僅畫出一條正確反射光」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "flame-oscillation|0|5",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三個點的成像位置全部正確\n[1] 兩個點的成像位置正確\n[0] 一個或零個點的成像位置正確",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "jumping-bottle-cap|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "jumping-bottle-cap|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "jumping-bottle-cap|0|3",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」及[1]「部分正確」均為通用套語；請改寫為：[2] 指出選定紀錄表並說明其在重複測量次數或欄位設計上優於另一份的具體科學理由；[1] 能指出選定表格但理由僅描述表面差異，未涉及科學探究設計原則。"
+   }
+  },
+  {
+   "key": "jumping-bottle-cap|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2]「完整正確回答」、[1]「部分正確」、[0]「錯誤或空白」為泛用措辭，應改寫為：[2]表名稱能同時反映自變項（水溫：6℃、25℃、60℃）與應變項（30秒內瓶蓋跳動次數）；[1]僅反映其中一者（如只寫溫度條件或只寫跳動次數）。"
+   }
+  },
+  {
+   "key": "jumping-bottle-cap|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三題全部答對（是、是、否）\n[1] 答對其中兩題\n[0] 只答對一題或三題全錯",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出(A)(B)兩項，不多選也不少選\n[1] 只選出(A)(B)其中一項正確答案，且無錯誤選項\n[0] 未選出正確答案，或所選答案中包含(C)或(D)等錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 四個配對全部正確（甲-3、乙-4、丙-2、丁-1）\n[1] 答對其中三個配對\n[0] 答對兩個或以下配對",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|1|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三題全部答對（是、否、否）\n[1] 答對其中兩題\n[0] 只答對一題或三題全錯",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|1|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出(A)(B)兩項，不多選也不少選\n[1] 只選出(A)或(B)其中一項，且無錯誤選項\n[0] 未選出正確答案，或所選答案中包含(C)或(D)等錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|1|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確排列甲→乙→丙，且正確判斷丁未發生（255 mg < 300 mg）\n[1] 甲→乙→丙順序正確，但未說明或誤判丁的狀態；或順序有小誤但正確計算咖啡因總量255 mg\n[0] 排序錯誤或咖啡因總量計算錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|2|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三題全部答對（是、否、否）\n[1] 答對其中兩題\n[0] 只答對一題或三題全錯",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|2|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 四種方法排序完全正確（甲 < 乙 < 丙 < 丁）\n[1] 甲排在最前且丁排在最後，中間兩項（乙、丙）順序有誤；或整體順序合理但有一項位置錯誤\n[0] 排序錯誤兩項以上，或甲、丁位置明顯錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "pisa_examples|2|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出(A)(B)兩項，不多選也不少選\n[1] 只選出(A)或(B)其中一項，且無錯誤選項\n[0] 未選出正確答案，或所選答案中包含(C)或(D)等錯誤選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "self-heating-pack|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 正確選出所有與表格數據一致的推論，無誤選\n[1] 選出部分正確推論，有一項誤選或一項遺漏\n[0] 無法根據表格數據判斷推論，或大部分選擇錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "self-heating-pack|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 正確計算出a = 10，且說明依據為7:1的重量比\n[1] 答出a = 10但未說明計算過程或理由，或理由不完整\n[0] 計算錯誤或使用錯誤的比例關係",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「a = 10…7:1的重量比」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "taipei-humidity-trend|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 三題全部正確選擇\n[1] 正確選擇兩題\n[0] 只選對一題以下",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "taipei-humidity-trend|0|2",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 選出兩項合理原因（如氣溫上升、都市化），不多不少\n[1] 選出一項合理原因且無明顯錯誤選項\n[0] 選擇不合理原因或完全未選出正確選項",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "taipei-humidity-trend|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 操縱變因（氣溫）和應變變因（相對溼度）均正確，控制變因至少一項合理\n[1] 操縱變因和應變變因其中一個正確，另一個錯誤\n[0] 操縱變因和應變變因均錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "taipei-humidity-trend|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Simple multiple-choice",
+   "rubric_text": "[2] 選出否認相關性的同學（最不合理的批評），並能說明圖表確實顯示正相關\n[1] 選擇正確但未能說明原因\n[0] 選擇錯誤或未作答",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "wheat-field-experiment|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "wheat-field-experiment|0|2",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整正確回答\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "vague",
+    "borderline": false,
+    "reason": "[2] 「完整正確回答」"
+   },
+   "checker": {
+    "specificity_violation": true,
+    "counting_violation": false,
+    "verdict": "fail",
+    "details": "[評分規準檢核] [2] 應指明正確答案應含哪些成分（如「使用防草布組雜草較少、小麥產量較高」並援引表中具體數據），[1] 應說明最常出現的缺口（如只描述產量差異但未連結防草布抑制雜草的中介機制）。"
+   }
+  },
+  {
+   "key": "wheat-field-experiment|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[2] 全對\n[1] 部分正確\n[0] 錯誤或空白",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐B線上版|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出反駁第一組且反駁第二組\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "早餐B線上版|0|4",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出所有五個必要項目\n[0] 未作答或有遺漏/多選",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "秋颱線上版|0|1",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 四個條件均正確勾選為「是」\n[0] 未作答或有錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "秋颱線上版|0|3",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確說明兩區水氣凝結原因均為絕熱膨脹冷卻，且降水特性為強降雨\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "秋颱線上版|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[2] 完整描述颱風直接降雨、共伴效應、暴潮等主要天氣現象\n[1] 描述一至二個主要天氣現象，說明不完整\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[2] 「直接降雨、共伴效應、暴潮」; [1] 「描述一至二個」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "秋颱線上版|0|5",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確選出選項2和選項4\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "秋颱線上版|0|6",
+   "bucket": "OUT_OF_SCOPE_C3",
+   "question_type": "Complex multiple-choice",
+   "rubric_text": "[1] 正確說明兩者條件均具備，且指出需要潮位數據\n[0] 未作答或錯誤",
+   "labeller": {
+    "label": "out_of_scope",
+    "borderline": false,
+    "reason": "multiple-choice: rule does not apply, expected pass"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "你吃的麵包安全嗎|0|1",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 從題目判斷兩個實驗的操縱變因，提及封口及不封口，或空氣流通與否。\n[0] 未提及操作差異為封口/不封口，或指出的操作非封口及不封口。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「封口及不封口」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "你吃的麵包安全嗎|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 能指出第1組和第4組。\n[0] 非編碼1之答案。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「第1組和第4組」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "自製夢幻飲品|0|5",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 正確指出烏醋，且說明因其本身顏色深（黑色）導致混合後顏色變化不易判讀。\n[0] 只寫出烏醋但理由說明不完整或錯誤，或回答其他水溶液。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「烏醋…顏色深」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "自製夢幻飲品|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "Constructed response",
+   "rubric_text": "[1] 同時正確寫出酸性呈桃紅色（紫紅色/紫色/紅色）以及鹼性呈藍綠色（淺藍色/綠色）。\n[0] 僅答出其中一種顏色，或兩種顏色皆錯誤。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "0/1 scale; top 「酸性呈桃紅色…鹼性呈藍綠色」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "社會領域_row4|0|4",
+   "bucket": "CONFORMING",
+   "question_type": "選擇題",
+   "rubric_text": "[2] 能表明立場並引用文本中的水患風險或公共討論程序作為理由。\n[1] 有立場但理由只部分連結文本。\n[0] 沒有立場或理由與文本無關。\n[0X] 未作答。",
+   "labeller": {
+    "label": "vague",
+    "borderline": true,
+    "reason": "[2] names 水患風險或公共討論程序; [1] 「有立場但理由只部分連結文本」 is generic"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  },
+  {
+   "key": "社會領域_row6|0|6",
+   "bucket": "CONFORMING",
+   "question_type": "選擇題",
+   "rubric_text": "[2] 能指出資訊透明與防疫行動之間的關係並說明延遲公開的風險。\n[1] 能提到資訊透明或防疫行動但說明不完整。\n[0] 回答與文本或公共衛生治理無關。\n[0X] 未作答。",
+   "labeller": {
+    "label": "specific",
+    "borderline": false,
+    "reason": "[1] 「能提到資訊透明或防疫行動但說明不完整」"
+   },
+   "checker": {
+    "specificity_violation": false,
+    "counting_violation": false,
+    "verdict": "pass",
+    "details": ""
+   }
+  }
+ ]
+}
