@@ -595,8 +595,6 @@ def _parse_subquestion(
         raise
     except ValidationError as exc:
         raise SubquestionParseError.from_validation(exc) from None
-    except Exception as exc:
-        raise SubquestionParseError(f"子題解析失敗（{type(exc).__name__}）") from None
 
 
 def _parse_text_shell(

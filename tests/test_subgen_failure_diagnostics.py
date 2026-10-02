@@ -203,6 +203,10 @@ class _ScriptedSubClient:
                 raw = _valid_subquestion(self.subject, idx)
                 raw["題目"] = {"private": PRIVATE_VISUAL_TEXT}
                 return raw
+            if self.mode == "internal_parser_exception":
+                raw = _valid_subquestion(self.subject, idx)
+                raw["評分規準"] = [{"code": "explode"}]
+                return raw
             if self.mode == "visual_then_recover" and attempt == 1:
                 raw = _valid_subquestion(self.subject, idx)
                 raw["題目"] = {"private": PRIVATE_VISUAL_TEXT}
@@ -520,6 +524,58 @@ def test_unexpected_parser_exception_exposes_only_its_class_name(
     )
 
     assert [sub.序號 for sub in question.subquestions] == [1, 3]
+    error = next(
+        event
+        for event in observer.stages(status="error")
+        if event.get("agent") == "sub_generator#2"
+    )
+    assert error["failure_code"] == "parser_failure"
+    assert error["failure_detail"] == (
+        "subquestion parser raised PrivateParserFailure"
+    )
+    assert PRIVATE_PROVIDER_TEXT not in error["message"]
+
+
+@pytest.mark.parametrize("subject", ["ss", "ns"])
+def test_subject_parser_unexpected_exception_is_not_validation_feedback(
+    subject: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if subject == "ss":
+        import src.social_studies.cli as subject_cli
+    else:
+        import src.natural_sciences.cli as subject_cli
+
+    class PrivateParserFailure(RuntimeError):
+        pass
+
+    original_normalizer = subject_cli.normalize_rubric_student_examples
+
+    def fail_for_sentinel(rows: Any) -> Any:
+        if any(row.get("code") == "explode" for row in rows):
+            raise PrivateParserFailure(PRIVATE_PROVIDER_TEXT)
+        return original_normalizer(rows)
+
+    monkeypatch.setattr(
+        subject_cli,
+        "normalize_rubric_student_examples",
+        fail_for_sentinel,
+    )
+    observer = _ObserverCapture()
+    state = _CallState()
+
+    question = _generate(
+        subject,
+        "internal_parser_exception",
+        tmp_path=tmp_path,
+        retries=1,
+        observer=observer,
+        state=state,
+    )
+
+    assert [sub.序號 for sub in question.subquestions] == [1, 3]
+    assert state.users_by_slot[2][0] == state.users_by_slot[2][1]
     error = next(
         event
         for event in observer.stages(status="error")
