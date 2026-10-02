@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
 const fetchMock = vi.hoisted(() => vi.fn());
@@ -713,20 +713,20 @@ function rejectionResponse(error: string, message: string): Response {
 }
 
 describe("QuestionCard 圈選 capture", () => {
-  it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", () => {
+  it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passage = getSelectionField("文本");
     selectRange(passage, 7, passage, 14);
 
-    const chip = screen.getByRole("listitem");
+    const chip = await screen.findByRole("listitem");
     expect(chip).toHaveAttribute("data-field-path", "文本");
     expect(chip).toHaveAttribute("data-start", "7");
     expect(chip).toHaveAttribute("data-end", "14");
     expect(chip).toHaveAttribute("data-quoted-text", "passage");
   });
 
-  it("splits a cross-boundary DOM Range into ordered per-field segments", () => {
+  it("splits a cross-boundary DOM Range into ordered per-field segments", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     selectRange(
@@ -736,7 +736,7 @@ describe("QuestionCard 圈選 capture", () => {
       8,
     );
 
-    const chips = screen.getAllByRole("listitem");
+    const chips = await screen.findAllByRole("listitem");
     expect(chips).toHaveLength(2);
     expect(chips.map((chip) => chip.getAttribute("data-field-path"))).toEqual([
       "文本",
@@ -752,64 +752,73 @@ describe("QuestionCard 圈選 capture", () => {
     ]);
   });
 
-  it("rejects a chrome-only selection with user feedback and no empty chip", () => {
+  it("rejects a chrome-only selection with user feedback and no empty chip", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passageLabel = screen.getByText("Passage", { exact: true });
     selectRange(passageLabel, 0, passageLabel, "Passage".length);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Select exam content to add a selection.");
-    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Select exam content to add a selection.",
+    );
+    await waitFor(() => expect(screen.queryByRole("listitem")).not.toBeInTheDocument());
   });
 
-  it("renders each captured 圈選 as a visible annotation chip", () => {
+  it("renders each captured 圈選 as a visible annotation chip", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passage = getSelectionField("文本");
     selectRange(passage, 7, passage, 14);
 
-    expect(screen.getByRole("list", { name: "Selections" })).toBeInTheDocument();
-    expect(screen.getByRole("listitem")).toHaveTextContent("passage");
+    expect(await screen.findByRole("list", { name: "Selections" })).toBeInTheDocument();
+    expect(await screen.findByRole("listitem")).toHaveTextContent("passage");
   });
 
-  it("gives each captured 圈選 an editable 修改指示 and deletes its chip and note together", () => {
+  it("gives each captured 圈選 an editable 修改指示 and deletes its chip and note together", async () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
 
-    const instruction = screen.getByRole("textbox", {
+    const instruction = await screen.findByRole("textbox", {
       name: "Modification instruction 1",
     });
     expect(instruction).toHaveValue("");
 
     fireEvent.change(instruction, { target: { value: "Fix the wording" } });
-    expect(instruction).toHaveValue("Fix the wording");
+    await waitFor(() => expect(instruction).toHaveValue("Fix the wording"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete selection 1" }));
 
-    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Modification instruction 1" }))
-      .not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: "Modification instruction 1" }))
+        .not.toBeInTheDocument();
+    });
   });
 
-  it("keeps submit disabled with no selections or any missing 修改指示", () => {
+  it("keeps submit disabled with no selections or any missing 修改指示", async () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     const submit = screen.getByRole("button", { name: "Submit modifications" });
     expect(submit).toBeDisabled();
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    const firstInstruction = await screen.findByRole("textbox", {
+      name: "Modification instruction 1",
+    });
     expect(submit).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(firstInstruction, {
       target: { value: "   " },
     });
-    expect(submit).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .toBeDisabled());
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(firstInstruction, {
       target: { value: "Fix the passage" },
     });
-    expect(submit).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
 
     selectRange(
       getSelectionField("subquestions[0].題目"),
@@ -817,12 +826,17 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    expect(submit).toBeDisabled();
+    const secondInstruction = await screen.findByRole("textbox", {
+      name: "Modification instruction 2",
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .toBeDisabled());
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(secondInstruction, {
       target: { value: "Fix the subquestion" },
     });
-    expect(submit).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
   });
 
   it("posts the exact per-圈選 payload with field-addressed segments and 修改指示", async () => {
@@ -832,7 +846,7 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
 
@@ -842,10 +856,12 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 2" }), {
       target: { value: "Fix the subquestion" },
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -886,9 +902,11 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     const alert = await screen.findByRole("alert");
@@ -907,9 +925,11 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     const alert = await screen.findByRole("alert");
@@ -931,7 +951,7 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
     selectRange(
@@ -940,22 +960,28 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 2" }), {
       target: { value: "Fix the subquestion" },
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await screen.findByRole("alert");
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByRole("textbox", { name: "Modification instruction 1" }))
+    expect(await screen.findAllByRole("listitem")).toHaveLength(2);
+    expect(await screen.findByRole("textbox", { name: "Modification instruction 1" }))
       .toHaveValue("Fix the passage");
-    expect(screen.getByRole("textbox", { name: "Modification instruction 2" }))
+    expect(await screen.findByRole("textbox", { name: "Modification instruction 2" }))
       .toHaveValue("Fix the subquestion");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
-    expect(screen.getByRole("button", { name: "Submit modifications" })).not.toBeDisabled();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete selection 1" }));
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Submit modifications" }))
+        .not.toBeDisabled();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
