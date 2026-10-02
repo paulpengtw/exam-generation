@@ -7,6 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, StrictInt, field_validator, model_validator
 
+from src.common.subquestion_failure import (
+    MAX_FAILURE_DETAIL_CHARS,
+    SubquestionFailureCode,
+)
+
 # Version of the in-process v2 event bus envelopes (started / result / ...).
 PROTOCOL_VERSION = 2
 # Submission protocol accepted by POST /api/generate: 3 = detached-run 受理
@@ -56,6 +61,8 @@ class SlotRef(BaseModel):
     subquestion_id: str | None = None
     subquestion_index: StrictInt | None = None
     reason: str | None = None
+    failure_code: SubquestionFailureCode | None = None
+    failure_detail: str | None = None
 
     @field_validator("question_id")
     @classmethod
@@ -69,6 +76,19 @@ class SlotRef(BaseModel):
     def _subquestion_index_non_negative(cls, value: int | None) -> int | None:
         if value is not None and value < 0:
             raise ValueError("subquestion_index must be >= 0")
+        return value
+
+    @field_validator("failure_detail")
+    @classmethod
+    def _failure_detail_is_bounded_one_line(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or "\n" in value or "\r" in value:
+            raise ValueError("failure_detail must be a non-empty single line")
+        if len(value) > MAX_FAILURE_DETAIL_CHARS:
+            raise ValueError(
+                f"failure_detail must be <= {MAX_FAILURE_DETAIL_CHARS} characters"
+            )
         return value
 
 

@@ -17,12 +17,20 @@ import type { RunManifest, DecodedEvent } from "./generationStream";
 // Types
 // ---------------------------------------------------------------------------
 
+export type SubquestionFailureCode =
+  | "validation_exhausted"
+  | "parser_failure"
+  | "provider_failure"
+  | "unknown";
+
 export interface GenerationSlotReference {
   kind: "subquestion" | "image";
   question_id: string;
   subquestion_id?: string | null;
   subquestion_index?: number | null;
   reason?: string;
+  failure_code?: SubquestionFailureCode;
+  failure_detail?: string;
 }
 
 export interface QuestionTerminalPayload {
@@ -203,6 +211,27 @@ function positiveRevision(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+const SUBQUESTION_FAILURE_CODES: ReadonlySet<SubquestionFailureCode> = new Set([
+  "validation_exhausted",
+  "parser_failure",
+  "provider_failure",
+  "unknown",
+]);
+
+function isSubquestionFailureCode(value: unknown): value is SubquestionFailureCode {
+  return typeof value === "string"
+    && SUBQUESTION_FAILURE_CODES.has(value as SubquestionFailureCode);
+}
+
+function isSafeFailureDetail(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const codePointLength = Array.from(value).length;
+  return codePointLength > 0
+    && codePointLength <= 240
+    && !value.includes("\n")
+    && !value.includes("\r");
+}
+
 function slotKey(slot: GenerationSlotReference): string {
   return JSON.stringify([
     slot.kind,
@@ -230,6 +259,12 @@ function parseSlotReferences(value: unknown, questionId: string): GenerationSlot
       && (!Number.isInteger(item.subquestion_index) || (item.subquestion_index as number) < 0)
     ) return null;
     if (item.reason !== undefined && typeof item.reason !== "string") return null;
+    if (item.failure_code !== undefined) {
+      if (item.kind !== "subquestion" || !isSubquestionFailureCode(item.failure_code)) return null;
+    }
+    if (item.failure_detail !== undefined) {
+      if (item.failure_code === undefined || !isSafeFailureDetail(item.failure_detail)) return null;
+    }
     parsed.push({
       kind: item.kind,
       question_id: item.question_id,
@@ -238,6 +273,12 @@ function parseSlotReferences(value: unknown, questionId: string): GenerationSlot
         ? {}
         : { subquestion_index: item.subquestion_index as number | null }),
       ...(item.reason === undefined ? {} : { reason: item.reason as string }),
+      ...(item.failure_code === undefined
+        ? {}
+        : { failure_code: item.failure_code as SubquestionFailureCode }),
+      ...(item.failure_detail === undefined
+        ? {}
+        : { failure_detail: item.failure_detail as string }),
     });
   }
   return parsed;

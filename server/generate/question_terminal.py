@@ -22,7 +22,13 @@ import dataclasses
 import json
 from collections.abc import Mapping
 from pathlib import Path as _Path2
+from types import MappingProxyType
 from typing import Any
+
+from src.common.subquestion_failure import (
+    MAX_FAILURE_DETAIL_CHARS,
+    SUBQUESTION_FAILURE_CODES,
+)
 
 # PNG file signature: the first 8 bytes of any valid PNG file.
 # Files that do not start with this signature are corrupt / truncated renders
@@ -57,6 +63,16 @@ class _QuestionPositionResolution:
     resolved_subquestion_configs: list[Any] | None = None
     resolved_subquestion_count: int | None = None
     has_per_question_resolution: bool = False
+    subquestion_failures: Mapping[int, Mapping[str, str]] = dataclasses.field(
+        default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        immutable = MappingProxyType({
+            index: MappingProxyType(dict(failure))
+            for index, failure in self.subquestion_failures.items()
+        })
+        object.__setattr__(self, "subquestion_failures", immutable)
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +283,38 @@ def _compute_expected_delivered_missing(
                 expected.append(sub_slot)
                 sub = by_id.get(subquestion_id)
                 if sub is None:
-                    missing.append({**sub_slot, "reason": "subquestion not delivered"})
+                    missing_slot = {
+                        **sub_slot,
+                        "reason": "subquestion not delivered",
+                    }
+                    failure = resolution.subquestion_failures.get(slot_index)
+                    if isinstance(failure, Mapping):
+                        failure_code = failure.get("failure_code")
+                        failure_detail = failure.get("failure_detail")
+                        if (
+                            isinstance(failure_code, str)
+                            and failure_code in SUBQUESTION_FAILURE_CODES
+                        ):
+                            fallback_reasons = {
+                                "validation_exhausted": "subquestion validation exhausted",
+                                "parser_failure": "subquestion parser failure",
+                                "provider_failure": "subquestion provider failure",
+                                "unknown": "subquestion generation failed",
+                            }
+                            missing_slot["failure_code"] = failure_code
+                            valid_detail = (
+                                isinstance(failure_detail, str)
+                                and bool(failure_detail)
+                                and "\n" not in failure_detail
+                                and "\r" not in failure_detail
+                                and len(failure_detail) <= MAX_FAILURE_DETAIL_CHARS
+                            )
+                            if valid_detail:
+                                missing_slot["failure_detail"] = failure_detail
+                                missing_slot["reason"] = failure_detail
+                            else:
+                                missing_slot["reason"] = fallback_reasons[failure_code]
+                    missing.append(missing_slot)
                 else:
                     delivered.append(sub_slot)
 

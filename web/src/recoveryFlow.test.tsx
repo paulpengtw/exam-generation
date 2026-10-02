@@ -1082,23 +1082,42 @@ describe("recovery flow — scenario 2: quota failure", () => {
   it("captures settled workspaces before the recheck and refuses when the target changes", async () => {
     setUpUpdateRequired();
     const navigateSpy = vi.fn();
+    let resolveModels!: (value: typeof AVAILABLE_MODELS) => void;
+    getAvailableModelsMock.mockImplementationOnce(() => new Promise<typeof AVAILABLE_MODELS>((resolve) => {
+      resolveModels = resolve;
+    }));
     const { unmount } = renderApp();
     await screen.findByPlaceholderText(
       /e\.g\. Climate change|例如：氣候變遷/i,
       {},
       { timeout: 5000 },
     );
-    useReleaseStore.setState({
-      checkNow: async () => {
-        useReleaseStore.setState({ requiredBuildId: "build-C" });
-      },
+    // The topic input renders before model discovery completes. Hold that
+    // promise deliberately so the save path cannot accidentally race hydration.
+    expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("hydrating");
+    await act(async () => { resolveModels(AVAILABLE_MODELS); });
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
+    }, { timeout: 5000 });
+    // Flush effects scheduled by the readiness transition before capturing the
+    // workspace revision in runSaveAndUpdate.
+    await act(async () => {});
+    await act(async () => {
+      useReleaseStore.setState({
+        checkNow: async () => {
+          useReleaseStore.setState({ requiredBuildId: "build-C" });
+        },
+      });
     });
 
-    const result = await runSaveAndUpdate({
-      navigate: navigateSpy,
-      origin: "https://test.example.com",
-      environment: "production",
-      buildId: "build-A",
+    let result!: Awaited<ReturnType<typeof runSaveAndUpdate>>;
+    await act(async () => {
+      result = await runSaveAndUpdate({
+        navigate: navigateSpy,
+        origin: "https://test.example.com",
+        environment: "production",
+        buildId: "build-A",
+      });
     });
 
     expect(result).toEqual({ ok: false, reason: "target_changed", retryable: false });
@@ -1122,6 +1141,10 @@ describe("recovery flow — scenario 2: quota failure", () => {
       {},
       { timeout: 5000 },
     );
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
+    }, { timeout: 5000 });
+    await act(async () => {});
 
     // Spy on setItem to make the save fail, targeting only the snapshot write so
     // background React effects (model/effort useEffect writes) cannot consume
@@ -1136,14 +1159,19 @@ describe("recovery flow — scenario 2: quota failure", () => {
 
     // Click the 儲存草稿並更新 button in ReleaseNotice
     const saveButton = screen.getByRole("button", { name: /Save Draft & Update|儲存草稿並更新/i });
+    await waitFor(() => expect(saveButton).toBeEnabled(), { timeout: 5000 });
     await act(async () => {
       fireEvent.click(saveButton);
     });
 
     // After the failed save, a 重試/Retry button should appear
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /Retry|重試/i })).toBeInTheDocument();
-    });
+    // once the async save handler updates ReleaseNotice; keep the event-bound
+    // query on the same explicit CI budget as the other recovery waits.
+    await screen.findByRole(
+      "button",
+      { name: /Retry|重試/i },
+      { timeout: 5000 },
+    );
 
     unmount();
   });

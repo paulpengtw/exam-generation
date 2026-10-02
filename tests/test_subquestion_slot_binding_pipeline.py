@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 from tests.test_figure_obligations_pipeline import FigureProvider, SubquestionProvider
 
@@ -53,6 +54,27 @@ class SlotProvider(SubquestionProvider):
         )
         payload["序號"] = self.ordinals[position - 1]
         payload["出題指示"] = "model-default"
+        if self.subject == "social_studies":
+            payload["評分規準"] = [
+                {
+                    "code": "2",
+                    "規準說明": EXTRA_ITEMS_FIXED_SENTENCE,
+                    "學生作答實例": [f"slot-{position} 完整作答"],
+                },
+                {
+                    "code": "1",
+                    "規準說明": f"slot-{position} 部分作答",
+                    "學生作答實例": [
+                        f"slot-{position} 作答缺少一項",
+                        f"slot-{position} 作答理由不足",
+                    ],
+                },
+                {
+                    "code": "0",
+                    "規準說明": f"slot-{position} 未能作答",
+                    "學生作答實例": [f"slot-{position} 錯誤作答"],
+                },
+            ]
         return payload
 
 

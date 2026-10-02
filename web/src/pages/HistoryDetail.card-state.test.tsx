@@ -123,7 +123,7 @@ describe("HistoryDetail card state for partial records (issue #939)", () => {
     expect(screen.queryByTestId("missing-subquestion-2")).toBeNull();
   });
 
-  it("partial record with missing image slot shows MissingSubQuestionBlock marker", async () => {
+  it("partial record renders the stored structured failure summary and detail", async () => {
     getDetailMock.mockResolvedValueOnce({
       ...BASE_DETAIL,
       terminal_delivery: {
@@ -136,6 +136,8 @@ describe("HistoryDetail card state for partial records (issue #939)", () => {
             subquestion_id: "q_NS_001-sq002",
             subquestion_index: 1,
             reason: "subquestion not delivered",
+            failure_code: "validation_exhausted",
+            failure_detail: "Rubric code E was duplicated.",
           },
         ],
       },
@@ -149,5 +151,39 @@ describe("HistoryDetail card state for partial records (issue #939)", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("missing-subquestion-2")).not.toBeNull();
     }, { timeout: 3000 });
+    const block = screen.getByTestId("missing-subquestion-2");
+    expect(block).toHaveTextContent(
+      "重試後回應格式仍然無效。",
+    );
+    expect(block).toHaveTextContent("詳細資訊：Rubric code E was duplicated.");
+    expect(block).not.toHaveTextContent("subquestion not delivered");
+  });
+
+  it("does not render malformed structured History evidence", async () => {
+    getDetailMock.mockResolvedValueOnce({
+      ...BASE_DETAIL,
+      terminal_delivery: {
+        delivery_status: "partial",
+        termination_reason: "normal",
+        missing: [
+          {
+            kind: "subquestion",
+            question_id: "q_NS_001",
+            subquestion_id: "q_NS_001-sq002",
+            subquestion_index: 1,
+            failure_code: "provider_failure",
+            failure_detail: "unsafe\nprovider detail",
+          },
+        ],
+      },
+    });
+
+    renderDetail();
+    await waitFor(() => {
+      expect(screen.queryByText("What is photosynthesis?")).not.toBeNull();
+    }, { timeout: 3000 });
+
+    expect(screen.queryByTestId("missing-subquestion-2")).toBeNull();
+    expect(screen.queryByText(/unsafe provider detail/)).toBeNull();
   });
 });

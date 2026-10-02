@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.common import figure_policy
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 from src.natural_sciences.cli import generate_one as generate_ns_one
 from src.natural_sciences.sampler import sample_params as sample_ns_params
@@ -114,6 +115,26 @@ def _energy_chart(oil: list[int], renewable: list[int], figure_kind: str) -> dic
             ],
         },
     }
+
+
+def _valid_open_response_rubric(label: str) -> list[dict[str, object]]:
+    return [
+        {
+            "code": "2",
+            "規準說明": f"{label}完整推理。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": [f"{label}完整作答"],
+        },
+        {
+            "code": "1",
+            "規準說明": f"{label}推理鏈有缺口。",
+            "學生作答實例": [f"{label}缺少證據", f"{label}理由未連結"],
+        },
+        {
+            "code": "0",
+            "規準說明": f"{label}方向錯誤。",
+            "學生作答實例": [f"{label}錯誤作答"],
+        },
+    ]
 
 
 _SS_TEXT_SHELL = {
@@ -277,7 +298,7 @@ class _NSConsistencySubClient:
                 "題目": "下列何者正確？（A）甲（B）乙（C）丙（D）丁",
                 "答案": "A",
                 "答案解析": "解析",
-                "評分規準": [],
+                "評分規準": _valid_open_response_rubric("資料判讀"),
             }
         response = {
             "序號": index,
@@ -292,7 +313,7 @@ class _NSConsistencySubClient:
             "題目": "下列何者正確？（A）甲（B）乙（C）丙（D）丁",
             "答案": "A",
             "答案解析": "解析",
-            "評分規準": [],
+            "評分規準": _valid_open_response_rubric("資料判讀"),
             "chart_spec": _energy_chart(
                 [10, 3] if index == 1 else [30, 24],
                 [9, 32] if index == 1 else [8, 16],

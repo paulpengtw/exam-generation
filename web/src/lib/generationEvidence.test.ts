@@ -183,6 +183,111 @@ describe("applyV2Event — result", () => {
 // ---------------------------------------------------------------------------
 
 describe("applyV2Event — question_terminal", () => {
+  const structuredPartialTerminal = (failureCode: string, failureDetail: unknown = "safe detail") => ({
+    termination_reason: "normal",
+    has_final: true,
+    final_revision: 1,
+    delivery_status: "partial",
+    expected: [
+      {
+        kind: "subquestion",
+        question_id: "q_001",
+        subquestion_id: "q_001-sq001",
+        subquestion_index: 0,
+      },
+    ],
+    delivered: [],
+    missing: [
+      {
+        kind: "subquestion",
+        question_id: "q_001",
+        subquestion_id: "q_001-sq001",
+        subquestion_index: 0,
+        reason: "safe fallback",
+        failure_code: failureCode,
+        failure_detail: failureDetail,
+      },
+    ],
+    review: { status: "skipped", content_revision: 1 },
+  });
+
+  it.each([
+    "validation_exhausted",
+    "parser_failure",
+    "provider_failure",
+    "unknown",
+  ])("preserves structured failure code %s and a 240-character detail", (failureCode) => {
+    const detail = "🧪".repeat(240);
+    const next = applyV2Event(freshRun(), makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      structuredPartialTerminal(failureCode, detail),
+    ));
+
+    expect(next.questions["q_001"].terminal?.missing[0]).toMatchObject({
+      failure_code: failureCode,
+      failure_detail: detail,
+    });
+  });
+
+  it.each([
+    ["unknown code", "not_allowed", "safe detail"],
+    ["newline", "provider_failure", "line one\nline two"],
+    ["carriage return", "provider_failure", "line one\rline two"],
+    ["overlength", "provider_failure", "x".repeat(241)],
+    ["non-string", "provider_failure", 42],
+  ])("rejects structured failure evidence with %s", (_label, code, detail) => {
+    const next = applyV2Event(freshRun(), makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      structuredPartialTerminal(code, detail),
+    ));
+
+    expect(next.questions["q_001"].terminal).toBeNull();
+    expect(next.questions["q_001"].terminalConflict).toBe(true);
+  });
+
+  it("flags a resend that changes only structured failure evidence", () => {
+    let state = applyV2Event(freshRun(), makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      structuredPartialTerminal("validation_exhausted", "first detail"),
+    ));
+    state = applyV2Event(state, makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 6, question_id: "q_001", index: 0 },
+      structuredPartialTerminal("provider_failure", "second detail"),
+    ));
+
+    expect(state.questions["q_001"].terminalConflict).toBe(true);
+    expect(state.questions["q_001"].terminalConflictReason).toBe(
+      "terminal_contradiction",
+    );
+  });
+
+  it("keeps legacy reason-only and image slots compatible", () => {
+    const legacy = structuredPartialTerminal("validation_exhausted");
+    delete (legacy.missing[0] as Record<string, unknown>).failure_code;
+    delete (legacy.missing[0] as Record<string, unknown>).failure_detail;
+    legacy.expected[0].kind = "image";
+    legacy.missing[0].kind = "image";
+    legacy.missing[0].reason = "render_failed";
+
+    const next = applyV2Event(freshRun(), makeEvent(
+      "question_terminal",
+      { run_id: RUN_ID, event_seq: 5, question_id: "q_001", index: 0 },
+      legacy,
+    ));
+
+    expect(next.questions["q_001"].terminal?.missing[0]).toEqual({
+      kind: "image",
+      question_id: "q_001",
+      subquestion_id: "q_001-sq001",
+      subquestion_index: 0,
+      reason: "render_failed",
+    });
+  });
+
   it("sets ended processing and review from terminal", () => {
     let state = freshRun();
     state = applyV2Event(state, makeEvent(
@@ -485,6 +590,8 @@ describe("applyPollReadFailed", () => {
     const next = applyPollReadFailed(state);
     expect(next.questions["q_001"].processing).toBe("unknown");
     expect(next.questions["q_002"].processing).toBe("unknown");
+    expect(next.questions["q_001"].terminal).toBeNull();
+    expect(next.questions["q_002"].terminal).toBeNull();
   });
 
   it("does not change questions that already have a terminal (ended processing preserved)", () => {

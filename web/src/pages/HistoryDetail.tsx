@@ -42,7 +42,10 @@ import {
   validateModificationBase,
   type ModificationRestoreBlockReason,
 } from "../lib/recovery/modificationValidation";
-import type { QuestionEvidence } from "../lib/generationEvidence";
+import {
+  parseQuestionTerminalPayload,
+  type QuestionEvidence,
+} from "../lib/generationEvidence";
 import type { HistoryTerminalDelivery } from "../api/client";
 
 /**
@@ -56,24 +59,27 @@ function buildHistoryEvidence(
   td: HistoryTerminalDelivery | null,
 ): QuestionEvidence | undefined {
   if (!td || td.missing.length === 0) return undefined;
-  // Build synthetic expected = delivered + missing; IDs from missing slots only.
+  // History stores only the typed terminal subset. Rebuild a minimal terminal
+  // and pass it through the same strict parser used by the live stream before
+  // allowing stored evidence to reach the teacher-facing projection.
   const missing = td.missing;
-  const syntheticTerminal = {
-    termination_reason: (td.termination_reason ?? "normal") as "normal" | "failed" | "cancelled",
+  const terminal = parseQuestionTerminalPayload({
+    termination_reason: td.termination_reason ?? "normal",
     has_final: true,
-    final_revision: null,
-    delivery_status: (td.delivery_status ?? "partial") as "complete" | "partial" | "none" | "unknown",
+    final_revision: 1,
+    delivery_status: td.delivery_status ?? "partial",
     expected: missing,
     delivered: [],
     missing,
-    review: { status: "unknown" as const },
-  };
+    review: { status: "skipped", content_revision: 1 },
+  }, questionId);
+  if (!terminal) return undefined;
   return {
     questionId,
     index: 0,
     processing: "ended",
     content: { receipt: "final", revision: null, question: null, phase: null },
-    terminal: syntheticTerminal,
+    terminal,
     terminalConflict: false,
     finalPending: false,
     finalMissing: false,

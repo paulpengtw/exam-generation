@@ -2,7 +2,35 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
+
+
+def _open_response_rubric() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "2",
+            "規準說明": f"完整作答。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": ["完整回答"],
+        },
+        {
+            "code": "1",
+            "規準說明": "部分作答。",
+            "學生作答實例": ["部分回答一", "部分回答二"],
+        },
+        {
+            "code": "0",
+            "規準說明": "錯誤作答。",
+            "學生作答實例": ["錯誤回答"],
+        },
+    ]
+
+
+def _prompt_requests_open_response(user: str) -> bool:
+    return any(
+        marker in user
+        for marker in ("題型=開放式建構反應題", "題型=Constructed response")
+    )
 
 
 class _TextClient:
@@ -38,7 +66,7 @@ class _SubClient:
         if self.prompts_by_idx is not None:
             self.prompts_by_idx[idx] = user
         concept = "" if "- **出題概念**：\n" in user else f"概念{idx}"
-        return {
+        response = {
             "序號": idx,
             "題型": "選擇題",
             "題目": f"第{idx}小題題目",
@@ -46,6 +74,9 @@ class _SubClient:
             "答案解析": "解析",
             "出題概念": concept,
         }
+        if _prompt_requests_open_response(user):
+            response["評分規準"] = _open_response_rubric()
+        return response
 
 
 class _NaturalSubClient:
@@ -60,7 +91,7 @@ class _NaturalSubClient:
         if self.prompts_by_idx is not None:
             self.prompts_by_idx[idx] = user
         concept = "" if "- **出題概念**：\n" in user else f"概念{idx}"
-        return {
+        response = {
             "序號": idx,
             "題型": "Simple multiple-choice",
             "題目": f"第{idx}小題題目",
@@ -68,6 +99,9 @@ class _NaturalSubClient:
             "答案解析": "解析",
             "出題概念": concept,
         }
+        if _prompt_requests_open_response(user):
+            response["評分規準"] = _open_response_rubric()
+        return response
 
 
 class _PayloadSubClient:

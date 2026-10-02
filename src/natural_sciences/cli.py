@@ -41,6 +41,7 @@ from src.common.generation_core import (
 from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_spec_parsing import image_spec_failure_reason, parse_image_spec
 from src.common.subject_spec import NATURAL_SCIENCES, SubjectGenerationSpec
+from src.common.subquestion_contract import normalize_rubric_student_examples
 from src.common.subquestion_forcing import force_grade
 from src.common.verification_trail import VerificationTrailEntry
 from src.config import Config
@@ -420,14 +421,18 @@ def _parse_subquestion(
             ]
         else:
             lp_refs = repair_lp_refs(lp_refs, params.學習表現_pool, learning_stage=learning_stage)
+        rubric_rows = normalize_rubric_student_examples([
+            r
+            for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
+            if isinstance(r, dict)
+        ])
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
                 規準說明=r.get("規準說明", ""),
                 學生作答實例=r.get("學生作答實例", []),
             )
-            for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
-            if isinstance(r, dict)
+            for r in rubric_rows
         ]
         raw_distractor = sq_raw.get("誘答分析", {})
         if isinstance(raw_distractor, dict):
@@ -473,6 +478,7 @@ def _parse_subquestion(
             chart_spec=sq_chart_spec,
         )
         result.科目 = ["自然科學"]
+        result.科學能力 = [competency.value for competency in params.科學能力]
         # Issue #286: force 年級 from sampled params, never trust the LLM value.
         # The prompt's own JSON example hard-codes 年級=8, causing junior-high
         # values to leak into senior-high requests.  科目 is already forced
@@ -497,8 +503,6 @@ def _parse_subquestion(
         raise
     except ValidationError as exc:
         raise SubquestionParseError.from_validation(exc) from None
-    except Exception as exc:
-        raise SubquestionParseError(f"子題解析失敗（{type(exc).__name__}）") from None
 
 
 def _parse_text_shell(

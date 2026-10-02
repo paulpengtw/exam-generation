@@ -132,6 +132,106 @@ def _assert_terminal_validates(terminal: dict) -> None:
     QuestionTerminalPayload.model_validate(payload)  # raises on invalid
 
 
+@pytest.mark.parametrize(
+    "failure_code",
+    [
+        "validation_exhausted",
+        "parser_failure",
+        "provider_failure",
+        "unknown",
+    ],
+)
+def test_slot_ref_accepts_bounded_structured_subquestion_failure(
+    failure_code: str,
+) -> None:
+    from server.generate.event_protocol import SlotRef
+
+    slot = SlotRef.model_validate({
+        "kind": "subquestion",
+        "question_id": "q-structured",
+        "subquestion_id": "q-structured-sq002",
+        "subquestion_index": 1,
+        "reason": "subquestion not delivered",
+        "failure_code": failure_code,
+        "failure_detail": "x" * 240,
+    })
+
+    assert slot.failure_code == failure_code
+    assert slot.failure_detail == "x" * 240
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("failure_code", "not_allowed"),
+        ("failure_detail", "line one\nline two"),
+        ("failure_detail", "line one\rline two"),
+        ("failure_detail", "x" * 241),
+    ],
+)
+def test_slot_ref_rejects_invalid_structured_subquestion_failure(
+    field: str,
+    value: str,
+) -> None:
+    from pydantic import ValidationError
+
+    from server.generate.event_protocol import SlotRef
+
+    with pytest.raises(ValidationError):
+        SlotRef.model_validate({
+            "kind": "subquestion",
+            "question_id": "q-structured",
+            "subquestion_id": "q-structured-sq002",
+            "subquestion_index": 1,
+            field: value,
+        })
+
+
+def test_structured_failure_evidence_does_not_change_slot_identity() -> None:
+    from server.generate.event_protocol import QuestionTerminalPayload
+
+    slot = {
+        "kind": "subquestion",
+        "question_id": "q-identity",
+        "subquestion_id": "q-identity-sq001",
+        "subquestion_index": 0,
+    }
+
+    payload = QuestionTerminalPayload.model_validate({
+        "termination_reason": "normal",
+        "has_final": True,
+        "final_revision": 1,
+        "delivery_status": "partial",
+        "expected": [slot],
+        "delivered": [],
+        "missing": [{
+            **slot,
+            "reason": "safe fallback",
+            "failure_code": "validation_exhausted",
+            "failure_detail": "safe detail",
+        }],
+        "review": {"status": "skipped", "content_revision": 1},
+    })
+
+    assert payload.missing[0].failure_code == "validation_exhausted"
+
+
+def test_legacy_reason_only_slot_ref_remains_valid() -> None:
+    from server.generate.event_protocol import SlotRef
+
+    slot = SlotRef.model_validate({
+        "kind": "subquestion",
+        "question_id": "q-legacy",
+        "subquestion_id": "q-legacy-sq001",
+        "subquestion_index": 0,
+        "reason": "subquestion not delivered",
+    })
+
+    assert slot.reason == "subquestion not delivered"
+    assert slot.failure_code is None
+    assert slot.failure_detail is None
+
+
 # ---------------------------------------------------------------------------
 # Normal path: passed verification
 # ---------------------------------------------------------------------------
@@ -623,6 +723,83 @@ def test_terminal_social_group_keeps_fixed_missing_subquestion_slot() -> None:
     assert [slot["subquestion_id"] for slot in payload["missing"]] == [
         f"{question_id}-sq002",
     ]
+    assert payload["missing"][0]["reason"] == "subquestion not delivered"
+    assert "failure_code" not in payload["missing"][0]
+    assert "failure_detail" not in payload["missing"][0]
+
+
+def test_terminal_maps_concrete_failure_to_exact_reordered_manifest_position() -> None:
+    from types import SimpleNamespace
+
+    from server.generate.service import _build_question_terminal_payload
+
+    question_id = "fixed-reordered-failure"
+    question = SimpleNamespace(
+        chart_spec=None,
+        image_spec=None,
+        圖片=None,
+        verification=None,
+        subquestions=[
+            SimpleNamespace(
+                id=f"{question_id}-sq001",
+                序號=1,
+                _plan_index=1,
+                chart_spec=None,
+                圖片=None,
+            ),
+            SimpleNamespace(
+                id=f"{question_id}-sq003",
+                序號=3,
+                _plan_index=3,
+                chart_spec=None,
+                圖片=None,
+            ),
+        ],
+    )
+    params = SimpleNamespace(
+        subject="natural_sciences",
+        skip_verify=True,
+        sub_question_count=3,
+        subquestion_configs=[SimpleNamespace(content_type=None) for _ in range(3)],
+    )
+    manifest = [
+        {"subquestion_index": 2, "id": f"{question_id}-sq003", "序號": 3},
+        {"subquestion_index": 0, "id": f"{question_id}-sq001", "序號": 1},
+        {"subquestion_index": 1, "id": f"{question_id}-sq002", "序號": 2},
+    ]
+
+    payload = _build_question_terminal_payload(
+        question_id=question_id,
+        termination_reason="normal",
+        has_final=True,
+        final_revision=2,
+        question=question,
+        params=params,
+        output_dir=None,
+        resolution=_QuestionPositionResolution(
+            announced_slots=manifest,
+            subquestion_failures={
+                1: {
+                    "failure_code": "validation_exhausted",
+                    "failure_detail": "safe concrete rubric shape failure",
+                },
+                2: {
+                    "failure_code": "provider_failure",
+                    "failure_detail": "must not attach to a delivered slot",
+                },
+            },
+        ),
+    )
+
+    assert payload["missing"] == [{
+        "kind": "subquestion",
+        "question_id": question_id,
+        "subquestion_id": f"{question_id}-sq002",
+        "subquestion_index": 1,
+        "reason": "safe concrete rubric shape failure",
+        "failure_code": "validation_exhausted",
+        "failure_detail": "safe concrete rubric shape failure",
+    }]
 
 
 def test_terminal_social_group_uses_announced_manifest_over_resolved_count() -> None:

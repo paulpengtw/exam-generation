@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const recordFigureFallbackMock = vi.hoisted(() => vi.fn());
 const fetchMock = vi.hoisted(() => vi.fn());
@@ -22,7 +22,10 @@ import type {
   FigurePolicyTrailEntry,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
-import type { QuestionEvidence } from "../lib/generationEvidence";
+import type {
+  GenerationSlotReference,
+  QuestionEvidence,
+} from "../lib/generationEvidence";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -95,6 +98,37 @@ describe("QuestionCard draft rendering", () => {
     );
 
     expect(screen.queryByTestId("question-card-live-phase")).not.toBeInTheDocument();
+  });
+
+  it("renders confirmed cancellation without fabricating a missing-slot cause", () => {
+    const evidence: QuestionEvidence = {
+      questionId: "q_test",
+      index: 0,
+      processing: "ended",
+      content: { receipt: "draft", revision: 1, question, phase: "draft" },
+      terminal: {
+        termination_reason: "cancelled",
+        has_final: false,
+        final_revision: null,
+        delivery_status: "none",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "unknown", unknown_reason: "cancelled" },
+      },
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "unknown", revision: null },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+    };
+
+    render(<QuestionCard question={question} evidence={evidence} phase="draft" isFinal={false} />);
+
+    expect(screen.getByText("已取消")).toBeInTheDocument();
+    expect(screen.queryByText("Sub-question unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("No safe detailed cause is available.")).not.toBeInTheDocument();
   });
 });
 
@@ -453,10 +487,16 @@ describe("QuestionCard math 題組", () => {
 });
 
 describe("QuestionCard fixed social-studies slots", () => {
-  it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
-    const thirdSub: SubQuestion = { ...ssSub, id: "ss1-sq003", 序號: 3, 題目: "Third question" };
-    const partialQuestion = { ...ssQuestion, subquestions: [ssSub, thirdSub] };
-    const evidence: QuestionEvidence = {
+  const thirdSub: SubQuestion = {
+    ...ssSub,
+    id: "ss1-sq003",
+    序號: 3,
+    題目: "Third question",
+  };
+  const partialQuestion = { ...ssQuestion, subquestions: [ssSub, thirdSub] };
+
+  function makeEvidence(missingSlot: GenerationSlotReference): QuestionEvidence {
+    return {
       questionId: "ss1",
       index: 0,
       processing: "ended",
@@ -475,15 +515,7 @@ describe("QuestionCard fixed social-studies slots", () => {
           { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq001", subquestion_index: 0 },
           { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq003", subquestion_index: 2 },
         ],
-        missing: [
-          {
-            kind: "subquestion",
-            question_id: "ss1",
-            subquestion_id: "ss1-sq002",
-            subquestion_index: 1,
-            reason: "subquestion not delivered",
-          },
-        ],
+        missing: [missingSlot],
         review: { status: "skipped", content_revision: 3 },
       },
       finalPending: false,
@@ -493,13 +525,50 @@ describe("QuestionCard fixed social-studies slots", () => {
       figurePolicyTrail: [],
       referenceExampleRecord: undefined,
     };
+  }
+
+  it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
+    const evidence = makeEvidence({
+      kind: "subquestion",
+      question_id: "ss1",
+      subquestion_id: "ss1-sq002",
+      subquestion_index: 1,
+      reason: "subquestion not delivered",
+    });
 
     render(<QuestionCard question={partialQuestion} evidence={evidence} isFinal />);
 
     expect(screen.getByTestId("evidence-delivery-status")).toHaveTextContent("部分");
     expect(screen.getByTestId("missing-subquestion-2")).toHaveTextContent("Sub-question unavailable");
+    expect(screen.getByTestId("missing-subquestion-2")).toHaveTextContent(
+      "Reason: subquestion not delivered",
+    );
     expect(screen.getByText("Third question")).toBeInTheDocument();
     expect(screen.getByText("Q3題")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["validation_exhausted", "The response format remained invalid after retry."],
+    ["parser_failure", "The response could not be parsed."],
+    ["provider_failure", "The model service call failed."],
+    ["unknown", "No safe detailed cause is available."],
+  ] as const)("localizes %s missing-slot evidence and appends safe detail", (failureCode, summary) => {
+    const evidence = makeEvidence({
+      kind: "subquestion",
+      question_id: "ss1",
+      subquestion_id: "ss1-sq002",
+      subquestion_index: 1,
+      reason: "legacy fallback must not be shown",
+      failure_code: failureCode,
+      failure_detail: "Rubric code E was duplicated.",
+    });
+
+    render(<QuestionCard question={partialQuestion} evidence={evidence} isFinal />);
+
+    const block = screen.getByTestId("missing-subquestion-2");
+    expect(block).toHaveTextContent(summary);
+    expect(block).toHaveTextContent("Details: Rubric code E was duplicated.");
+    expect(block).not.toHaveTextContent("legacy fallback must not be shown");
   });
 });
 
@@ -644,20 +713,20 @@ function rejectionResponse(error: string, message: string): Response {
 }
 
 describe("QuestionCard 圈選 capture", () => {
-  it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", () => {
+  it("captures a within-field DOM Range as one segment with its field path, offsets, and quote", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passage = getSelectionField("文本");
     selectRange(passage, 7, passage, 14);
 
-    const chip = screen.getByRole("listitem");
+    const chip = await screen.findByRole("listitem");
     expect(chip).toHaveAttribute("data-field-path", "文本");
     expect(chip).toHaveAttribute("data-start", "7");
     expect(chip).toHaveAttribute("data-end", "14");
     expect(chip).toHaveAttribute("data-quoted-text", "passage");
   });
 
-  it("splits a cross-boundary DOM Range into ordered per-field segments", () => {
+  it("splits a cross-boundary DOM Range into ordered per-field segments", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     selectRange(
@@ -667,7 +736,7 @@ describe("QuestionCard 圈選 capture", () => {
       8,
     );
 
-    const chips = screen.getAllByRole("listitem");
+    const chips = await screen.findAllByRole("listitem");
     expect(chips).toHaveLength(2);
     expect(chips.map((chip) => chip.getAttribute("data-field-path"))).toEqual([
       "文本",
@@ -683,64 +752,73 @@ describe("QuestionCard 圈選 capture", () => {
     ]);
   });
 
-  it("rejects a chrome-only selection with user feedback and no empty chip", () => {
+  it("rejects a chrome-only selection with user feedback and no empty chip", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passageLabel = screen.getByText("Passage", { exact: true });
     selectRange(passageLabel, 0, passageLabel, "Passage".length);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("Select exam content to add a selection.");
-    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Select exam content to add a selection.",
+    );
+    await waitFor(() => expect(screen.queryByRole("listitem")).not.toBeInTheDocument());
   });
 
-  it("renders each captured 圈選 as a visible annotation chip", () => {
+  it("renders each captured 圈選 as a visible annotation chip", async () => {
     render(<QuestionCard question={ssQuestion} isFinal />);
 
     const passage = getSelectionField("文本");
     selectRange(passage, 7, passage, 14);
 
-    expect(screen.getByRole("list", { name: "Selections" })).toBeInTheDocument();
-    expect(screen.getByRole("listitem")).toHaveTextContent("passage");
+    expect(await screen.findByRole("list", { name: "Selections" })).toBeInTheDocument();
+    expect(await screen.findByRole("listitem")).toHaveTextContent("passage");
   });
 
-  it("gives each captured 圈選 an editable 修改指示 and deletes its chip and note together", () => {
+  it("gives each captured 圈選 an editable 修改指示 and deletes its chip and note together", async () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
 
-    const instruction = screen.getByRole("textbox", {
+    const instruction = await screen.findByRole("textbox", {
       name: "Modification instruction 1",
     });
     expect(instruction).toHaveValue("");
 
     fireEvent.change(instruction, { target: { value: "Fix the wording" } });
-    expect(instruction).toHaveValue("Fix the wording");
+    await waitFor(() => expect(instruction).toHaveValue("Fix the wording"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete selection 1" }));
 
-    expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Modification instruction 1" }))
-      .not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+      expect(screen.queryByRole("textbox", { name: "Modification instruction 1" }))
+        .not.toBeInTheDocument();
+    });
   });
 
-  it("keeps submit disabled with no selections or any missing 修改指示", () => {
+  it("keeps submit disabled with no selections or any missing 修改指示", async () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     const submit = screen.getByRole("button", { name: "Submit modifications" });
     expect(submit).toBeDisabled();
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
+    const firstInstruction = await screen.findByRole("textbox", {
+      name: "Modification instruction 1",
+    });
     expect(submit).toBeDisabled();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(firstInstruction, {
       target: { value: "   " },
     });
-    expect(submit).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .toBeDisabled());
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(firstInstruction, {
       target: { value: "Fix the passage" },
     });
-    expect(submit).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
 
     selectRange(
       getSelectionField("subquestions[0].題目"),
@@ -748,12 +826,17 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    expect(submit).toBeDisabled();
+    const secondInstruction = await screen.findByRole("textbox", {
+      name: "Modification instruction 2",
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .toBeDisabled());
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(secondInstruction, {
       target: { value: "Fix the subquestion" },
     });
-    expect(submit).not.toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
   });
 
   it("posts the exact per-圈選 payload with field-addressed segments and 修改指示", async () => {
@@ -763,7 +846,7 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-422" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
 
@@ -773,10 +856,12 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 2" }), {
       target: { value: "Fix the subquestion" },
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -817,9 +902,11 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     const alert = await screen.findByRole("alert");
@@ -838,9 +925,11 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
 
     const alert = await screen.findByRole("alert");
@@ -862,7 +951,7 @@ describe("QuestionCard 圈選 capture", () => {
     render(<QuestionCard question={ssQuestion} recordId="record-419" isFinal />);
 
     selectRange(getSelectionField("文本"), 7, getSelectionField("文本"), 14);
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 1" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 1" }), {
       target: { value: "Fix the passage" },
     });
     selectRange(
@@ -871,22 +960,28 @@ describe("QuestionCard 圈選 capture", () => {
       getSelectionField("subquestions[0].題目"),
       8,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Modification instruction 2" }), {
+    fireEvent.change(await screen.findByRole("textbox", { name: "Modification instruction 2" }), {
       target: { value: "Fix the subquestion" },
     });
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Submit modifications" }))
+      .not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await screen.findByRole("alert");
 
-    expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getByRole("textbox", { name: "Modification instruction 1" }))
+    expect(await screen.findAllByRole("listitem")).toHaveLength(2);
+    expect(await screen.findByRole("textbox", { name: "Modification instruction 1" }))
       .toHaveValue("Fix the passage");
-    expect(screen.getByRole("textbox", { name: "Modification instruction 2" }))
+    expect(await screen.findByRole("textbox", { name: "Modification instruction 2" }))
       .toHaveValue("Fix the subquestion");
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete selection 1" }));
-    expect(screen.getByRole("button", { name: "Submit modifications" })).not.toBeDisabled();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete selection 1" }));
+    await waitFor(() => {
+      expect(screen.getAllByRole("listitem")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Submit modifications" }))
+        .not.toBeDisabled();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Submit modifications" }));
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));

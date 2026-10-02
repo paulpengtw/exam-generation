@@ -7,12 +7,34 @@ from pathlib import Path
 
 import pytest
 
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a"
     "4e8AAAAASUVORK5CYII="
 )
+
+
+def _valid_open_response_rubric(index: int) -> list[dict[str, object]]:
+    label = f"slot-{index}"
+    return [
+        {
+            "code": "2",
+            "規準說明": f"{label}完整推理。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": [f"{label}完整作答"],
+        },
+        {
+            "code": "1",
+            "規準說明": f"{label}推理鏈有缺口。",
+            "學生作答實例": [f"{label}缺少證據", f"{label}理由未連結"],
+        },
+        {
+            "code": "0",
+            "規準說明": f"{label}方向錯誤。",
+            "學生作答實例": [f"{label}錯誤作答"],
+        },
+    ]
 
 
 class FigureProvider:
@@ -62,6 +84,7 @@ class SubquestionProvider:
         payload = {
             "id": f"slot-{index}", "序號": index, "題型": question_type,
             "題目": f"slot-{index} 的觀察結果為何？", "答案": "A", "答案解析": "依據資料。",
+            "評分規準": _valid_open_response_rubric(index),
         }
         if index in self.visual_slots:
             payload["chart_spec"] = {

@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from src.common.correction_decision import CorrectionDecision
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 from src.natural_sciences.cli import generate_with_corrections
 from src.natural_sciences.sampler import sample_params
-from src.natural_sciences.schemas import ExamQuestion
+from src.natural_sciences.schemas import ExamQuestion, ImageSpec
 
 _TEXT_SHELL = {
     "核心問題": "測試核心問題",
@@ -246,3 +251,214 @@ def test_accepted_top_spec_correction_preserves_visual_slot_pins(
     assert main_client.image_paths.count("visual_pin_correction.png") == 2
     assert main_client.image_paths.count("visual_pin_correction_sq2.png") == 2
     assert html_renderer.output_paths.count("visual_pin_correction_sq1.png") == 2
+
+
+def test_accepted_correction_reapplies_pins_and_scrubs_pure_text_visual(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import src.natural_sciences.cli as natural_sciences_cli
+
+    params = sample_params(
+        grade=8,
+        content_type="含圖片",
+        sub_question_count=3,
+        subquestion_configs=[
+            {
+                "question_type": "Simple multiple-choice",
+                "content_type": "含圖片",
+                "image_generation_mode": "html",
+                "figure_kind": "槽位1圖片",
+            },
+            {
+                "question_type": "Simple multiple-choice",
+                "content_type": "含圖片",
+                "image_generation_mode": "gpt_image",
+                "figure_kind": "槽位2圖片",
+            },
+            {
+                "question_type": "Simple multiple-choice",
+                "content_type": "純文字",
+                "image_generation_mode": "gpt_image",
+            },
+        ],
+    )
+
+    def adversarial_accepted_correction(
+        _client: Any,
+        question: ExamQuestion,
+        _verification: Any,
+        *,
+        on_decision: Any,
+        **_kwargs: Any,
+    ) -> ExamQuestion:
+        candidate = question.model_copy(deep=True)
+        for position, subquestion in enumerate(candidate.subquestions, start=1):
+            subquestion.id = f"model-owned-{position}"
+            subquestion.序號 = 99
+            subquestion.題型 = "Constructed response"
+            subquestion.題目內容類型 = "含圖片"
+            subquestion.image_generation_mode = "gpt_image"
+            subquestion.圖片 = f"model-owned-{position}.png"
+            subquestion.chart_spec = ImageSpec(
+                render_mode="gpt_image" if position != 1 else "html",
+                figure_kind=f"槽位{position}圖片",
+                description=f"修正後槽位{position}圖片",
+                data={},
+            )
+        candidate.verification = None
+        on_decision(CorrectionDecision(outcome="accepted"))
+        return candidate
+
+    monkeypatch.setattr(
+        natural_sciences_cli,
+        "_NS_SPEC",
+        dataclasses.replace(
+            natural_sciences_cli._NS_SPEC,
+            correct_fn=adversarial_accepted_correction,
+        ),
+    )
+    main_client = _ControlledMainClient(
+        params.學習內容_pool,
+        params.學習表現_pool,
+    )
+    html_renderer = _ControlledHtmlRenderer()
+
+    question = generate_with_corrections(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=main_client,
+        params=params,
+        question_id="visual_pin_adversarial_correction",
+        max_retries=1,
+        disable_reference_fewshot=True,
+        html_renderer=html_renderer,
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _ControlledSubClient(
+            params.學習內容_pool,
+            params.學習表現_pool,
+        ),
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert [sub.id for sub in question.subquestions] == [
+        "visual_pin_adversarial_correction-sq001",
+        "visual_pin_adversarial_correction-sq002",
+        "visual_pin_adversarial_correction-sq003",
+    ]
+    assert [sub.序號 for sub in question.subquestions] == [1, 2, 3]
+    assert [sub._plan_index for sub in question.subquestions] == [1, 2, 3]
+    assert [sub.題型.value for sub in question.subquestions] == [
+        "Simple multiple-choice",
+        "Simple multiple-choice",
+        "Simple multiple-choice",
+    ]
+    pure_text = question.subquestions[2]
+    assert pure_text.題目內容類型 == "純文字"
+    assert pure_text.chart_spec is None
+    assert pure_text.圖片 is None
+    assert pure_text.image_generation_mode == "gpt_image"
+    assert "visual_pin_adversarial_correction_sq3.png" not in main_client.image_paths
+    assert "visual_pin_adversarial_correction_sq3.png" not in html_renderer.output_paths
+    assert main_client.image_paths.count(
+        "visual_pin_adversarial_correction_sq2.png"
+    ) == 2
+    assert html_renderer.output_paths.count(
+        "visual_pin_adversarial_correction_sq1.png"
+    ) == 2
+
+
+def test_correction_contract_rejects_invalid_open_response_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import src.natural_sciences.cli as natural_sciences_cli
+
+    params = sample_params(
+        grade=8,
+        content_type="含圖片",
+        sub_question_count=3,
+        subquestion_configs=[
+            {"question_type": "Simple multiple-choice", "content_type": "純文字"},
+            {"question_type": "Simple multiple-choice", "content_type": "純文字"},
+            {"question_type": "Constructed response", "content_type": "純文字"},
+        ],
+    )
+
+    class _OpenResponseThirdSubClient(_ControlledSubClient):
+        def generate_json(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            response = super().generate_json(*args, **kwargs)
+            plan_slot = int(kwargs["agent_override"].split("#")[1])
+            if plan_slot == 3:
+                response["題型"] = "Constructed response"
+                response["評分規準"] = [
+                    {
+                        "code": "2",
+                        "規準說明": f"完整推理。{EXTRA_ITEMS_FIXED_SENTENCE}",
+                        "學生作答實例": ["完整回答"],
+                    },
+                    {
+                        "code": "1",
+                        "規準說明": "推理有兩種缺口。",
+                        "學生作答實例": ["缺少證據", "連結錯誤"],
+                    },
+                    {
+                        "code": "0",
+                        "規準說明": "方向錯誤。",
+                        "學生作答實例": ["錯誤觀念"],
+                    },
+                ]
+            return response
+
+    def invalid_accepted_correction(
+        _client: Any,
+        question: ExamQuestion,
+        _verification: Any,
+        *,
+        on_decision: Any,
+        **_kwargs: Any,
+    ) -> ExamQuestion:
+        candidate = question.model_copy(deep=True)
+        candidate.subquestions[0].題目 = "this rejected edit must not ship"
+        candidate.subquestions[2].評分規準 = []
+        candidate.verification = None
+        on_decision(CorrectionDecision(outcome="accepted"))
+        return candidate
+
+    monkeypatch.setattr(
+        natural_sciences_cli,
+        "_NS_SPEC",
+        dataclasses.replace(
+            natural_sciences_cli._NS_SPEC,
+            correct_fn=invalid_accepted_correction,
+        ),
+    )
+    main_client = _ControlledMainClient(
+        params.學習內容_pool,
+        params.學習表現_pool,
+    )
+    trail: list[Any] = []
+
+    question = generate_with_corrections(
+        config=Config(api_key="x", output_dir=tmp_path, data_dir=Path("data")),
+        client=main_client,
+        params=params,
+        question_id="visual_pin_rejected_contract",
+        max_retries=1,
+        disable_reference_fewshot=True,
+        html_renderer=_ControlledHtmlRenderer(),
+        image_generation_mode="gpt_image",
+        sub_client_factory=lambda: _OpenResponseThirdSubClient(
+            params.學習內容_pool,
+            params.學習表現_pool,
+        ),
+        on_trail_entry=trail.append,
+    )
+
+    assert isinstance(question, ExamQuestion)
+    assert question.subquestions[0].題目 == "原始槽位1題目"
+    correction = next(entry for entry in trail if entry.kind == "correction")
+    assert correction.outcome == "rejected"
+    assert correction.reason is not None
+    assert correction.reason.code == "fixed_slot_contract"
+    assert correction.reason.path == "subquestions[2]"
+    assert "評分規準" in correction.reason.message

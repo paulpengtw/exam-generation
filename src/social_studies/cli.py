@@ -43,6 +43,7 @@ from src.common.generation_core import (
 from src.common.generation_events import OperationScope, new_operation_scope
 from src.common.image_spec_parsing import image_spec_failure_reason, parse_image_spec
 from src.common.subject_spec import SOCIAL_STUDIES, SubjectGenerationSpec
+from src.common.subquestion_contract import normalize_rubric_student_examples
 from src.common.subquestion_forcing import force_grade
 from src.common.verification_trail import VerificationTrailEntry
 from src.config import Config
@@ -505,14 +506,18 @@ def _parse_subquestion(
                 else sq_raw.get("認知歷程")
             )
         )
+        rubric_rows = normalize_rubric_student_examples([
+            r
+            for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
+            if isinstance(r, dict)
+        ])
         rubric = [
             RubricEntry(
                 code=str(r.get("code", "")),
                 規準說明=r.get("規準說明", ""),
                 學生作答實例=r.get("學生作答實例", []),
             )
-            for r in (sq_raw.get("評分規準") or sq_raw.get("評分標準") or [])
-            if isinstance(r, dict)
+            for r in rubric_rows
         ]
         primary_spec = sq_raw.get("image_spec")
         fallback_spec = sq_raw.get("chart_spec")
@@ -565,6 +570,7 @@ def _parse_subquestion(
             interaction=sq_raw.get("interaction"),
         )
         result.科目 = [params.科目.value]
+        result.核心素養 = [competency.value for competency in params.核心素養]
         # 記錄建構這一小題時所用的 PLAN 索引，供後續圖片修補沿用同一格 各小題配置。
         # 模型自報的 `序號` 可能錯位；修補端必須走這個值，不能拿 `序號` 去查。
         result._plan_index = i
@@ -589,8 +595,6 @@ def _parse_subquestion(
         raise
     except ValidationError as exc:
         raise SubquestionParseError.from_validation(exc) from None
-    except Exception as exc:
-        raise SubquestionParseError(f"子題解析失敗（{type(exc).__name__}）") from None
 
 
 def _parse_text_shell(

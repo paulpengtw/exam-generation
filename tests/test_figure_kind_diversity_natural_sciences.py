@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 from src.natural_sciences.cli import generate_one
 from src.natural_sciences.sampler import sample_params
@@ -26,6 +27,27 @@ _TEXT_SHELL_WITH_TOP_IMAGE = {
 }
 
 
+def _valid_open_response_rubric(index: int) -> list[dict[str, object]]:
+    label = f"概念{index}"
+    return [
+        {
+            "code": "2",
+            "規準說明": f"{label}完整推理。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": [f"{label}完整作答"],
+        },
+        {
+            "code": "1",
+            "規準說明": f"{label}推理鏈有缺口。",
+            "學生作答實例": [f"{label}缺少證據", f"{label}理由未連結"],
+        },
+        {
+            "code": "0",
+            "規準說明": f"{label}方向錯誤。",
+            "學生作答實例": [f"{label}錯誤作答"],
+        },
+    ]
+
+
 def _subquestion_response(index: int) -> dict:
     response = {
         "序號": index,
@@ -40,7 +62,7 @@ def _subquestion_response(index: int) -> dict:
         "題目": "根據圖片，以下何者正確？（A）甲（B）乙（C）丙（D）丁",
         "答案": "A",
         "答案解析": "解析",
-        "評分規準": [],
+        "評分規準": _valid_open_response_rubric(index),
     }
     if index != 3:
         response["chart_spec"] = {

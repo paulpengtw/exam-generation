@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,10 +32,18 @@ class _AppState:
 
 
 class _BarrierStream:
-    def __init__(self, *, release, thinking_seen, content: str):
+    def __init__(
+        self,
+        *,
+        release,
+        thinking_seen,
+        content: str,
+        thinking_delay_seconds: float = 0,
+    ):
         self._release = release
         self._thinking_seen = thinking_seen
         self._content = content
+        self._thinking_delay_seconds = thinking_delay_seconds
 
     def __enter__(self):
         return self
@@ -43,6 +52,7 @@ class _BarrierStream:
         return False
 
     def __iter__(self):
+        time.sleep(self._thinking_delay_seconds)
         yield SimpleNamespace(
             type="content_block_delta",
             delta=SimpleNamespace(type="thinking_delta", thinking="planner reasoning"),
@@ -99,6 +109,10 @@ def test_planner_streams_thinking_and_persists_before_generation(
             release=release,
             thinking_seen=thinking_seen,
             content=plan_response,
+            # Keep this above the former per-event 2 s deadline.  The test
+            # must tolerate a busy suite delaying planner activity without
+            # cancelling the async generator that it is trying to inspect.
+            thinking_delay_seconds=2.1,
         )
 
     def openai_stream(_self, **kwargs):
@@ -162,13 +176,16 @@ def test_planner_streams_thinking_and_persists_before_generation(
         )
         events: list[dict] = []
         try:
-            events.append(await asyncio.wait_for(anext(stream), timeout=2))
+            # Bound the semantic milestone rather than every scheduling gap.
+            # A per-event wait_for cancels the stream when a loaded runner takes
+            # more than two seconds to deliver any one interim event.
+            async with asyncio.timeout(10):
+                while True:
+                    event = await anext(stream)
+                    events.append(event)
+                    if event["event"] == SSEEventName.LLM_THINKING:
+                        break
             assert events[0]["event"] == SSEEventName.STARTED
-            while True:
-                event = await asyncio.wait_for(anext(stream), timeout=2)
-                events.append(event)
-                if event["event"] == SSEEventName.LLM_THINKING:
-                    break
             assert thinking_seen.is_set()
             assert not release.is_set()
             release.set()
