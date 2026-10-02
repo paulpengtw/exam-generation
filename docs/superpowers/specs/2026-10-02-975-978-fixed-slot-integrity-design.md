@@ -53,7 +53,7 @@ slot-owned content constraints at one authoritative admission point:
 
 The design makes slot admission a narrow, deterministic boundary and carries a structured,
 safe failure sidecar through the terminal path already established by
-[ADR 0016](https://github.com/paulpengtw/exam-generation/blob/staging/docs/adr/0016-verification-trail-and-question-terminal-evidence.md).
+[ADR 0016](https://github.com/paulpengtw/exam-generation/blob/staging/docs/adr/0016-verification-trail-is-persisted-first-class.md).
 
 ## Invariants
 
