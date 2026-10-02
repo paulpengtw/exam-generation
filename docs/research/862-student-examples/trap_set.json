@@ -1,0 +1,113 @@
+{
+ "note": "Trap set for #862: genuine student-voice answers to judging 小題, containing grading words about the item. Each sits under the real 小題 and its real 規準說明, in a separate checker call.",
+ "traps": [
+  {
+   "id": "trap:typhoon-database|0|4|2|0",
+   "key": "typhoon-database|0|4",
+   "level": "2",
+   "text": "推論一正確，因為衛星雲圖和雨量圖都顯示颱風經過東部時東部雨量最大；推論二不正確，只用了一個颱風的資料就說所有颱風都這樣，證據不足；推論三不合適，地形和颱風位置都可能造成降雨，他們沒有排除其他原因。"
+  },
+  {
+   "id": "trap:typhoon-database|0|4|1|0",
+   "key": "typhoon-database|0|4",
+   "level": "1",
+   "text": "推論一正確，推論二錯誤，因為只有一個颱風的資料；推論三我覺得也對。"
+  },
+  {
+   "id": "trap:typhoon-database|0|4|1|1",
+   "key": "typhoon-database|0|4",
+   "level": "1",
+   "text": "推論二的佐證資料不完整，只看一個颱風就下結論，其他兩個推論都合適。"
+  },
+  {
+   "id": "trap:typhoon-database|0|4|0|0",
+   "key": "typhoon-database|0|4",
+   "level": "0",
+   "text": "三個推論都合適，因為颱風路徑和降雨圖看起來都對得上。"
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|2|0",
+   "key": "entomopathogenic-fungi|0|5",
+   "level": "2",
+   "text": "曉萍的推論不恰當。三組在施藥前的蟲數本來就不一樣，B組平均比較低可能只是一開始蟲就比較少；而且四次加總起來看不出每次施藥後的變化，如果後來有抗藥性也看不出來。"
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|1|0",
+   "key": "entomopathogenic-fungi|0|5",
+   "level": "1",
+   "text": "曉萍說B組效果最好是錯的，因為施藥前三組的蟲數就不同，直接比平均不公平。"
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|0|0",
+   "key": "entomopathogenic-fungi|0|5",
+   "level": "0",
+   "text": "研究員說錯了，B組平均507.33最低，所以B組防治效果最好是正確的。"
+  },
+  {
+   "id": "trap:氣候變遷|0|4|2|0",
+   "key": "氣候變遷|0|4",
+   "level": "2",
+   "text": "反方的說法不正確。圖中溫度和二氧化碳只有部分時段是先後變化，這只能說明兩者有相關，不能說明誰造成誰，所以不能只看先後順序就說二氧化碳和人為因素無關。"
+  },
+  {
+   "id": "trap:氣候變遷|0|4|1|0",
+   "key": "氣候變遷|0|4",
+   "level": "1",
+   "text": "反方說錯了，1980年後二氧化碳一直上升，溫度也一直上升，但太陽給地球的能量沒有上升。"
+  },
+  {
+   "id": "trap:氣候變遷|0|4|0|0",
+   "key": "氣候變遷|0|4",
+   "level": "0",
+   "text": "反方是對的，溫度先上升二氧化碳才上升，所以二氧化碳不是溫度上升的原因。"
+  },
+  {
+   "id": "trap:truck-cornering|0|3|2|0",
+   "key": "truck-cornering|0|3",
+   "level": "2",
+   "text": "我會採用看到貨車翻滾幾圈、往哪個方向翻的民眾意見，因為那是可以觀察、也能和路面痕跡互相對照的事實；說「司機一定是睡著了」的不採用，那是推測，沒有證據。"
+  },
+  {
+   "id": "trap:truck-cornering|0|3|1|0",
+   "key": "truck-cornering|0|3",
+   "level": "1",
+   "text": "說「太不小心了」的意見不客觀，不能寫進報告，只寫大家看到的事情。"
+  },
+  {
+   "id": "trap:truck-cornering|0|3|0|0",
+   "key": "truck-cornering|0|3",
+   "level": "0",
+   "text": "看到的人越多越可信，大部分民眾都說司機開太快，所以這個說法正確，應該寫進報告。"
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|2|0",
+   "key": "wind-corridor-effect|0|3",
+   "level": "2",
+   "text": "可以支持。間距越小，縫隙中的風速越大，而且都比沒有放積木時的風速還大，代表縫隙真的會讓風加速，符合天斬煞的定義。"
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|1|0",
+   "key": "wind-corridor-effect|0|3",
+   "level": "1",
+   "text": "我認為可以支持，間距8cm的時候風速最大，間距越大風速越小，所以天斬煞的說法是正確的。"
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|0|0",
+   "key": "wind-corridor-effect|0|3",
+   "level": "0",
+   "text": "不能支持，風速計放在縫隙中間本來就會測到風，所以這個實驗設計錯誤，數據不能用。"
+  },
+  {
+   "id": "trap:fasting-method|0|2|2|0",
+   "key": "fasting-method|0|2",
+   "level": "2",
+   "text": "小基的方式比較好。小丁改變用餐次數時，用餐的總時間也跟著變了，兩個變因混在一起，這樣驗證不正確；小基固定次數只改變總時間，比較能看出胰島素分泌時間的影響。"
+  },
+  {
+   "id": "trap:fasting-method|0|2|0|0",
+   "key": "fasting-method|0|2",
+   "level": "0",
+   "text": "小丁比較好，小基的假設不合理，因為胰島素是每吃一餐分泌一次，所以次數才是重點。"
+  }
+ ]
+}
