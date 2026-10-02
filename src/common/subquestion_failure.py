@@ -11,6 +11,13 @@ SubquestionFailureCode = Literal[
     "unknown",
 ]
 
+SUBQUESTION_FAILURE_CODES: frozenset[str] = frozenset({
+    "validation_exhausted",
+    "parser_failure",
+    "provider_failure",
+    "unknown",
+})
+
 MAX_FAILURE_DETAIL_CHARS = 240
 MAX_EXCEPTION_CLASS_CHARS = 64
 

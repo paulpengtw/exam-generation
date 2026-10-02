@@ -219,7 +219,13 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
         on_update = kwargs["on_question_update"]
         context = kwargs["question_context"]
 
-        def stage(scope: Any, status: str, *, supersedes: str | None = None) -> None:
+        def stage(
+            scope: Any,
+            status: str,
+            *,
+            supersedes: str | None = None,
+            **extra: Any,
+        ) -> None:
             slot_index = scope.subquestion_index
             agent = (
                 f"sub_generator#{slot_index + 1}"
@@ -238,6 +244,7 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
             }
             if supersedes is not None:
                 event["supersedes_operation_id"] = supersedes
+            event.update(extra)
             client.emit(event)
 
         def call(scope: Any, *, retry_of: str | None = None) -> Any:
@@ -314,7 +321,14 @@ def _run_stream(subject: str, tmp_path: Path) -> tuple[list[dict[str, Any]], str
                 supersedes=superseded_operation_id,
             )
             call(bad_scope)
-            stage(bad_scope, "error")
+            if attempt == _EXPECTED_ATTEMPTS:
+                stage(
+                    bad_scope,
+                    "error",
+                    code="subquestion_exhausted",
+                    failure_code="validation_exhausted",
+                    failure_detail="子題欄位「題目」驗證失敗（missing）",
+                )
             superseded_operation_id = bad_scope.operation_id
 
         # Slot 3 (subquestion_index=2) — succeeds
@@ -497,6 +511,9 @@ def test_blank_subquestion_slot_is_dropped(subject: str, tmp_path: Path) -> None
     assert missing_slot["kind"] == "subquestion"
     assert missing_slot["subquestion_id"] == f"{qid}-sq002"
     assert missing_slot["subquestion_index"] == _BAD_SLOT_INDEX
+    assert missing_slot["failure_code"] == "validation_exhausted"
+    assert missing_slot["failure_detail"] == "子題欄位「題目」驗證失敗（missing）"
+    assert missing_slot["reason"] == missing_slot["failure_detail"]
 
     # Delivered slots must be sq001 and sq003 only.
     delivered = payload["delivered"]

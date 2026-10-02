@@ -69,6 +69,10 @@ from src.common.generation_events import (
     new_operation_scope,
     new_run_id,
 )
+from src.common.subquestion_failure import (
+    MAX_FAILURE_DETAIL_CHARS,
+    SUBQUESTION_FAILURE_CODES,
+)
 from src.llm_client import (
     LLMClient,
     classify_provider_error,
@@ -492,6 +496,7 @@ class _WorkerRecorderSetup:
     verification_trail: list    # list[dict[str, Any]] – mutated by capture_trail_entry
     figure_policy_trail: list   # list[dict[str, Any]] – mutated by capture_figure_policy_entry
     reference_example_entries: list  # list[dict[str, Any]] – mutated by capture_reference_example_entry  # noqa: E501
+    subquestion_failures: dict[int, dict[str, str]]
 
 
 def _setup_worker_recorders(
@@ -519,6 +524,7 @@ def _setup_worker_recorders(
     figure_policy_recorder = ctx.figure_policy_recorder
     reference_example_recorder = ctx.reference_example_recorder
     publisher_observer = make_publisher_observer(ctx.publisher, ctx.manifest[i])
+    subquestion_failures: dict[int, dict[str, str]] = {}
 
     def observe_worker_event(event: dict[str, Any]) -> None:
         if event.get("type") == "plan":
@@ -528,6 +534,36 @@ def _setup_worker_recorders(
                     ctx.manifest[i].question_id,
                     slots,
                 )
+        if (
+            event.get("type") == "stage"
+            and event.get("stage") == "llm_generate"
+            and event.get("status") == "error"
+            and event.get("code") == "subquestion_exhausted"
+        ):
+            slot_index = event.get("subquestion_index")
+            failure_code = event.get("failure_code")
+            failure_detail = event.get("failure_detail")
+            valid_index = (
+                isinstance(slot_index, int)
+                and not isinstance(slot_index, bool)
+                and slot_index >= 0
+            )
+            valid_code = (
+                isinstance(failure_code, str)
+                and failure_code in SUBQUESTION_FAILURE_CODES
+            )
+            valid_detail = failure_detail is None or (
+                isinstance(failure_detail, str)
+                and bool(failure_detail)
+                and "\n" not in failure_detail
+                and "\r" not in failure_detail
+                and len(failure_detail) <= MAX_FAILURE_DETAIL_CHARS
+            )
+            if valid_index and valid_code and valid_detail:
+                record: dict[str, str] = {"failure_code": failure_code}
+                if failure_detail is not None:
+                    record["failure_detail"] = failure_detail
+                subquestion_failures[slot_index] = record
         publisher_observer(event)
 
     question_client.set_observer(
@@ -609,6 +645,7 @@ def _setup_worker_recorders(
         verification_trail=verification_trail,
         figure_policy_trail=figure_policy_trail,
         reference_example_entries=reference_example_entries,
+        subquestion_failures=subquestion_failures,
     )
 
 
@@ -624,6 +661,7 @@ def _finalize_worker_terminal(
     question: Any | None = None,
     rng_params: Any | None = None,
     verification_trail: list[dict[str, Any]] | None = None,
+    subquestion_failures: Mapping[int, Mapping[str, str]] | None = None,
     unknown_reason: str | None = None,
 ) -> None:
     """Shared finalize path: seals the ledger and emits question_terminal.
@@ -667,6 +705,7 @@ def _finalize_worker_terminal(
             else None
         ),
         has_per_question_resolution=rng_params is not None,
+        subquestion_failures=subquestion_failures or {},
     )
     payload = _build_question_terminal_payload(
         question_id=question_id,
@@ -820,6 +859,7 @@ def _worker_one_body(
                         else None
                     ),
                     has_per_question_resolution=rng_params is not None,
+                    subquestion_failures=setup.subquestion_failures,
                 )
                 _, _, _term_missing = _compute_expected_delivered_missing(
                     question_id=question_id,
@@ -912,6 +952,7 @@ def _worker_one_body(
             question=question,
             rng_params=rng_params,
             verification_trail=setup.verification_trail,
+            subquestion_failures=setup.subquestion_failures,
         )
     except GenerationCancelled:
         # A client disconnect is not proof that cancellation was confirmed by
@@ -930,6 +971,7 @@ def _worker_one_body(
             question=None,
             rng_params=rng_params,
             verification_trail=None,
+            subquestion_failures=setup.subquestion_failures,
             unknown_reason="cancelled before completion",
         )
     except Exception as exc:
@@ -978,6 +1020,7 @@ def _worker_one_body(
             question=question if final_published_revision is not None else None,
             rng_params=rng_params,
             verification_trail=setup.verification_trail,
+            subquestion_failures=setup.subquestion_failures,
             unknown_reason=(
                 "no final content"
                 if final_published_revision is None

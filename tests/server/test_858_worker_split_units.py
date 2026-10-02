@@ -121,6 +121,70 @@ class TestSetupWorkerRecorders:
         assert setup.verification_trail == []
         assert setup.figure_policy_trail == []
         assert setup.reference_example_entries == []
+        assert setup.subquestion_failures == {}
+
+    def test_observer_captures_only_valid_latest_subquestion_failure(self) -> None:
+        from server.generate.service import _setup_worker_recorders
+
+        ctx = _build_ctx(self.loop, self.queue)
+        client = _make_question_client()
+        ctx.publisher.publish = MagicMock(wraps=ctx.publisher.publish)
+        setup = _setup_worker_recorders(0, client, ctx)
+        observer = client.set_observer.call_args.args[0]
+        base = {
+            "type": "stage",
+            "agent": "sub_generator#2",
+            "stage": "llm_generate",
+            "status": "error",
+            "code": "subquestion_exhausted",
+        }
+        events = [
+            {**base, "status": "warning", "subquestion_index": 1},
+            {
+                **base,
+                "subquestion_index": True,
+                "failure_code": "provider_failure",
+            },
+            {
+                **base,
+                "subquestion_index": 1,
+                "failure_code": "not_allowed",
+            },
+            {
+                **base,
+                "subquestion_index": 1,
+                "failure_code": {"private": "object"},
+            },
+            {
+                **base,
+                "subquestion_index": 1,
+                "failure_code": "parser_failure",
+                "failure_detail": "private\nmultiline",
+            },
+            {
+                **base,
+                "subquestion_index": 1,
+                "failure_code": "validation_exhausted",
+                "failure_detail": "first safe detail",
+            },
+            {
+                **base,
+                "subquestion_index": 1,
+                "failure_code": "provider_failure",
+                "failure_detail": "provider call raised RuntimeError",
+            },
+        ]
+
+        for event in events:
+            observer(event)
+
+        assert setup.subquestion_failures == {
+            1: {
+                "failure_code": "provider_failure",
+                "failure_detail": "provider call raised RuntimeError",
+            }
+        }
+        assert ctx.publisher.publish.call_count == len(events)
 
     def test_sets_observer_on_question_client(self) -> None:
         from server.generate.service import _setup_worker_recorders
