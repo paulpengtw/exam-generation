@@ -358,7 +358,11 @@ export interface HistoryListResponse {
   items: HistoryListItem[];
 }
 
-/** Typed terminal delivery summary returned by GET /api/history/{id}. */
+/**
+ * Typed terminal delivery summary returned by GET /api/history/{id}.
+ * Missing slots retain optional bounded structured failure evidence and are
+ * validated by the shared evidence parser before History renders them.
+ */
 export interface HistoryTerminalDelivery {
   delivery_status: "complete" | "partial" | "none" | "unknown" | null;
   missing: GenerationSlotReference[];

@@ -617,18 +617,34 @@ describe("captureFromHistory", () => {
     expect(result!._export.termination_reason).toBe("normal");
   });
 
-  it("record with terminal_delivery partial (missing subquestion) uses stored values", () => {
+  it("record with terminal_delivery partial preserves structured missing-slot evidence", () => {
     const detail = makeHistoryDetail({
       terminal_delivery: {
         delivery_status: "partial",
-        missing: [{ kind: "subquestion", question_id: "q-legacy-1", subquestion_id: "sq1", subquestion_index: 0, reason: null }],
+        missing: [{
+          kind: "subquestion",
+          question_id: "q-legacy-1",
+          subquestion_id: "sq1",
+          subquestion_index: 0,
+          reason: "subquestion not delivered",
+          failure_code: "parser_failure",
+          failure_detail: "The subquestion response was not valid JSON.",
+        }],
         termination_reason: "normal",
       },
     });
     const result = captureFromHistory(detail, "2026-09-27T10:00:00.000Z");
     expect(result!._export.delivery_status).toBe("partial");
     expect(result!._export.missing).toHaveLength(1);
-    expect(result!._export.missing[0].kind).toBe("subquestion");
+    expect(result!._export.missing[0]).toEqual({
+      kind: "subquestion",
+      question_id: "q-legacy-1",
+      subquestion_id: "sq1",
+      subquestion_index: 0,
+      reason: "subquestion not delivered",
+      failure_code: "parser_failure",
+      failure_detail: "The subquestion response was not valid JSON.",
+    });
     expect(result!._export.termination_reason).toBe("normal");
   });
 

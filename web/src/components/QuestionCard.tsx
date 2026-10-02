@@ -509,7 +509,13 @@ function MissingSubQuestionBlock({
 }) {
   const t = useT();
   const slotNumber = (slot.subquestion_index ?? 0) + 1;
-  const reason = slot.reason
+  const failureSummary = slot.failure_code
+    ? t(`card.missing_failure_${slot.failure_code}`)
+    : null;
+  const failureDetail = slot.failure_code && slot.failure_detail
+    ? t("card.missing_failure_detail").replace("{detail}", slot.failure_detail)
+    : null;
+  const legacyReason = !slot.failure_code && slot.reason
     ? t("card.missing_reason").replace("{reason}", slot.reason)
     : null;
   return (
@@ -522,7 +528,9 @@ function MissingSubQuestionBlock({
         {t("card.subquestion")}{slotNumber}題
       </div>
       <div>{t("card.missing_subquestion")}</div>
-      {reason && <div className="text-xs">{reason}</div>}
+      {failureSummary && <div className="text-xs">{failureSummary}</div>}
+      {failureDetail && <div className="text-xs">{failureDetail}</div>}
+      {legacyReason && <div className="text-xs">{legacyReason}</div>}
     </div>
   );
 }
@@ -1085,6 +1093,15 @@ export default function QuestionCard({
   const fixedSubquestionSlots = evidence?.terminal
     ? [...evidence.terminal.expected]
       .filter((slot) => slot.kind === "subquestion")
+      .map((slot) => {
+        const missingEvidence = evidence.terminal?.missing.find((missing) => (
+          missing.kind === slot.kind
+          && missing.question_id === slot.question_id
+          && (missing.subquestion_id ?? null) === (slot.subquestion_id ?? null)
+          && (missing.subquestion_index ?? null) === (slot.subquestion_index ?? null)
+        ));
+        return missingEvidence ? { ...slot, ...missingEvidence } : slot;
+      })
       .sort((left, right) =>
         (left.subquestion_index ?? Number.MAX_SAFE_INTEGER)
         - (right.subquestion_index ?? Number.MAX_SAFE_INTEGER),

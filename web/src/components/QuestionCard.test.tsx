@@ -22,7 +22,10 @@ import type {
   FigurePolicyTrailEntry,
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
-import type { QuestionEvidence } from "../lib/generationEvidence";
+import type {
+  GenerationSlotReference,
+  QuestionEvidence,
+} from "../lib/generationEvidence";
 
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
@@ -95,6 +98,37 @@ describe("QuestionCard draft rendering", () => {
     );
 
     expect(screen.queryByTestId("question-card-live-phase")).not.toBeInTheDocument();
+  });
+
+  it("renders confirmed cancellation without fabricating a missing-slot cause", () => {
+    const evidence: QuestionEvidence = {
+      questionId: "q_test",
+      index: 0,
+      processing: "ended",
+      content: { receipt: "draft", revision: 1, question, phase: "draft" },
+      terminal: {
+        termination_reason: "cancelled",
+        has_final: false,
+        final_revision: null,
+        delivery_status: "none",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "unknown", unknown_reason: "cancelled" },
+      },
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "unknown", revision: null },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+    };
+
+    render(<QuestionCard question={question} evidence={evidence} phase="draft" isFinal={false} />);
+
+    expect(screen.getByText("已取消")).toBeInTheDocument();
+    expect(screen.queryByText("Sub-question unavailable")).not.toBeInTheDocument();
+    expect(screen.queryByText("No safe detailed cause is available.")).not.toBeInTheDocument();
   });
 });
 
@@ -453,10 +487,16 @@ describe("QuestionCard math 題組", () => {
 });
 
 describe("QuestionCard fixed social-studies slots", () => {
-  it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
-    const thirdSub: SubQuestion = { ...ssSub, id: "ss1-sq003", 序號: 3, 題目: "Third question" };
-    const partialQuestion = { ...ssQuestion, subquestions: [ssSub, thirdSub] };
-    const evidence: QuestionEvidence = {
+  const thirdSub: SubQuestion = {
+    ...ssSub,
+    id: "ss1-sq003",
+    序號: 3,
+    題目: "Third question",
+  };
+  const partialQuestion = { ...ssQuestion, subquestions: [ssSub, thirdSub] };
+
+  function makeEvidence(missingSlot: GenerationSlotReference): QuestionEvidence {
+    return {
       questionId: "ss1",
       index: 0,
       processing: "ended",
@@ -475,15 +515,7 @@ describe("QuestionCard fixed social-studies slots", () => {
           { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq001", subquestion_index: 0 },
           { kind: "subquestion", question_id: "ss1", subquestion_id: "ss1-sq003", subquestion_index: 2 },
         ],
-        missing: [
-          {
-            kind: "subquestion",
-            question_id: "ss1",
-            subquestion_id: "ss1-sq002",
-            subquestion_index: 1,
-            reason: "subquestion not delivered",
-          },
-        ],
+        missing: [missingSlot],
         review: { status: "skipped", content_revision: 3 },
       },
       finalPending: false,
@@ -493,13 +525,50 @@ describe("QuestionCard fixed social-studies slots", () => {
       figurePolicyTrail: [],
       referenceExampleRecord: undefined,
     };
+  }
+
+  it("renders a missing middle slot and partial delivery evidence without compacting survivors", () => {
+    const evidence = makeEvidence({
+      kind: "subquestion",
+      question_id: "ss1",
+      subquestion_id: "ss1-sq002",
+      subquestion_index: 1,
+      reason: "subquestion not delivered",
+    });
 
     render(<QuestionCard question={partialQuestion} evidence={evidence} isFinal />);
 
     expect(screen.getByTestId("evidence-delivery-status")).toHaveTextContent("部分");
     expect(screen.getByTestId("missing-subquestion-2")).toHaveTextContent("Sub-question unavailable");
+    expect(screen.getByTestId("missing-subquestion-2")).toHaveTextContent(
+      "Reason: subquestion not delivered",
+    );
     expect(screen.getByText("Third question")).toBeInTheDocument();
     expect(screen.getByText("Q3題")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["validation_exhausted", "The response format remained invalid after retry."],
+    ["parser_failure", "The response could not be parsed."],
+    ["provider_failure", "The model service call failed."],
+    ["unknown", "No safe detailed cause is available."],
+  ] as const)("localizes %s missing-slot evidence and appends safe detail", (failureCode, summary) => {
+    const evidence = makeEvidence({
+      kind: "subquestion",
+      question_id: "ss1",
+      subquestion_id: "ss1-sq002",
+      subquestion_index: 1,
+      reason: "legacy fallback must not be shown",
+      failure_code: failureCode,
+      failure_detail: "Rubric code E was duplicated.",
+    });
+
+    render(<QuestionCard question={partialQuestion} evidence={evidence} isFinal />);
+
+    const block = screen.getByTestId("missing-subquestion-2");
+    expect(block).toHaveTextContent(summary);
+    expect(block).toHaveTextContent("Details: Rubric code E was duplicated.");
+    expect(block).not.toHaveTextContent("legacy fallback must not be shown");
   });
 });
 
