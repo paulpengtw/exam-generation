@@ -22,6 +22,7 @@ from server.models import User
 from server.rate_limit import limiter
 from src.cli import _math_params_from_resolved
 from src.cli import generate_one as generate_math
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.common.resolver import resolve
 from src.curriculum_context import load_curriculum_context
 from src.data_loader import (
@@ -34,6 +35,33 @@ from src.natural_sciences.cli import _ns_params_from_resolved
 from src.natural_sciences.cli import generate_one as generate_natural_sciences
 from src.social_studies.cli import _ss_params_from_resolved
 from src.social_studies.cli import generate_one as generate_social_studies
+
+
+def _open_response_rubric() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "2",
+            "規準說明": f"完整作答。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": ["完整回答"],
+        },
+        {
+            "code": "1",
+            "規準說明": "部分作答。",
+            "學生作答實例": ["部分回答一", "部分回答二"],
+        },
+        {
+            "code": "0",
+            "規準說明": "錯誤作答。",
+            "學生作答實例": ["錯誤回答"],
+        },
+    ]
+
+
+def _prompt_requests_open_response(user: str) -> bool:
+    return any(
+        marker in user
+        for marker in ("題型=開放式建構反應題", "題型=Constructed response")
+    )
 
 
 class _CapturingClient:
@@ -68,7 +96,7 @@ class _CapturingSubClient:
     ):
         idx = int(agent_override.split("#", 1)[1])
         self.prompts_by_idx[idx] = (system, user)
-        return {
+        response = {
             "序號": idx,
             "題型": self.question_type,
             "題目": f"第{idx}小題",
@@ -76,6 +104,9 @@ class _CapturingSubClient:
             "答案解析": "解析",
             "出題概念": f"概念{idx}",
         }
+        if _prompt_requests_open_response(user):
+            response["評分規準"] = _open_response_rubric()
+        return response
 
 
 def _math_state(config: ServerConfig) -> SimpleNamespace:

@@ -34,6 +34,7 @@ from typing import Any
 import pytest
 
 from src.common.generation_core import GenerationCancelled, generate_one_core
+from src.common.open_response_rubric import EXTRA_ITEMS_FIXED_SENTENCE
 from src.config import Config
 
 # ---------------------------------------------------------------------------
@@ -68,8 +69,32 @@ def _ss_text_response(n_subs: int = 3) -> dict[str, Any]:
     }
 
 
-def _ss_sub_response(index: int) -> dict[str, Any]:
-    return {
+def _open_response_rubric() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "2",
+            "規準說明": f"完整作答。{EXTRA_ITEMS_FIXED_SENTENCE}",
+            "學生作答實例": ["完整回答"],
+        },
+        {
+            "code": "1",
+            "規準說明": "部分作答。",
+            "學生作答實例": ["部分回答一", "部分回答二"],
+        },
+        {
+            "code": "0",
+            "規準說明": "錯誤作答。",
+            "學生作答實例": ["錯誤回答"],
+        },
+    ]
+
+
+def _prompt_requests_open_response(user: str) -> bool:
+    return "題型=開放式建構反應題" in user
+
+
+def _ss_sub_response(index: int, *, open_response: bool = False) -> dict[str, Any]:
+    response = {
         "序號": index,
         "年級": 8,
         "科目": ["地理"],
@@ -83,6 +108,9 @@ def _ss_sub_response(index: int) -> dict[str, Any]:
         "答案解析": "Test.",
         "評分規準": [],
     }
+    if open_response:
+        response["評分規準"] = _open_response_rubric()
+    return response
 
 
 class _SSTextClient:
@@ -134,7 +162,10 @@ class _SSSubClient:
         index = int(agent_override.split("#")[1])
         if self.on_call is not None:
             self.on_call(index)
-        return _ss_sub_response(index)
+        return _ss_sub_response(
+            index,
+            open_response=_prompt_requests_open_response(_user),
+        )
 
 
 def _ss_spec() -> Any:
