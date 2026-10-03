@@ -1,0 +1,1608 @@
+{
+ "labeller_model": "claude-opus-5-5 (Claude Code main session)",
+ "labelling_rule": "labelling_rule.md v1",
+ "corpus_ref": "origin/staging@946fb32",
+ "entries": [
+  {
+   "id": "fasting-method|0|2|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「小基較好，因小丁的變因互相混淆」學生口吻",
+    "r2": "小基、小丁、次數"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|2|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「小基較好，因為比較好操作」",
+    "r2": "小基"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|2|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「小丁較好，因為次數更容易量化」",
+    "r2": "小丁、次數",
+    "r3": "選錯人並給出看似合理的理由"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "fasting-method|0|3|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「飲食控制效果優於運動」",
+    "r2": "飲食、運動（圖三分組）"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|3|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「只寫…」「兩個結論雷同」是對作答的評語",
+    "r2": "飲食、運動"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|3|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「運動比飲食更重要」",
+    "r2": "運動、飲食",
+    "r3": "方向相反的結論，學生依直覺會寫"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "fasting-method|0|3|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [
+    "r3"
+   ],
+   "reason": {
+    "r1": "「吃什麼不重要」",
+    "r2": "飲食（本題變因）",
+    "r3": "與數據相反的結論；但與題目連結很薄"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "fasting-method|0|4|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r1"
+   ],
+   "reason": {
+    "r1": "「選B，說明斷食縮短…」以「說明」轉述作答，非學生原文",
+    "r2": "B計畫、胰島素、圖三"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|4|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「但未提圖三數據」是評語",
+    "r2": "B計畫、胰島素"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "fasting-method|0|4|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「選A，因為運動最健康」",
+    "r2": "A計畫",
+    "r3": "日常直覺取代圖表資訊"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "truck-cornering|0|2|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「重心偏右輪外側；高度增加使翻覆力矩增大」",
+    "r2": "右輪、翻覆力矩"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "truck-cornering|0|2|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「只說…，未解釋…」是評語",
+    "r2": "重心偏右、力矩"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "truck-cornering|0|2|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「說重心偏向左側」轉述作答",
+    "r2": "重心、左側",
+    "r3": "方向錯誤"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "truck-cornering|0|2|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「說高度越高越穩定」轉述作答",
+    "r2": "高度、穩定",
+    "r3": "方向相反的迷思"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "truck-cornering|0|3|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r2"
+   ],
+   "reason": {
+    "r1": "「只採可直接觀察的事實」",
+    "r2": "本題概念「客觀科學論述」；未指名任何民眾"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "truck-cornering|0|3|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r2"
+   ],
+   "reason": {
+    "r1": "「但未說明如何判斷」是評語",
+    "r2": "事實性／推測性陳述；未指名任何民眾"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "truck-cornering|0|3|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「採所有民眾意見」",
+    "r2": "民眾意見",
+    "r3": "未區分事實與推測，學生會寫"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "truck-cornering|0|3|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   },
+   "borderline": [
+    "r3"
+   ],
+   "reason": {
+    "r1": "「只採認識的民眾意見」",
+    "r2": "民眾意見",
+    "r3": "以是否認識為標準，近乎玩笑，非本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "typhoon-database|0|1|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r1"
+   ],
+   "reason": {
+    "r1": "「選路徑vs累積雨量，因為…」學生簡寫",
+    "r2": "路徑、累積雨量"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|1|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「但未說明為何此組合最適合」是評語",
+    "r2": "路徑、累積雨量"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|1|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「選暴風半徑vs災害程度」",
+    "r2": "暴風半徑、災害程度（本題選項）",
+    "r3": "選了不可量化的變因組合，題目刻意設的誘答"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "typhoon-database|0|3|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「颱風在東南方時東部降雨多」",
+    "r2": "東部、西部、海峽"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|3|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「颱風過後西部開始下大雨」",
+    "r2": "西部、東部"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|3|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [
+    "r3"
+   ],
+   "reason": {
+    "r1": "「颱風來了全台灣都一樣」",
+    "r2": "颱風、全台灣",
+    "r3": "未讀圖的直覺答案；可能但很粗"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "typhoon-database|0|4|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「推論一合適，因…；推論二不合適」學生評題目中的推論",
+    "r2": "推論一、推論二、一個颱風"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|4|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「但未說明判斷依據」是評語",
+    "r2": "推論一二三"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "typhoon-database|0|4|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   },
+   "borderline": [
+    "r2",
+    "r3"
+   ],
+   "reason": {
+    "r1": "「三個推論都對，因為他們很認真」",
+    "r2": "三個推論、他們（本題人物）；理由本身可貼到任何題",
+    "r3": "以認真與否判斷推論，與資料無關"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|1|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「五月是梅雨鋒面…」",
+    "r2": "梅雨鋒面、太平洋高壓"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|1|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「但未說明原因」是評語",
+    "r2": "梅雨、高壓"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|1|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「五月是高壓、六月是颱風」",
+    "r2": "五月、六月、高壓",
+    "r3": "天氣系統配錯月份"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|2|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "繪圖題，中性描述所畫內容",
+    "r2": "鋒面、高壓、南風"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|2|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "繪圖題，「位置正確但未畫…」是評分而非中性描述",
+    "r2": "鋒面、風向箭頭"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|2|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "繪圖題，中性描述",
+    "r2": "高壓、鋒面、台灣北方",
+    "r3": "兩系統位置對調"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|4|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "繪圖題，中性描述",
+    "r2": "0-4小時、mm/hr、50-185"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|4|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「圖形形狀正確但未標明…」是評分",
+    "r2": "可貼到任何作圖題"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "weather-proverbs|0|4|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "繪圖題，中性描述",
+    "r2": "降雨線",
+    "r3": "把雷陣雨畫成長時間緩雨，正是本題要辨別的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|1|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「改變積木寬度一組、改變間距一組」",
+    "r2": "積木寬度、間距"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|1|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「只提…，未提對照組」是評語",
+    "r2": "間距、對照組"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|1|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [
+    "r2",
+    "r3"
+   ],
+   "reason": {
+    "r1": "「觀察風的方向」",
+    "r2": "風（本題主題），但很薄",
+    "r3": "以觀察取代實驗設計，學生可能會寫"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|2|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「研究問題：積木寬度增加時…」",
+    "r2": "積木寬度、縫隙風速"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|2|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "尾註「（未說明哪個變因受控制）」是評語",
+    "r2": "積木寬度、風速"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|2|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「研究間距對風速的影響」",
+    "r2": "間距、風速",
+    "r3": "把另一個實驗的變因套進來"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|3|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r1"
+   ],
+   "reason": {
+    "r1": "「風速X m/s高於對照組Y m/s」含佔位符，非學生原文",
+    "r2": "間距8cm、對照組、天斬煞"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|3|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「間距越小風速越大，所以支持」",
+    "r2": "間距、風速"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "wind-corridor-effect|0|3|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "filler"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「數據沒有意義」學生可能寫",
+    "r2": "可貼到任何題",
+    "r3": "未指出任何與本題相關的錯誤觀念"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|3|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「例如:」佔位",
+    "r2": "佔位"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|3|2|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「1.表二有明確的說明溫度」",
+    "r2": "表二、溫度"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|3|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "filler"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「例如:」佔位",
+    "r2": "佔位",
+    "r3": "佔位"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "generic",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|3|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   },
+   "borderline": [
+    "r3"
+   ],
+   "reason": {
+    "r1": "「1.表(二) ；因為計錄比較詳細」",
+    "r2": "表(二)",
+    "r3": "選了與 [2] 實例相同的表，不是錯誤答案（至多 [1]）"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|4|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "表名原文",
+    "r2": "6℃、25℃、60℃、125 mL"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|4|2|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "表名原文",
+    "r2": "水溫、瓶蓋跳動次數"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|4|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「1. 水溫的影響」",
+    "r2": "水溫",
+    "r3": "漏掉應變變因的表名，學生常見"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "jumping-bottle-cap|0|4|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「2. 觀察紀錄瓶蓋跳動次數」",
+    "r2": "瓶蓋跳動次數",
+    "r3": "漏掉操縱變因的表名"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "self-heating-pack|0|2|2|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「a=10，因為70÷7=10」",
+    "r2": "a、7:1"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "self-heating-pack|0|2|1|0",
+   "set": "ns",
+   "labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "尾註「（無說明）」是評語",
+    "r2": "a=10"
+   },
+   "final_labels": {
+    "r1": "narration",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "self-heating-pack|0|2|0|0",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「a=70」",
+    "r2": "a",
+    "r3": "誤用生石灰的質量"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "self-heating-pack|0|2|0|1",
+   "set": "ns",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「a=7」",
+    "r2": "a",
+    "r3": "把比例數字直接當答案"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "社會領域_row4|0|4|2|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r2"
+   ],
+   "reason": {
+    "r1": "「我支持先重新評估，因為…」",
+    "r2": "淹水三次；但答的是興建立場，答非本小題所問（公民角色）"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "社會領域_row4|0|4|1|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "n/a"
+   },
+   "borderline": [
+    "r2"
+   ],
+   "reason": {
+    "r1": "「我覺得先討論比較好，因為有人反對」",
+    "r2": "可貼到任何公共議題題目，未用本文本資料"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "generic",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "社會領域_row4|0|4|0|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「我不知道，停車場看起來很好玩」",
+    "r2": "停車場（本文本）",
+    "r3": "「不知道」加荒謬理由"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "社會領域_row6|0|6|2|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「政府公布疫情越清楚…」",
+    "r2": "疫情、隱瞞、擴散"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "社會領域_row6|0|6|1|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "「公開資訊比較好，大家會知道疫情」",
+    "r2": "公開資訊、疫情"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "社會領域_row6|0|6|0|0",
+   "set": "ss",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   },
+   "borderline": [
+    "r3"
+   ],
+   "reason": {
+    "r1": "「政府不需要管疫情」",
+    "r2": "疫情",
+    "r3": "未觸及資訊透明，近乎反題，非本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "filler"
+   }
+  },
+  {
+   "id": "trap:typhoon-database|0|4|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:typhoon-database|0|4|1|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:typhoon-database|0|4|1|1",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:typhoon-database|0|4|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|1|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:entomopathogenic-fungi|0|5|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "trap:氣候變遷|0|4|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:氣候變遷|0|4|1|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:氣候變遷|0|4|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "trap:truck-cornering|0|3|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:truck-cornering|0|3|1|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:truck-cornering|0|3|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|1|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:wind-corridor-effect|0|3|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  },
+  {
+   "id": "trap:fasting-method|0|2|2|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "n/a"
+   }
+  },
+  {
+   "id": "trap:fasting-method|0|2|0|0",
+   "set": "trap",
+   "labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   },
+   "borderline": [],
+   "reason": {
+    "r1": "學生評的是題目中的推論／說法／設計，不是對這份作答的評語",
+    "r2": "用到本題資料與人物",
+    "r3": "本題可能引出的迷思"
+   },
+   "final_labels": {
+    "r1": "answer",
+    "r2": "this_item",
+    "r3": "plausible"
+   }
+  }
+ ],
+ "final_labels_source": "owner verdicts on #879 under labelling rule v2 (owner_verdicts.json)"
+}
