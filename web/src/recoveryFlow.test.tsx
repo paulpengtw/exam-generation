@@ -329,6 +329,7 @@ import type { ReleaseState } from "./lib/release/releaseStore";
 import type { ConfirmationWorkspaceSnapshot, FormWorkspaceSnapshot } from "./lib/workspace/adapters/types";
 
 const USER = { id: "u1", email: "u@test.com", created_at: "2024-01-01T00:00:00Z" };
+const RECOVERY_SLOW_BOUNDARY_DELAY = 1500;
 
 function setUpUpdateRequired() {
   useReleaseStore.setState({
@@ -1145,6 +1146,16 @@ describe("recovery flow — scenario 2: quota failure", () => {
       expect(useWorkspaceStore.getState().surfaces["generate.form"]?.readiness).toBe("ready");
     }, { timeout: 5000 });
     await act(async () => {});
+
+    // Keep the real save path and make its failure promise deterministically
+    // slower than waitFor's historical one-second default.
+    useReleaseStore.setState({
+      checkNow: async () => {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, RECOVERY_SLOW_BOUNDARY_DELAY);
+        });
+      },
+    });
 
     // Spy on setItem to make the save fail, targeting only the snapshot write so
     // background React effects (model/effort useEffect writes) cannot consume

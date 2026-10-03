@@ -77,9 +77,11 @@ function LocationSpy() {
   );
 }
 
-// History loading and the subsequent router state update are asynchronous; keep
-// the event-bound assertions tolerant of slower CI without adding a sleep.
+// History loading and the subsequent router state update are asynchronous. Keep
+// the event-bound assertions tolerant of slower CI; the first detail fetch
+// below deliberately resolves after 1500 ms to guard the original flake.
 const HISTORY_NAVIGATION_TIMEOUT = 5000;
+const HISTORY_SLOW_BOUNDARY_DELAY = 1500;
 
 describe("HistoryDetail", () => {
   it("renders the stored question and downloads via snapshot when question_json is available", async () => {
@@ -159,14 +161,18 @@ describe("HistoryDetail", () => {
   });
 
   it("重新帶入 is offered for completed and aborted details and carries params", async () => {
-    getDetailMock.mockResolvedValueOnce({
-      id: "abc",
-      subject: "social_studies",
-      question_id: "ss_1",
-      created_at: "2026-07-15T00:00:00Z",
-      params_json: { subject: "social_studies", grade: 8, topic: "climate" },
-      question_json: { id: "ss_1" },
-    });
+    getDetailMock.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        setTimeout(() => resolve({
+          id: "abc",
+          subject: "social_studies",
+          question_id: "ss_1",
+          created_at: "2026-07-15T00:00:00Z",
+          params_json: { subject: "social_studies", grade: 8, topic: "climate" },
+          question_json: { id: "ss_1" },
+        }), HISTORY_SLOW_BOUNDARY_DELAY);
+      }),
+    );
 
     const firstRender = render(
       <MemoryRouter initialEntries={["/history/abc"]}>
