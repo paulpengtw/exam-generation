@@ -609,7 +609,7 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
       {failureMessage && (
         <div
           data-testid="question-card-failure-class"
-          role="alert"
+          role="status"
           className="basis-full whitespace-pre-wrap rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800"
         >
           {failureMessage}

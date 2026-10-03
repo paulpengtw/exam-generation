@@ -26,6 +26,7 @@ import type {
   GenerationSlotReference,
   QuestionEvidence,
 } from "../lib/generationEvidence";
+import type { FailureClass } from "../lib/providerFailure";
 
 const testLang = vi.hoisted(() => ({ value: "en-US" }));
 
@@ -135,7 +136,7 @@ describe("QuestionCard draft rendering", () => {
 });
 
 describe("QuestionCard per-question provider failure", () => {
-  function failedEvidence(failureClass?: string | null): QuestionEvidence & { failureClass?: string | null } {
+  function failedEvidence(failureClass?: FailureClass | null): QuestionEvidence {
     return {
       questionId: "q_test",
       index: 0,
@@ -166,6 +167,7 @@ describe("QuestionCard per-question provider failure", () => {
     render(<QuestionCard evidence={failedEvidence("rate_limited")} index={0} />);
 
     const failure = screen.getByTestId("question-card-failure-class");
+    expect(failure).toHaveAttribute("role", "status");
     expect(failure).toHaveTextContent("Rate limited");
     expect(failure).toHaveTextContent("Please wait a moment and try again.");
     expect(screen.getByText("生成失敗")).toBeInTheDocument();
@@ -182,7 +184,8 @@ describe("QuestionCard per-question provider failure", () => {
 
   it.each([
     ["absent", undefined],
-    ["unrecognized", "not_a_real_code"],
+    // Deliberately model malformed provider input at this typed test boundary.
+    ["unrecognized", "not_a_real_code" as unknown as FailureClass],
   ])("keeps the generic failed card for an %s failure class", (_label, failureClass) => {
     testLang.value = "en-US";
     render(<QuestionCard evidence={failedEvidence(failureClass)} index={0} />);
