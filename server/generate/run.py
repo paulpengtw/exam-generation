@@ -57,9 +57,9 @@ from server.models import (
 )
 from src.common.generation_events import allocate_manifest
 from src.llm_client import (
-    _TAXONOMY_CODES,
     classify_provider_error,
     provider_failure_sse_kwargs,
+    recognized_failure_class,
     resolve_provider,
     tier_for_purpose,
 )
@@ -925,11 +925,6 @@ def _step_for_stage(payload: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _recognized_failure_class(value: Any) -> str | None:
-    """Return a provider taxonomy code, never an arbitrary provider value."""
-    return value if isinstance(value, str) and value in _TAXONOMY_CODES else None
-
-
 def _unfinished_terminal(reason: str) -> dict[str, Any]:
     """A failed terminal for a question that ended without its own terminal."""
     payload = {
@@ -975,7 +970,7 @@ class _QuestionStateRecorder:
             message = payload.get("message") if isinstance(payload, dict) else None
             values: dict[str, Any] = {"error": str(message or payload)}
             if isinstance(payload, dict) and payload.get("code") == "generation_failed":
-                failure_class = _recognized_failure_class(payload.get("failure_class"))
+                failure_class = recognized_failure_class(payload.get("failure_class"))
                 if failure_class is not None:
                     values["failure_class"] = failure_class
             await self._update_unfinished(question_id, **values)
@@ -998,6 +993,7 @@ class _QuestionStateRecorder:
                 )
             await session.execute(
                 update(GenerationQuestionState)
+                .execution_options(synchronize_session=False)
                 .where(
                     GenerationQuestionState.generation_log_id == self._run_id,
                     GenerationQuestionState.question_id == question_id,
@@ -1250,7 +1246,7 @@ async def execute_run(
                     # Capture the first taxonomy value from either a batch or a
                     # question-scoped error. It is persisted only if the run
                     # ultimately fails, so partial sibling success is unchanged.
-                    _event_failure_class = _recognized_failure_class(
+                    _event_failure_class = recognized_failure_class(
                         _error_payload.get("failure_class")
                     )
                     if failure_class is None and _event_failure_class is not None:

@@ -363,6 +363,11 @@ _AUTH_MESSAGE_KEYWORDS: tuple[str, ...] = (
 )
 
 
+def recognized_failure_class(value: object) -> str | None:
+    """Return *value* only when it is one of the stable taxonomy codes."""
+    return value if isinstance(value, str) and value in _TAXONOMY_CODES else None
+
+
 def classify_provider_error(
     exc: Exception | None,
     *,
