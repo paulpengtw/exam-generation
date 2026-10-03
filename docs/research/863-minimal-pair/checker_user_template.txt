@@ -1,0 +1,40 @@
+請判斷以下小題的評分規準是否違反規則 C，並逐一檢核其學生作答實例。
+
+題型：{question_type}
+題目（題幹）：
+{question_stem}
+
+學習內容：{learning_content}
+科學能力：{science_ability}
+
+評分規準各級距說明：
+{rubric_text}
+
+學生作答實例（逐一編號，括號內為所屬級距；同一級距依出現順序排列）：
+{examples_text}
+
+請嚴格依照規則 C 的【判準】邏輯逐步推理，然後以下列 JSON 格式輸出（不要輸出其他文字）：
+
+{{
+  "set_framed": <bool: 題幹或宣告的學習內容／科學能力，能否事前框定「完整答案的成分集合」>,
+  "framing_evidence": "<str: 引用題幹中框定集合的文字，或說明為何無法框定（限50字）>",
+  "counting_violation": <bool: 評分規準依數量分級，且集合未被框定>,
+  "specificity_violation": <bool: 評分規準說明未指名本小題的內容——[2] 未寫出本題該答對什麼，或 [1] 未寫出本題最可能出現的缺口；或使用「完整正確回答／部分正確／錯誤」這類可套用到任何題目的字樣>,
+  "verdict": "<pass 或 fail: counting_violation 或 specificity_violation 任一為 true 則 fail>",
+  "details": "<str: verdict 為 fail 時，一句說明修正方向，以「[評分規準檢核]」開頭，
+    指示 corrector 如何改寫（不得說「計數少一點」）；verdict 為 pass 時輸出空字串>",
+  "example_flags": [
+    {{
+      "id": "<實例編號，如 E1>",
+      "not_student_voice": <bool: 違反「擬答」——實例是對作答的描述、含對這份作答的評語，或是佔位字樣>,
+      "not_this_item": <bool: 違反「本小題」——實例未用到本題的資料、變因或名稱，可貼到任何題目>,
+      "implausible_zero": <bool 或 null: 僅 [0] 級距的實例判斷——違反「[0] 實例」規定為 true；其他級距一律 null>,
+      "reason": "<str: 任一旗標為 true 時，引用實例中的關鍵字說明理由（限40字）；否則空字串>"
+    }}
+  ],
+  "minimal_pair_violation": <bool: 違反「最小對照」——第一個 [1] 實例不是 [2] 實例的最小對照；
+    若依【判準】屬「能框定」，[1] 實例只缺少集合中的一個具名成分，不算違反>,
+  "minimal_pair_reason": "<str: minimal_pair_violation 為 true 時，引用兩個實例的關鍵字說明差在哪裡（限40字）；否則空字串>",
+  "example_details": "<str: 任一實例旗標或 minimal_pair_violation 為 true 時，一句說明修正方向，以「[學生作答實例檢核]」開頭，
+    指名哪個級距的哪個實例、違反哪一項、應如何改寫；全部通過時輸出空字串>"
+}}
