@@ -236,7 +236,7 @@ export function createGenerationStreamDecoder(options?: {
   }
 
   /**
-   * Degrade the buffer, releasing any content/terminal events that were
+   * Degrade the buffer, releasing any content/terminal/error events that were
    * pending.  Activity-only events (stage, pipeline, llm_*) are dropped.
    * Must only be called when !seqDegraded.
    */
@@ -249,7 +249,8 @@ export function createGenerationStreamDecoder(options?: {
       if (
         entry.eventName === "question_update" ||
         entry.eventName === "result" ||
-        entry.eventName === "question_terminal"
+        entry.eventName === "question_terminal" ||
+        entry.eventName === "error"
       ) {
         const ev = decodeAsV2(entry.eventName, entry.rawData);
         if (ev.kind === "v2") {
@@ -300,6 +301,7 @@ export function createGenerationStreamDecoder(options?: {
         eventName === "question_update" ||
         eventName === "result" ||
         eventName === "question_terminal" ||
+        eventName === "error" ||
         // Pre-seeded late subscribers pass "started" through for run_id validation
         // (only before the first "started" is received).
         (preSeededAwaitingStart && eventName === "started")

@@ -87,6 +87,54 @@ describe("applyV2Event — processing state", () => {
   });
 });
 
+describe("applyV2Event — question-scoped provider failures", () => {
+  it("stores a known failure class from the v2 error envelope without closing the run or touching siblings", () => {
+    const wireEnvelope = {
+      event: "error",
+      context: { run_id: RUN_ID, event_seq: 7, question_id: "q_001", index: 0 },
+      payload: {
+        code: "generation_failed",
+        message: "Question failed",
+        failure_class: "rate_limited",
+      },
+    };
+    const next = applyV2Event(freshRun(), {
+      kind: "v2",
+      event: {
+        name: wireEnvelope.event,
+        context: wireEnvelope.context,
+        payload: wireEnvelope.payload,
+      },
+    });
+
+    expect(next.questions["q_001"].failureClass).toBe("rate_limited");
+    expect(next.questions["q_002"].failureClass).toBeNull();
+    expect(next.questions["q_001"].processing).toBe("waiting");
+    expect(next.closed).toBe(false);
+  });
+
+  it.each([
+    ["an absent failure class", undefined],
+    ["an unrecognized failure class", "not_a_real_code"],
+  ])("keeps the generic failed state for %s", (_description, failureClass) => {
+    const payload = {
+      code: "generation_failed",
+      message: "Question failed",
+      ...(failureClass === undefined ? {} : { failure_class: failureClass }),
+    };
+    const next = applyV2Event(freshRun(), {
+      kind: "v2",
+      event: {
+        name: "error",
+        context: { run_id: RUN_ID, event_seq: 7, question_id: "q_001", index: 0 },
+        payload,
+      },
+    });
+
+    expect(next.questions["q_001"].failureClass).toBeNull();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // applyV2Event — question_update (draft content)
 // ---------------------------------------------------------------------------

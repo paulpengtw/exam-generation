@@ -27,9 +27,11 @@ import type {
   QuestionEvidence,
 } from "../lib/generationEvidence";
 
+const testLang = vi.hoisted(() => ({ value: "en-US" }));
+
 vi.mock("../store/langStore", () => ({
   useLangStore: (selector: (s: { lang: string }) => unknown) =>
-    selector({ lang: "en-US" }),
+    selector({ lang: testLang.value }),
 }));
 
 const question: ExamQuestion = {
@@ -129,6 +131,64 @@ describe("QuestionCard draft rendering", () => {
     expect(screen.getByText("已取消")).toBeInTheDocument();
     expect(screen.queryByText("Sub-question unavailable")).not.toBeInTheDocument();
     expect(screen.queryByText("No safe detailed cause is available.")).not.toBeInTheDocument();
+  });
+});
+
+describe("QuestionCard per-question provider failure", () => {
+  function failedEvidence(failureClass?: string | null): QuestionEvidence & { failureClass?: string | null } {
+    return {
+      questionId: "q_test",
+      index: 0,
+      processing: "ended",
+      content: { receipt: "none", revision: null, question: null, phase: null },
+      terminal: {
+        termination_reason: "failed",
+        has_final: false,
+        final_revision: null,
+        delivery_status: "none",
+        expected: [],
+        delivered: [],
+        missing: [],
+        review: { status: "unknown" },
+      },
+      ...(failureClass === undefined ? {} : { failureClass }),
+      finalPending: false,
+      finalMissing: false,
+      review: { status: "unknown", revision: null },
+      trail: [],
+      figurePolicyTrail: [],
+      referenceExampleRecord: undefined,
+    };
+  }
+
+  it("shows the localized label and guidance in en-US", () => {
+    testLang.value = "en-US";
+    render(<QuestionCard evidence={failedEvidence("rate_limited")} index={0} />);
+
+    const failure = screen.getByTestId("question-card-failure-class");
+    expect(failure).toHaveTextContent("Rate limited");
+    expect(failure).toHaveTextContent("Please wait a moment and try again.");
+    expect(screen.getByText("生成失敗")).toBeInTheDocument();
+  });
+
+  it("shows the localized label and guidance in zh-TW", () => {
+    testLang.value = "zh-TW";
+    render(<QuestionCard evidence={failedEvidence("rate_limited")} index={0} />);
+
+    const failure = screen.getByTestId("question-card-failure-class");
+    expect(failure).toHaveTextContent("請求頻率限制");
+    expect(failure).toHaveTextContent("請稍候再試");
+  });
+
+  it.each([
+    ["absent", undefined],
+    ["unrecognized", "not_a_real_code"],
+  ])("keeps the generic failed card for an %s failure class", (_label, failureClass) => {
+    testLang.value = "en-US";
+    render(<QuestionCard evidence={failedEvidence(failureClass)} index={0} />);
+
+    expect(screen.queryByTestId("question-card-failure-class")).not.toBeInTheDocument();
+    expect(screen.getByText("生成失敗")).toBeInTheDocument();
   });
 });
 
@@ -322,6 +382,7 @@ describe("QuestionCard 圖像種類降級警告", () => {
 });
 
 afterEach(() => {
+  testLang.value = "en-US";
   vi.unstubAllEnvs();
   vi.clearAllMocks();
   fetchMock.mockReset();
