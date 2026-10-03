@@ -157,11 +157,14 @@ that depends on their spans, but retaining the integrations preserves existing G
 tracing for future diagnostics.  The filter also prevents the provider SDK's response
 message from becoming a separate event, consistent with ADR 0004's content allowlist.
 
-The planner's explicit `capture_exception` is no longer used for `stage="provider_call"`.
-Expected provider failures therefore retain the existing `src.llm_client` WARNING event
-once, while malformed planner output keeps the pre-existing sanitized exception event
-and warning breadcrumb.  This preserves the distinct malformed-output diagnostic without
-reintroducing provider-failure duplication.
+The planner's explicit `capture_exception` was added by #946 for planner failures in
+general.  #967 narrows it to malformed candidate output and no longer uses it for
+`stage="provider_call"`.  Expected provider failures therefore retain exactly one
+`src.llm_client` WARNING event.  Malformed output has no corresponding `LLMClient`
+WARNING because the provider call succeeded and the failure is instead in parsing or
+validating the returned candidates; keeping one sanitized exception event preserves this
+app-level defect signal, along with its warning breadcrumb, without reintroducing
+provider-failure duplication.
 
 The regression tests use the app's `init_sentry(transport=...)` seam and real SDK clients
 with `httpx.MockTransport`; they assert no raw Anthropic/OpenAI integration event for
@@ -177,13 +180,14 @@ Run command:
 choom -n 500 -- uv run pytest tests/server/test_928_sentry_provider_exception_capture.py -q
 ```
 
-Result: 4 passed in ~4 s (verified 2026-10-04).
+Result: 6 passed in ~5 s (verified 2026-10-04).
 
 The tests exercise:
 1. Planner path with httpx.MockTransport injected via `Anthropic(http_client=...)`
-2. Direct LLM generate path
-3. Gemini/OpenAI-compat path via OpenAI client with MockTransport
-4. Confirmation that `before_send` filters raw Anthropic integration events
+2. Direct Anthropic LLM generate path
+3. HTTP 401 generation failures through Anthropic and Gemini/OpenAI-compatible clients
+4. Gemini/OpenAI-compat path via OpenAI client with MockTransport
+5. Confirmation that `before_send` filters raw Anthropic integration events
 
 ## ADR 0004 compliance verdict
 

@@ -52,7 +52,7 @@ def _event_items(envelopes):
             },
         ),
         (
-            "not JSON",
+            "MALFORMED_RESPONSE_SENTINEL_928 not JSON",
             {
                 "stage": "response_parse",
                 "attempt": 2,
@@ -143,6 +143,12 @@ def test_exhausted_planning_request_reports_one_exception_with_warning_breadcrum
     ]
 
     assert len(exception_events) == 1
+    assert "MALFORMED_RESPONSE_SENTINEL_928" not in json.dumps(
+        exception_events[0], ensure_ascii=False
+    )
+    assert "MALFORMED_RESPONSE_SENTINEL_928" not in json.dumps(
+        events, ensure_ascii=False
+    )
     assert len(events) == 4
     assert warning_events == []
     assert any(

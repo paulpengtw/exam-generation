@@ -60,7 +60,8 @@ def _provider_integration_events(events: list[dict]) -> list[dict]:
         event
         for event in events
         if any(
-            value.get("mechanism", {}).get("type") in {"anthropic", "openai"}
+            value.get("mechanism", {}).get("type")
+            in observability._PROVIDER_INTEGRATION_MECHANISMS
             and value.get("mechanism", {}).get("handled") is False
             for value in event.get("exception", {}).get("values", [])
         )
@@ -206,6 +207,91 @@ def test_anthropic_provider_event_is_filtered_on_generate_path(
     assert "llm_failure provider=anthropic" in warning_events[0]["logentry"]["formatted"]
     assert quota_message not in telemetry
     assert "SENTINEL_GENERATE_PROMPT_928" not in telemetry
+
+
+def _make_auth_failure_transport(error_message: str, *, provider: str) -> httpx.Client:
+    """Return an httpx.Client whose transport always returns an authentication failure."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if provider == "anthropic":
+            body = {
+                "type": "error",
+                "error": {"type": "authentication_error", "message": error_message},
+            }
+        else:
+            body = {
+                "error": {
+                    "message": error_message,
+                    "type": "invalid_request_error",
+                    "code": "invalid_api_key",
+                }
+            }
+        return httpx.Response(401, json=body, request=request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+@pytest.mark.parametrize(
+    ("provider", "model"),
+    [
+        ("anthropic", "claude-opus-4-6"),
+        ("gemini", "gemini-3.1-pro-preview"),
+    ],
+)
+def test_auth_failure_keeps_one_warning_and_drops_provider_event(
+    isolated_sentry: _RecordingTransport,
+    provider: str,
+    model: str,
+) -> None:
+    """Generation auth failures keep exactly one safe warning and no SDK exception."""
+
+    from anthropic import Anthropic
+
+    auth_message = f"RESEARCH_928_{provider}_authentication_failure"
+    http_mock = _make_auth_failure_transport(auth_message, provider=provider)
+    if provider == "anthropic":
+        config = SrcConfig(api_key="test-key", base_url="https://api.anthropic.com/v1")
+        llm_client = LLMClient(config)
+        llm_client.client = Anthropic(api_key="test-key", http_client=http_mock)
+    else:
+        import openai
+
+        config = SrcConfig(
+            api_key="test-anthropic-key",
+            gemini_api_key="test-gemini-key",
+            model_execute=model,
+        )
+        llm_client = LLMClient(config)
+        llm_client._compat_clients["gemini"] = openai.OpenAI(
+            api_key="test-gemini-key",
+            base_url=config.gemini_base_url,
+            http_client=http_mock,
+        )
+
+    prompt_sentinel = f"SENTINEL_{provider.upper()}_AUTH_PROMPT_928"
+    try:
+        with pytest.raises(Exception):
+            llm_client.generate(
+                system="system",
+                user=prompt_sentinel,
+                model=model,
+                purpose="generate",
+            )
+        sentry_sdk.flush()
+    finally:
+        http_mock.close()
+
+    events = _event_items(isolated_sentry.envelopes)
+    telemetry = json.dumps(events, ensure_ascii=False)
+    exception_events = [event for event in events if event.get("exception")]
+    warning_events = _warning_events(events, "src.llm_client")
+
+    assert _provider_integration_events(events) == []
+    assert exception_events == []
+    assert len(warning_events) == 1
+    assert f"llm_failure provider={provider}" in warning_events[0]["logentry"]["formatted"]
+    assert auth_message not in telemetry
+    assert prompt_sentinel not in telemetry
 
 
 def test_openai_provider_event_is_filtered_for_gemini_call(

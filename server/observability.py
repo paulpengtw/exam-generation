@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import sentry_sdk
 from sentry_sdk.integrations.anthropic import AnthropicIntegration
@@ -11,6 +12,9 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.openai import OpenAIIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
+
+if TYPE_CHECKING:
+    from sentry_sdk.transport import Transport
 
 _initialized = False
 
@@ -89,7 +93,7 @@ def resolve_sentry_release() -> str | None:
     return None
 
 
-def init_sentry(*, transport: object | None = None) -> bool:
+def init_sentry(*, transport: Transport | None = None) -> bool:
     """Initialize Sentry when a backend DSN is configured.
 
     ``transport`` is an injectable SDK transport used by backend tests; the
