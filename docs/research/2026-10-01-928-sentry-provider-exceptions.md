@@ -57,14 +57,13 @@ runs.  The resulting event is already in the Sentry envelope queue.
 
 ## Does `before_send` apply?
 
-Yes — all `capture_event()` calls pass through `before_send`.  However,
-`server/observability.py::_before_send` only drops events that match **all three** of:
-- `event["level"] == "warning"`
-- `event["logger"] == PLANNER_LOGGER_NAME`
-- `event["extra"][PLANNER_DIAGNOSTIC_MARKER] is True`
-
-AnthropicIntegration events are `level="error"` with `mechanism.handled=False`, so they
-do NOT match and are passed through unchanged.
+Yes — all `capture_event()` calls pass through `before_send`.  Before issue #967,
+`server/observability.py::_before_send` only dropped planner diagnostic warning events,
+so AnthropicIntegration events were passed through unchanged.  The production filter
+now also drops only exception events containing a value with
+`mechanism.type in {"anthropic", "openai"}` and `mechanism.handled is False`.
+The integrations remain enabled, so their GenAI spans/tracing continue to work; the
+application's WARNING event or sanitized planner event remains the operational signal.
 
 ## Per provider × call site table
 
@@ -80,7 +79,7 @@ All call sites in `src/llm_client.py` that reach `self.client.messages.create` (
 
 ## What content can error messages carry?
 
-### Exception message (always captured)
+### Exception message (captured by the SDK before issue #967)
 
 `str(exc)` = `exc.message` = `f"Error code: {status_code} - {body}"` where `body` is
 the decoded JSON response body.  Examples:
@@ -138,42 +137,36 @@ _sentry.capture_exception(exc)   # line 670-671 in feat/946-llm-failure-class
 
 where `exc` is `CandidateValidationError` (the content-free re-raise).
 
-**Assessment:** This adds a **third** event for provider failures (in addition to:
+**Historical assessment:** This added a **third** event for provider failures (in addition to:
 (a) the AnthropicIntegration event for `BadRequestError`, and
 (b) the LoggingIntegration event for `logger.warning("Planner provider call failed")`).
 The explicit `capture_exception(exc)` captures `CandidateValidationError`, which carries
 only safe stage metadata (`stage`, `attempt`, `expected_count` etc.) — not provider
 messages or prompt content.  It does NOT re-expose the raw provider error.
 
-However, it creates a duplicate Sentry issue for the same request, potentially inflating
-issue counts.  Under ADR 0004 it is **not strictly harmful** (no forbidden content), but
-it is redundant and increases Sentry noise.  A follow-up cleanup is advisable.
+However, it created a duplicate Sentry issue for the same request, potentially inflating
+issue counts.  Under ADR 0004 it was **not strictly harmful** (no forbidden content), but
+it was redundant and increased Sentry noise.
 
-## Recommendation
+## Issue #967 resolution
 
-**No immediate code fix is required** for the capturing mechanism itself.
+`server/observability.py::_before_send` now drops the raw provider-integration exception
+event by its closed mechanism/type pair.  This is more conservative than disabling
+`AnthropicIntegration` and `OpenAIIntegration`: the repository has no application logic
+that depends on their spans, but retaining the integrations preserves existing GenAI
+tracing for future diagnostics.  The filter also prevents the provider SDK's response
+message from becoming a separate event, consistent with ADR 0004's content allowlist.
 
-1. The capturing is caused by the Sentry SDK's AnthropicIntegration/OpenAIIntegration,
-   not by application code.  The integration is registered intentionally
-   (`server/observability.py`) for LLM observability.
-2. Under the production config (`include_local_variables=False`,
-   `include_prompts=False`), prompt content does not reach Sentry.
-3. Provider error messages (credit balance, rate limit, overloaded) do not contain
-   exam content, prompt text, or other ADR-0004-forbidden material.
-4. The one theoretical risk — an API error that echoes back prompt content in its body
-   — is not observed in practice for any current Anthropic/Gemini error type, and would
-   require the provider to deliberately include the prompt in its error message.
+The planner's explicit `capture_exception` is no longer used for `stage="provider_call"`.
+Expected provider failures therefore retain the existing `src.llm_client` WARNING event
+once, while malformed planner output keeps the pre-existing sanitized exception event
+and warning breadcrumb.  This preserves the distinct malformed-output diagnostic without
+reintroducing provider-failure duplication.
 
-**Follow-up ticket recommended:**
-
-Open a separate issue to:
-- Remove the redundant `_sentry.capture_exception(exc)` added by PR #956 (it's not
-  needed because the AnthropicIntegration and LoggingIntegration already cover this).
-- Consider whether `AnthropicIntegration` should be removed entirely from the
-  `integrations=` list, since the application already has `LoggingIntegration` at
-  WARNING level and explicit metric recording.  Removing it would prevent the
-  "unhandled" exception event for every provider failure, which is a better user
-  experience in Sentry (fewer false alarms for expected transient failures like quota).
+The regression tests use the app's `init_sentry(transport=...)` seam and real SDK clients
+with `httpx.MockTransport`; they assert no raw Anthropic/OpenAI integration event for
+planner or generation calls, while the WARNING signal remains.  They also assert that
+provider response messages and prompt sentinels do not appear in the resulting telemetry.
 
 ## Reproduction
 
@@ -184,13 +177,13 @@ Run command:
 choom -n 500 -- uv run pytest tests/server/test_928_sentry_provider_exception_capture.py -q
 ```
 
-Result: 4 passed in ~9 s (verified 2026-10-01).
+Result: 4 passed in ~4 s (verified 2026-10-04).
 
 The tests exercise:
 1. Planner path with httpx.MockTransport injected via `Anthropic(http_client=...)`
 2. Direct LLM generate path
 3. Gemini/OpenAI-compat path via OpenAI client with MockTransport
-4. Confirmation that `before_send` does not filter these events
+4. Confirmation that `before_send` filters raw Anthropic integration events
 
 ## ADR 0004 compliance verdict
 
