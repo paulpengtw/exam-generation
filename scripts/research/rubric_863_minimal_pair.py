@@ -5,8 +5,10 @@ Research #863 — scorer for the 最小對照 (minimal pair) checker measurement
 Builds one checker prompt for every (item, variant) unit in the synthetic
 minimal-pair set, assigns units to seven deterministic batches, imports
 externally-produced checker responses, and scores the checker flag against the
-independent labeller's pass/fail labels. Responses are cached by
-(unit_key, prompt_sha), matching the #862 research-script convention.
+independent labeller's pass/fail labels. Per-batch checker files use opaque
+ids, with their unit-key mapping kept in batch_id_map.json so the design
+variant is not visible to checkers. Responses are cached by (unit_key,
+prompt_sha), matching the #862 research-script convention.
 
 CLI:
   --emit-prompts          Write prompts.jsonl and batches/batch_<n>.jsonl.
@@ -71,6 +73,7 @@ DEFAULT_CACHE_PATH = OUT_DIR / "checker_responses.jsonl"
 PROMPTS_PATH = OUT_DIR / "prompts.jsonl"
 MATRICES_PATH = OUT_DIR / "matrices.md"
 DISAGREEMENTS_PATH = OUT_DIR / "disagreements.json"
+BATCH_ID_MAP_PATH = OUT_DIR / "batch_id_map.json"
 SYSTEM_PATH = OUT_DIR / "checker_system.txt"
 USER_TEMPLATE_PATH = OUT_DIR / "checker_user_template.txt"
 SYNTHETIC_SET_PATH = OUT_DIR / "synthetic_set.json"
@@ -78,6 +81,16 @@ LABELLED_SET_PATH = OUT_DIR / "labelled_set.json"
 
 BATCH_COUNT = 7
 EXPECTED_UNIT_COUNT = 105
+BLINDED_VARIANT_NAMES = (
+    "true_pair",
+    "fewer_points",
+    "different_claim",
+    "no_reason",
+    "closes_chain",
+    "framed_omission",
+    "omission_plus_gap",
+    "omits_two",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -282,14 +295,42 @@ def _write_jsonl(path: pathlib.Path, rows: list[dict[str, Any]]) -> None:
     )
 
 
+def _blinded_batch_row(
+    batch_index: int, row_index: int, unit: dict[str, Any]
+) -> dict[str, str]:
+    row = {
+        "id": f"q{batch_index}{row_index:02d}",
+        "system": unit["system"],
+        "user": unit["user"],
+    }
+    serialized = json.dumps(row, ensure_ascii=False)
+    leaked_names = [name for name in BLINDED_VARIANT_NAMES if name in serialized]
+    if leaked_names:
+        raise AssertionError(
+            f"Blinded batch row {row['id']} contains variant name(s): {leaked_names}"
+        )
+    return row
+
+
 def cmd_emit_prompts(units: list[dict[str, Any]]) -> None:
     batches = assign_batches(units)
     rows: list[dict[str, Any]] = []
+    batch_id_map: dict[str, str] = {}
     for batch_index in range(BATCH_COUNT):
         batch_rows = [_prompt_row(unit) for unit in batches[batch_index]]
         rows.extend(batch_rows)
-        _write_jsonl(BATCHES_DIR / f"batch_{batch_index}.jsonl", batch_rows)
+        blinded_rows = []
+        for row_index, unit in enumerate(batches[batch_index]):
+            blinded_row = _blinded_batch_row(batch_index, row_index, unit)
+            blinded_rows.append(blinded_row)
+            batch_id_map[blinded_row["id"]] = unit["unit_key"]
+        _write_jsonl(BATCHES_DIR / f"batch_{batch_index}.jsonl", blinded_rows)
     _write_jsonl(PROMPTS_PATH, rows)
+    BATCH_ID_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BATCH_ID_MAP_PATH.write_text(
+        json.dumps(batch_id_map, ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
 
     print(f"{len(units)} units, {BATCH_COUNT} batches → {PROMPTS_PATH}")
     for batch_index in range(BATCH_COUNT):
@@ -332,6 +373,15 @@ def cmd_import_responses(
     cache_path: pathlib.Path,
 ) -> None:
     unit_by_key = {unit["unit_key"]: unit for unit in units}
+    batch_id_map: dict[str, str] = {}
+    if BATCH_ID_MAP_PATH.exists():
+        parsed_id_map = json.loads(BATCH_ID_MAP_PATH.read_text(encoding="utf-8"))
+        if not isinstance(parsed_id_map, dict) or not all(
+            isinstance(identifier, str) and isinstance(unit_key, str)
+            for identifier, unit_key in parsed_id_map.items()
+        ):
+            raise SystemExit(f"ASSERTION FAILED: invalid batch id map at {BATCH_ID_MAP_PATH}")
+        batch_id_map = parsed_id_map
     existing_cache = load_cache(cache_path)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     added = skipped = failed = 0
@@ -353,9 +403,16 @@ def cmd_import_responses(
                 continue
 
             unit_key = record.get("unit_key")
+            if unit_key is None:
+                response_id = record.get("id")
+                unit_key = batch_id_map.get(response_id)
             unit = unit_by_key.get(unit_key)
             if unit is None:
-                print(f"[WARN] line {lineno}: unknown unit_key {unit_key!r}", file=sys.stderr)
+                print(
+                    f"[WARN] line {lineno}: unknown unit_key or id "
+                    f"{record.get('unit_key', record.get('id'))!r}",
+                    file=sys.stderr,
+                )
                 failed += 1
                 continue
             prompt_sha = unit["prompt_sha"]
@@ -635,7 +692,7 @@ def _write_score_outputs(
             "|---|---:|---:|---:|---:|---:|",
         ]
     )
-    for stratum in ("framed_stem", "framed_figure"):
+    for stratum in ("open", "framed_stem", "framed_figure"):
         rows = [(unit, response) for unit, response in all_rows if unit["stratum"] == stratum]
         true_count = sum(response.get("set_framed") is True for _, response in rows)
         false_count = sum(response.get("set_framed") is False for _, response in rows)
