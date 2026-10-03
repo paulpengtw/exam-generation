@@ -262,6 +262,7 @@ describe("useGenerate — live-stream error routing (issue #946 bugs 1 & 2)", ()
     expect(result.current.status).not.toBe("error");
     expect(result.current.errorMessage).toBeNull();
     expect(result.current.errorFailureClass).toBeNull();
+    expect(result.current.evidence?.questions["q-1"].failureClass).toBe("timeout");
   });
 
   it("question-scoped error does not close stream — later sibling result still arrives", async () => {

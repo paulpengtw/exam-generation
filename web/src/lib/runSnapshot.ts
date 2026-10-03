@@ -29,6 +29,8 @@ import {
 } from "./generationEvidence";
 import {
   parseProviderFailureContext,
+  parseFailureClass,
+  type FailureClass,
   type ProviderFailureContext,
 } from "./providerFailure";
 
@@ -63,6 +65,8 @@ export interface RunSnapshotQuestion {
   termination_reason: string | null;
   terminal: Record<string, unknown> | null;
   error: string | null;
+  /** Optional per-question provider failure taxonomy from newer snapshots. */
+  failure_class?: FailureClass | null;
   result: RunSnapshotResult | null;
 }
 
@@ -186,7 +190,7 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
     ) {
       return null;
     }
-    questions.push({
+    const parsedQuestion: RunSnapshotQuestion = {
       index: item.index,
       question_id: item.question_id,
       processing: typeof item.processing === "string" ? item.processing : "waiting",
@@ -195,7 +199,11 @@ export function parseRunSnapshot(raw: unknown): RunSnapshot | null {
       terminal: isRecord(item.terminal) ? item.terminal : null,
       error: stringOrNull(item.error),
       result: parseResult(item.result),
-    });
+    };
+    if (Object.prototype.hasOwnProperty.call(item, "failure_class")) {
+      parsedQuestion.failure_class = parseFailureClass(item.failure_class);
+    }
+    questions.push(parsedQuestion);
   }
   return {
     run_id: raw.run_id,
@@ -314,8 +322,22 @@ function applyQuestion(
   q: RunSnapshotQuestion,
 ): RunEvidenceState {
   const id = q.question_id;
-  const qev = state.questions[id];
+  let qev = state.questions[id];
   if (!qev) return state;
+
+  // A newer persisted snapshot may carry the same taxonomy code as the live
+  // error event. Missing/null remains non-destructive so older snapshots do
+  // not erase a cause already observed on this page.
+  if (q.failure_class != null && qev.failureClass == null) {
+    state = {
+      ...state,
+      questions: {
+        ...state.questions,
+        [id]: { ...qev, failureClass: q.failure_class },
+      },
+    };
+    qev = state.questions[id];
+  }
 
   if (q.termination_reason === null) {
     if (qev.terminal !== null) return state;

@@ -22,7 +22,10 @@ import {
 } from "../lib/runSnapshot";
 import {
   appendProviderFailureContext,
+  localizedFailureClassMessage,
+  parseFailureClass,
   parseProviderFailureContext,
+  type FailureClass,
   type ProviderFailureContext,
 } from "../lib/providerFailure";
 import { applyPollReadFailed, applyStreamLost, applyV2Event, closeRun, selectEndedCount, type RunEvidenceState } from "../lib/generationEvidence";
@@ -440,22 +443,9 @@ export function parseErrorEventData(raw: string): string {
  */
 export interface ErrorPayload {
   message: string;
-  failureClass: string | null;
+  failureClass: FailureClass | null;
   providerContext: ProviderFailureContext | null;
 }
-
-const TAXONOMY_CODES = new Set([
-  "auth_config",
-  "quota_billing_exhausted",
-  "rate_limited",
-  "overloaded",
-  "timeout",
-  "connection",
-  "context_length",
-  "content_filtered",
-  "malformed_response",
-  "unknown",
-]);
 
 export function parseErrorPayload(raw: string): ErrorPayload {
   if (!raw) return { message: "Unknown error", failureClass: null, providerContext: null };
@@ -474,10 +464,7 @@ export function parseErrorPayload(raw: string): ErrorPayload {
         typeof source.message === "string" && source.message !== ""
           ? source.message
           : null;
-      const fc =
-        typeof source.failure_class === "string" && TAXONOMY_CODES.has(source.failure_class)
-          ? source.failure_class
-          : null;
+      const fc = parseFailureClass(source.failure_class);
       const providerContext = parseProviderFailureContext(source);
       // Never return raw JSON as the message — fall back to "Unknown error"
       return { message: msg ?? "Unknown error", failureClass: fc, providerContext };
@@ -1025,10 +1012,12 @@ export function useGenerate(): UseGenerateReturn {
                 : "";
             const errPayload = parseErrorPayload(payloadStr);
             const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
+            const localizedClassMessage = localizedFailureClassMessage(
+              errPayload.failureClass,
+              (key) => errMessages[key] ?? "",
+            );
             const localizedErrMsg = appendProviderFailureContext(
-              errPayload.failureClass
-                ? `${errMessages[`error.class.${errPayload.failureClass}`] ?? errPayload.message}\n${errMessages[`error.class_hint.${errPayload.failureClass}`] ?? ""}`.trim()
-                : errPayload.message,
+              localizedClassMessage ?? errPayload.message,
               errPayload.providerContext,
             );
             setErrorFailureClass(errPayload.failureClass);
@@ -1163,14 +1152,14 @@ export function useGenerate(): UseGenerateReturn {
     setFinishedAt(Number.isNaN(completedAt) ? Date.now() : completedAt);
     if (snapshot.status === "failed") {
       // issue #946: use snapshot.failure_class when present to show localized message
-      const snapshotFc =
-        typeof snapshot.failure_class === "string" && TAXONOMY_CODES.has(snapshot.failure_class)
-          ? snapshot.failure_class
-          : null;
+      const snapshotFc = parseFailureClass(snapshot.failure_class);
       setErrorFailureClass(snapshotFc);
       if (snapshotFc !== null) {
         const errMessages = MESSAGES[useLangStore.getState().lang] ?? MESSAGES["zh-TW"];
-        const localizedErrMsg = `${errMessages[`error.class.${snapshotFc}`] ?? snapshot.error ?? localMessage("generate.run_failed")}\n${errMessages[`error.class_hint.${snapshotFc}`] ?? ""}`.trim();
+        const localizedErrMsg = localizedFailureClassMessage(
+          snapshotFc,
+          (key) => errMessages[key] ?? "",
+        ) ?? snapshot.error ?? localMessage("generate.run_failed");
         setErrorMessage(appendProviderFailureContext(localizedErrMsg, snapshot.failure_context));
       } else {
         setErrorMessage(

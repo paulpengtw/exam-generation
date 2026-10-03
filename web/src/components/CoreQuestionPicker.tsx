@@ -3,7 +3,7 @@ import { ApiError, planCoreQuestions } from "../api/client";
 import { useLangStore } from "../store/langStore";
 import { MESSAGES } from "../i18n/messages";
 import { useT } from "../i18n/useT";
-import { appendProviderFailureContext } from "../lib/providerFailure";
+import { appendProviderFailureContext, localizedFailureClassMessage } from "../lib/providerFailure";
 import {
   ActionButton,
   ActionFailure,
@@ -62,11 +62,11 @@ export default function CoreQuestionPicker({
           const lang = useLangStore.getState().lang;
           const msgs = MESSAGES[lang] ?? MESSAGES["en-US"];
           let message = err.detail;
-          if (err.failureClass) {
-            const label = msgs[`error.class.${err.failureClass}`];
-            const hint = msgs[`error.class_hint.${err.failureClass}`];
-            if (label && hint) message = `${label}\n${hint}`;
-          }
+          const localizedClassMessage = localizedFailureClassMessage(
+            err.failureClass,
+            (key) => msgs[key] ?? "",
+          );
+          if (localizedClassMessage) message = localizedClassMessage;
           const withContext = appendProviderFailureContext(message, err.providerFailureContext);
           if (withContext !== err.detail || err.providerFailureContext != null) {
             throw new ActionFailure(withContext);

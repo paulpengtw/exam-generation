@@ -21,6 +21,7 @@ import {
 } from "../lib/workspace/adapters/modificationWorkspace";
 import type { ModificationWorkspaceSnapshot } from "../lib/workspace/adapters/types";
 import { useT } from "../i18n/useT";
+import { localizedFailureClassMessage } from "../lib/providerFailure";
 import {
   ActionButton,
   firstFailure,
@@ -565,6 +566,7 @@ function processingLabel(processing: QuestionEvidence["processing"], t: (k: stri
 
 function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
   const t = useT();
+  const failureMessage = localizedFailureClassMessage(evidence.failureClass, t);
   const procLabel = processingLabel(evidence.processing, t);
   const reviewStatus = evidence.review.status;
   const reviewLabel = evidence.review.pending
@@ -604,6 +606,15 @@ function EvidenceStatusLine({ evidence }: { evidence: QuestionEvidence }) {
 
   return (
     <div className="sentry-unmask flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
+      {failureMessage && (
+        <div
+          data-testid="question-card-failure-class"
+          role="status"
+          className="basis-full whitespace-pre-wrap rounded border border-red-200 bg-red-50 p-2 text-sm text-red-800"
+        >
+          {failureMessage}
+        </div>
+      )}
       <span data-testid="evidence-processing-status">{procLabel}</span>
       {terminationLabel && <span>{terminationLabel}</span>}
       {deliveryLabel && <span data-testid="evidence-delivery-status">{deliveryLabel}</span>}

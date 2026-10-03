@@ -12,6 +12,7 @@ import type {
   VerificationTrailEntry,
 } from "../hooks/useGenerate";
 import type { RunManifest, DecodedEvent } from "./generationStream";
+import { parseFailureClass, type FailureClass } from "./providerFailure";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,6 +92,8 @@ export interface QuestionEvidence {
     phase: DraftPhase | null;
   };
   terminal: QuestionTerminalPayload | null;
+  /** Recognized provider failure from a question-scoped generation_failed event. */
+  failureClass?: FailureClass | null;
   /** A malformed or contradictory terminal is retained as an uncertainty, not an ending. */
   terminalConflict?: boolean;
   terminalConflictReason?: string;
@@ -154,6 +157,7 @@ function emptyQuestionEvidence(questionId: string, index: number): QuestionEvide
     processing: "waiting",
     content: { receipt: "none", revision: null, question: null, phase: null },
     terminal: null,
+    failureClass: null,
     terminalConflict: false,
     terminalConflictReason: undefined,
     reviewConflict: false,
@@ -575,7 +579,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
   let qev = state.questions[questionId];
   if (!qev) return state; // unknown question id
 
-  const p = payload as Record<string, unknown>;
+  const p = isRecord(payload) ? payload : {};
 
   if (
     qev.terminalConflict
@@ -588,7 +592,7 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
     qev.terminal !== null
     && (name === "pipeline" || name === "stage" || name === "llm_request"
       || name === "llm_response" || name === "llm_thinking" || name === "llm_content"
-      || name === "llm_failure")
+      || name === "llm_failure" || name === "error")
   ) {
     return state;
   }
@@ -606,6 +610,12 @@ export function applyV2Event(state: RunEvidenceState, decodedEvent: DecodedEvent
   }
 
   switch (name) {
+    case "error": {
+      const failureClass = parseFailureClass(p.failure_class);
+      if (failureClass === null || qev.failureClass != null) return state;
+      return updateQuestion(state, questionId, { failureClass });
+    }
+
     case "pipeline": {
       const eventName = p.event_name as string | undefined;
       if (eventName === "question_start" && qev.processing !== "ended") {

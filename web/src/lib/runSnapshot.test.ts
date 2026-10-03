@@ -177,6 +177,23 @@ describe("parseRunSnapshot", () => {
       retryAfterSeconds: 12,
     });
   });
+
+  it("carries a per-question failure class into question evidence when the snapshot supplies it", () => {
+    const parsed = parseRunSnapshot({
+      run_id: "run-1",
+      status: "running",
+      questions: [{
+        index: 0,
+        question_id: "q-1",
+        failure_class: "rate_limited",
+      }],
+    });
+    expect(parsed).not.toBeNull();
+    const questionState = parsed?.questions[0] as RunSnapshotQuestion & { failure_class?: string | null };
+    expect(questionState.failure_class).toBe("rate_limited");
+    const evidence = applyRunSnapshot(null, parsed!);
+    expect(evidence.questions["q-1"].failureClass).toBe("rate_limited");
+  });
 });
 
 describe("applyRunSnapshot", () => {

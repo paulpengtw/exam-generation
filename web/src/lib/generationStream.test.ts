@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GeneratedQuestion, LlmCallEvent } from "../hooks/useGenerate";
 import { projectGenerationCardEvidence, projectGenerationEvidence, createGenerationStreamDecoder } from "./generationStream";
+import { applyV2Event, createRunEvidence, type RunEvidenceState } from "./generationEvidence";
 
 describe("projectGenerationEvidence", () => {
   it("keeps only stage events in stream order and carries the subquestion count", () => {
@@ -316,5 +317,98 @@ describe("createGenerationStreamDecoder", () => {
     expect(dec.run).toBe(originalRun); // run manifest is unchanged
     expect(events2).toHaveLength(1);
     expect(events2[0]).toEqual({ kind: "ignore", reason: "duplicate_seq" });
+  });
+
+  it("keeps a question-scoped provider error isolated while a sibling continues", () => {
+    const q2 = {
+      id: "q_002",
+      情境: ["個人"],
+      題型種類: "單一題",
+      題型: "選擇題",
+      題目: ["Sibling question"],
+      正確解題分析: ["answer"],
+    };
+    const wireEvents = [
+      {
+        event: "started",
+        context: { run_id: "RUN", event_seq: 1 },
+        payload: {
+          protocol_version: 2,
+          total: 2,
+          questions: [
+            { index: 0, question_id: "q_001" },
+            { index: 1, question_id: "q_002" },
+          ],
+          generation_log_id: null,
+        },
+      },
+      {
+        event: "error",
+        context: { run_id: "RUN", event_seq: 2, question_id: "q_001", index: 0 },
+        payload: {
+          code: "generation_failed",
+          message: "Question generation failed (RateLimitError)",
+          failure_class: "rate_limited",
+        },
+      },
+      {
+        event: "question_update",
+        context: {
+          run_id: "RUN",
+          event_seq: 3,
+          question_id: "q_002",
+          index: 1,
+          content_revision: 1,
+        },
+        payload: { index: 1, phase: "draft", question: q2 },
+      },
+      {
+        event: "result",
+        context: {
+          run_id: "RUN",
+          event_seq: 4,
+          question_id: "q_002",
+          index: 1,
+          content_revision: 1,
+        },
+        payload: q2,
+      },
+      {
+        event: "question_terminal",
+        context: { run_id: "RUN", event_seq: 5, question_id: "q_002", index: 1 },
+        payload: {
+          termination_reason: "normal",
+          has_final: true,
+          final_revision: 1,
+          delivery_status: "complete",
+          expected: [],
+          delivered: [],
+          missing: [],
+          review: { status: "passed", content_revision: 1 },
+        },
+      },
+    ];
+
+    const decoder = createGenerationStreamDecoder();
+    let state: RunEvidenceState | null = null;
+    for (const wireEvent of wireEvents) {
+      const rawData = JSON.stringify(wireEvent);
+      for (const decoded of decoder.decode(wireEvent.event, rawData)) {
+        if (decoded.kind === "v2" && decoded.event.name === "started") {
+          expect(decoder.run).not.toBeNull();
+          state = createRunEvidence(decoder.run!);
+        } else if (decoded.kind === "v2" && state !== null) {
+          state = applyV2Event(state, decoded);
+        }
+      }
+    }
+
+    expect(state).not.toBeNull();
+    expect(state!.questions["q_001"].failureClass).toBe("rate_limited");
+    expect(state!.questions["q_001"].terminal).toBeNull();
+    expect(state!.questions["q_002"].content.receipt).toBe("final");
+    expect(state!.questions["q_002"].terminal?.termination_reason).toBe("normal");
+    expect(state!.questions["q_002"].processing).toBe("ended");
+    expect(state!.closed).toBe(false);
   });
 });
