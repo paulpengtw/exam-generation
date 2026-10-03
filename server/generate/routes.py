@@ -670,8 +670,11 @@ async def plan_core_questions_endpoint(
             logger.warning("Planner provider call failed: %s", exc, extra=diagnostic)
         else:
             logger.warning("Planner returned malformed candidates: %s", exc, extra=diagnostic)
-        import sentry_sdk as _sentry
-        _sentry.capture_exception(exc)
+            # Keep one sanitized exception event for malformed output. The
+            # LLMClient WARNING exists only for provider-call failures, so
+            # malformed candidates have no equivalent app-level defect signal.
+            import sentry_sdk as _sentry
+            _sentry.capture_exception(exc)
         if is_provider_failure:
             _pfc = getattr(exc, "failure_class", None) or "unknown"
             _provider_context = {

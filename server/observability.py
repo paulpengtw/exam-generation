@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 
 import sentry_sdk
 from sentry_sdk.integrations.anthropic import AnthropicIntegration
@@ -12,20 +13,45 @@ from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.openai import OpenAIIntegration
 from sentry_sdk.integrations.starlette import StarletteIntegration
 
+if TYPE_CHECKING:
+    from sentry_sdk.transport import Transport
+
 _initialized = False
 
 PLANNER_DIAGNOSTIC_MARKER = "planner_diagnostic"
 PLANNER_LOGGER_NAME = "server.generate.routes"
+_PROVIDER_INTEGRATION_MECHANISMS = frozenset({"anthropic", "openai"})
+
+
+def _is_provider_integration_event(event: dict) -> bool:
+    """Identify raw unhandled events emitted inside provider SDK wrappers."""
+
+    values = (event.get("exception") or {}).get("values") or []
+    return any(
+        (mechanism := value.get("mechanism") or {}).get("type")
+        in _PROVIDER_INTEGRATION_MECHANISMS
+        and mechanism.get("handled") is False
+        for value in values
+    )
 
 
 def _before_send(event: dict, hint: dict) -> dict | None:
-    """Drop the planner's duplicate warning issue while keeping its breadcrumb.
+    """Keep safe operational signals while dropping duplicate provider SDK events.
 
-    The logging integration records the warning as a breadcrumb alongside its
-    warning event.  Filtering only the explicitly marked warning therefore
-    leaves the diagnostic available on the chained exception event while
-    preserving unrelated warning and error events.
+    Anthropic and OpenAI integrations call ``capture_event`` inside the SDK
+    wrapper before application code can normalize the provider exception.  The
+    resulting unhandled event is both noisy and may carry provider response
+    text, so ADR 0004's allowlist drops that event here.  The integrations stay
+    enabled for their GenAI tracing; the application WARNING or sanitized
+    planner event remains the operational signal.
+
+    The logging integration records the planner warning as a breadcrumb
+    alongside the sanitized planner event.  Filtering only the explicitly
+    marked warning therefore preserves that diagnostic while unrelated warning
+    and error events continue through unchanged.
     """
+    if _is_provider_integration_event(event):
+        return None
     if (
         event.get("level") == "warning"
         and event.get("logger") == PLANNER_LOGGER_NAME
@@ -67,8 +93,12 @@ def resolve_sentry_release() -> str | None:
     return None
 
 
-def init_sentry() -> bool:
-    """Initialize Sentry when a backend DSN is configured."""
+def init_sentry(*, transport: Transport | None = None) -> bool:
+    """Initialize Sentry when a backend DSN is configured.
+
+    ``transport`` is an injectable SDK transport used by backend tests; the
+    production callers leave it unset so the SDK selects its normal transport.
+    """
     global _initialized
 
     if _initialized:
@@ -121,6 +151,8 @@ def init_sentry() -> bool:
     release = resolve_sentry_release()
     if release is not None:
         init_kwargs["release"] = release
+    if transport is not None:
+        init_kwargs["transport"] = transport
 
     sentry_sdk.init(**init_kwargs)
     _initialized = True

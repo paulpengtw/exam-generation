@@ -52,7 +52,7 @@ def _event_items(envelopes):
             },
         ),
         (
-            "not JSON",
+            "MALFORMED_RESPONSE_SENTINEL_928 not JSON",
             {
                 "stage": "response_parse",
                 "attempt": 2,
@@ -143,6 +143,12 @@ def test_exhausted_planning_request_reports_one_exception_with_warning_breadcrum
     ]
 
     assert len(exception_events) == 1
+    assert "MALFORMED_RESPONSE_SENTINEL_928" not in json.dumps(
+        exception_events[0], ensure_ascii=False
+    )
+    assert "MALFORMED_RESPONSE_SENTINEL_928" not in json.dumps(
+        events, ensure_ascii=False
+    )
     assert len(events) == 4
     assert warning_events == []
     assert any(
@@ -186,7 +192,7 @@ def test_exhausted_planning_request_reports_one_exception_with_warning_breadcrum
 
 @pytest.mark.parametrize("provider_error", [ValueError, RuntimeError, TimeoutError])
 def test_provider_exception_diagnostic_does_not_send_raw_error(monkeypatch, provider_error):
-    """Provider failures expose safe counts, never the provider's raw message."""
+    """Provider failures do not create a planner exception event or leak raw text."""
     from tests.server.test_plan_core_questions_routes import _make_app_and_token
 
     envelopes = []
@@ -233,27 +239,7 @@ def test_provider_exception_diagnostic_does_not_send_raw_error(monkeypatch, prov
 
     events = _event_items(envelopes)
     exception_events = [event for event in events if event.get("exception")]
-    assert len(exception_events) == 1
-
-    breadcrumbs = exception_events[0].get("breadcrumbs", {}).get("values", [])
-    diagnostic_breadcrumbs = [
-        breadcrumb
-        for breadcrumb in breadcrumbs
-        if breadcrumb.get("level") == "warning"
-        and breadcrumb.get("category") == observability.PLANNER_LOGGER_NAME
-        and breadcrumb.get("data", {}).get(observability.PLANNER_DIAGNOSTIC_MARKER) is True
-    ]
-    assert len(diagnostic_breadcrumbs) == 1
-    assert {
-        key: diagnostic_breadcrumbs[0]["data"][key]
-        for key in ("stage", "attempt", "expected_count", "actual_count", "received_count")
-    } == {
-        "stage": "provider_call",
-        "attempt": 1,
-        "expected_count": 3,
-        "actual_count": 0,
-        "received_count": 0,
-    }
+    assert exception_events == []
 
     telemetry = json.dumps(events, ensure_ascii=False)
     assert "SENSITIVE_PROVIDER_RESPONSE_763" not in telemetry
