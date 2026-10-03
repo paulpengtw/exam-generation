@@ -131,6 +131,8 @@ class GenerationQuestionState(Base):
         Uuid(as_uuid=True), ForeignKey("generation_records.id"), nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Recognized provider failure taxonomy for a question-scoped generation error.
+    failure_class: Mapped[str | None] = mapped_column(String(40), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

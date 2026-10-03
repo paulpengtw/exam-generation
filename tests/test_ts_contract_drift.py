@@ -1,4 +1,4 @@
-"""Drift guard: contract.ts must match what generate_ts_contract.py emits.
+"""Drift guards for generated API and detached-run TypeScript contracts.
 
 If this test fails, the checked-in file is stale. Regenerate with:
 
@@ -8,6 +8,7 @@ If this test fails, the checked-in file is stale. Regenerate with:
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from server.generate.routes import generate_endpoint
 ROOT = Path(__file__).resolve().parent.parent
 CONTRACT_PATH = ROOT / "web" / "src" / "api" / "generated" / "contract.ts"
 USE_GENERATE_PATH = ROOT / "web" / "src" / "hooks" / "useGenerate.ts"
+RUN_SNAPSHOT_PATH = ROOT / "web" / "src" / "lib" / "runSnapshot.ts"
 REGEN_CMD = "python scripts/generate_ts_contract.py"
 
 
@@ -55,4 +57,19 @@ def test_every_generated_request_field_is_reachable_on_generate_route() -> None:
     assert not missing_fields, (
         "Generated request fields missing from the live web query builder: "
         f"{sorted(missing_fields)}"
+    )
+
+
+def test_run_snapshot_question_contract_includes_failure_class() -> None:
+    """Keep the persisted question wire field aligned with the backend snapshot."""
+    source = RUN_SNAPSHOT_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        r"export interface RunSnapshotQuestion \{(?P<body>.*?)\n\}",
+        source,
+        flags=re.DOTALL,
+    )
+    assert match is not None, "RunSnapshotQuestion interface is missing"
+    assert "failure_class?: FailureClass | null;" in match.group("body"), (
+        "RunSnapshotQuestion must accept the optional per-question failure_class "
+        "returned by GET /api/runs/{id}"
     )

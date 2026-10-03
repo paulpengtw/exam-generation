@@ -30,7 +30,7 @@ from server.generate.run import (
     execute_run,
     read_run,
 )
-from server.models import Base, GenerationLog, LLMExchange, User
+from server.models import Base, GenerationLog, GenerationQuestionState, LLMExchange, User
 from tests.server.generate_test_utils import resolved_generate_params
 
 # ---------------------------------------------------------------------------
@@ -299,6 +299,76 @@ def test_per_question_error_failure_class_persisted(tmp_path: Path) -> None:
             assert fc == "rate_limited", (
                 f"expected failure_class=rate_limited from per-question error, got {fc!r}"
             )
+
+        await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=40.0))
+
+
+def test_per_question_failure_class_round_trips_through_snapshot(tmp_path: Path) -> None:
+    """A question-scoped generation failure survives recorder persistence and read_run."""
+    async def _run() -> None:
+        claimed, sessions, engine = await _setup_db_and_run(tmp_path, "question_snapshot.db")
+        run_id = claimed.run_id
+        question_id = f"q_{run_id}_001"
+
+        async def _error_then_done_stream(*args: Any, **kwargs: Any):
+            yield {
+                "event": "error",
+                "context": {
+                    "run_id": str(run_id),
+                    "question_id": question_id,
+                    "event_seq": 1,
+                },
+                "payload": {
+                    "code": "generation_failed",
+                    "message": "provider message must remain an error detail",
+                    "failure_class": "rate_limited",
+                },
+            }
+            yield {"event": "done", "payload": {}}
+
+        with patch(
+            "server.generate.run.generate_question_stream",
+            new=_error_then_done_stream,
+        ):
+            await asyncio.wait_for(
+                execute_run(
+                    claimed,
+                    app_state=_app_state(),
+                    config=_server_config(tmp_path),
+                    session_factory=sessions,
+                    host_id="fc-test-host",
+                    client_factory=None,
+                    subjects=None,
+                ),
+                timeout=30.0,
+            )
+
+        async with sessions() as session:
+            state = (
+                await session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == run_id,
+                        GenerationQuestionState.question_id == question_id,
+                    )
+                )
+            ).scalar_one()
+            snapshot = await read_run(
+                run_id,
+                claimed.user_id,
+                session=session,
+                config=_server_config(tmp_path),
+            )
+
+        assert state.failure_class == "rate_limited"
+        assert snapshot is not None
+        assert snapshot["status"] == "failed"
+        assert snapshot["questions"][0]["failure_class"] == "rate_limited"
+        assert snapshot["questions"][0]["error"] == (
+            "provider message must remain an error detail"
+        )
+        assert snapshot["questions"][0]["failure_class"] != snapshot["questions"][0]["error"]
 
         await engine.dispose()
 
