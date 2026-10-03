@@ -93,6 +93,7 @@ def test_run_migrations_add_columns_and_question_state_table(tmp_path, monkeypat
         "terminal_json",
         "generation_record_id",
         "error",
+        "failure_class",
         "updated_at",
     }.issubset(schema["state_columns"])
     assert any(

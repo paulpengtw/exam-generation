@@ -1,10 +1,11 @@
 /**
  * F4: QuestionCard with QuestionEvidence prop tests.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import QuestionCard from "./QuestionCard";
 import type { QuestionEvidence } from "../lib/generationEvidence";
+import { applyRunSnapshot, parseRunSnapshot } from "../lib/runSnapshot";
 
 function makeEvidence(overrides: Partial<QuestionEvidence> = {}): QuestionEvidence {
   return {
@@ -36,6 +37,62 @@ describe("QuestionCard — placeholder (evidence, no content)", () => {
   it("renders a compact placeholder without a question", () => {
     render(<QuestionCard evidence={makeEvidence()} index={0} />);
     expect(screen.getByTestId("question-card-placeholder")).toBeInTheDocument();
+  });
+
+  it("restores a localized provider cause from a reloaded run snapshot", () => {
+    const parsed = parseRunSnapshot({
+      run_id: "run-1",
+      status: "failed",
+      total: 2,
+      questions: [
+        {
+          index: 0,
+          question_id: "q-1",
+          processing: "ended",
+          current_step: null,
+          termination_reason: "failed",
+          terminal: {
+            termination_reason: "failed",
+            has_final: false,
+            final_revision: null,
+            delivery_status: "none",
+            expected: [],
+            delivered: [],
+            missing: [],
+            review: { status: "unknown" },
+          },
+          error: "provider message must not become the displayed cause",
+          failure_class: "rate_limited",
+          result: null,
+        },
+        {
+          index: 1,
+          question_id: "q-2",
+          processing: "waiting",
+          current_step: null,
+          termination_reason: null,
+          terminal: null,
+          error: null,
+          result: null,
+        },
+      ],
+    });
+    expect(parsed).not.toBeNull();
+    const evidence = applyRunSnapshot(null, parsed!);
+
+    render(
+      <>
+        <QuestionCard evidence={evidence.questions["q-1"]} index={0} />
+        <QuestionCard evidence={evidence.questions["q-2"]} index={1} />
+      </>,
+    );
+
+    const cards = screen.getAllByTestId("question-card-placeholder");
+    expect(within(cards[0]).getByTestId("question-card-failure-class")).toHaveTextContent(
+      /Rate limited|請求頻率限制/,
+    );
+    expect(cards[0]).not.toHaveTextContent("provider message must not become the displayed cause");
+    expect(within(cards[1]).queryByTestId("question-card-failure-class")).not.toBeInTheDocument();
   });
 
   it("shows 等待生成 for waiting processing", () => {

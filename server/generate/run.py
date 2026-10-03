@@ -59,6 +59,7 @@ from src.common.generation_events import allocate_manifest
 from src.llm_client import (
     classify_provider_error,
     provider_failure_sse_kwargs,
+    recognized_failure_class,
     resolve_provider,
     tier_for_purpose,
 )
@@ -478,6 +479,7 @@ async def read_run(
             "termination_reason": state.termination_reason,
             "terminal": state.terminal_json,
             "error": state.error,
+            "failure_class": state.failure_class,
             "result": result,
         })
     # --- Queue position (per-teacher; only meaningful when queued) -----------
@@ -966,7 +968,12 @@ class _QuestionStateRecorder:
             await self._record_terminal(question_id, payload)
         elif name == SSEEventName.ERROR:
             message = payload.get("message") if isinstance(payload, dict) else None
-            await self._update_unfinished(question_id, error=str(message or payload))
+            values: dict[str, Any] = {"error": str(message or payload)}
+            if isinstance(payload, dict) and payload.get("code") == "generation_failed":
+                failure_class = recognized_failure_class(payload.get("failure_class"))
+                if failure_class is not None:
+                    values["failure_class"] = failure_class
+            await self._update_unfinished(question_id, **values)
         elif name == SSEEventName.PIPELINE and payload.get("event_name") == "question_start":
             await self._update_unfinished(question_id, processing="running")
         elif name == SSEEventName.STAGE and payload.get("status") == "start":
@@ -979,8 +986,14 @@ class _QuestionStateRecorder:
 
     async def _update_unfinished(self, question_id: str, **values: Any) -> None:
         async with self._sessions() as session:
+            if "failure_class" in values:
+                values["failure_class"] = func.coalesce(
+                    GenerationQuestionState.failure_class,
+                    values["failure_class"],
+                )
             await session.execute(
                 update(GenerationQuestionState)
+                .execution_options(synchronize_session=False)
                 .where(
                     GenerationQuestionState.generation_log_id == self._run_id,
                     GenerationQuestionState.question_id == question_id,
@@ -1233,12 +1246,10 @@ async def execute_run(
                     # Capture the first taxonomy value from either a batch or a
                     # question-scoped error. It is persisted only if the run
                     # ultimately fails, so partial sibling success is unchanged.
-                    _event_failure_class = _error_payload.get("failure_class")
-                    if (
-                        failure_class is None
-                        and isinstance(_event_failure_class, str)
-                        and _event_failure_class
-                    ):
+                    _event_failure_class = recognized_failure_class(
+                        _error_payload.get("failure_class")
+                    )
+                    if failure_class is None and _event_failure_class is not None:
                         failure_class = _event_failure_class
                 if not isinstance(_err_question_id, str):
                     # Issue #931: only batch-scoped ERRORs (no question_id, e.g.

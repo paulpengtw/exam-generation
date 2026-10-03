@@ -137,7 +137,7 @@ gateway policy.  Production does not set `GATEWAY_FOLLOW_FRONTEND`.
 
 ### Question-card provider failures (issue #968)
 
-A question-scoped v2 `error` event with a recognized `failure_class` is folded into that question's evidence and `QuestionCard` renders the existing localized cause label and guidance in both locales. It does not change run status or sibling processing; unknown or absent classes retain the generic failed-card state. The live cause survives snapshots that omit the optional per-question field, while snapshots that carry `questions[].failure_class` can restore it. The current detached-run snapshot backend persists only `GenerationQuestionState.error`, not a per-question `failure_class`, so a fresh reconnect or reload cannot currently restore this cause; the backend follow-up must add that field to the snapshot contract.
+A question-scoped v2 `error` event with a recognized `failure_class` is folded into that question's evidence and `QuestionCard` renders the existing localized cause label and guidance in both locales. It does not change run status or sibling processing; unknown or absent classes retain the generic failed-card state. The detached-run recorder persists the recognized class on `GenerationQuestionState` and `GET /api/runs/{id}` returns it as nullable `questions[].failure_class`, so a fresh reconnect or reload restores the same cause on that card. The frontend parser/reducer preserves the optional field for older snapshots.
 
 ### Live SSE endpoint (issue #909)
 

@@ -14,7 +14,11 @@ from __future__ import annotations
 import types
 from typing import Any
 
-from src.llm_client import ProviderErrorDetail, classify_provider_error
+from src.llm_client import (
+    ProviderErrorDetail,
+    classify_provider_error,
+    recognized_failure_class,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers — build fake exception objects
@@ -345,6 +349,12 @@ def test_unknown_unrecognized_class():
 def test_unknown_via_detail_none():
     """classify_provider_error(None, detail=None) → unknown."""
     assert classify_provider_error(None) == "unknown"
+
+
+def test_recognized_failure_class_filters_untrusted_values():
+    assert recognized_failure_class("rate_limited") == "rate_limited"
+    assert recognized_failure_class("provider_specific") is None
+    assert recognized_failure_class(None) is None
 
 
 # ---------------------------------------------------------------------------

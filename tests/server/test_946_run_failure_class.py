@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -21,16 +22,18 @@ pytest.importorskip("sqlalchemy", reason="requires [web] extras: uv sync --extra
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.sql.dml import Update
 
 from server.config import ServerConfig
 from server.generate.run import (
     _live_observers,
+    _QuestionStateRecorder,
     accept_run,
     claim_next_run,
     execute_run,
     read_run,
 )
-from server.models import Base, GenerationLog, LLMExchange, User
+from server.models import Base, GenerationLog, GenerationQuestionState, LLMExchange, User
 from tests.server.generate_test_utils import resolved_generate_params
 
 # ---------------------------------------------------------------------------
@@ -81,6 +84,61 @@ def _server_config(tmp_path: Path) -> ServerConfig:
         output_dir=tmp_path / "out",
         data_dir=Path("data"),
     )
+
+
+def test_question_recorder_coalesce_is_safe_with_loaded_state(tmp_path: Path) -> None:
+    """A loaded ORM state must not make the first failure class update unevaluable."""
+    async def _run() -> None:
+        claimed, sessions, engine = await _setup_db_and_run(tmp_path, "loaded_state.db")
+        session = sessions()
+        synchronization_modes: list[Any] = []
+
+        class _EvaluateDefaultSession:
+            def __init__(self, wrapped: AsyncSession) -> None:
+                self._wrapped = wrapped
+
+            async def execute(self, statement: Any, *args: Any, **kwargs: Any) -> Any:
+                if isinstance(statement, Update):
+                    mode = statement.get_execution_options().get("synchronize_session")
+                    synchronization_modes.append(mode)
+                    if mode is None:
+                        statement = statement.execution_options(synchronize_session="evaluate")
+                return await self._wrapped.execute(statement, *args, **kwargs)
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self._wrapped, name)
+
+        evaluate_session = _EvaluateDefaultSession(session)
+
+        @asynccontextmanager
+        async def _session_scope():
+            yield evaluate_session
+
+        try:
+            qid = f"q_{claimed.run_id}_001"
+            state = (
+                await session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == claimed.run_id,
+                        GenerationQuestionState.question_id == qid,
+                    )
+                )
+            ).scalar_one()
+            assert state.failure_class is None
+
+            recorder = _QuestionStateRecorder(claimed.run_id, _session_scope)
+            await recorder._update_unfinished(qid, failure_class="rate_limited")
+            await recorder._update_unfinished(qid, failure_class="timeout")
+            await session.refresh(state)
+
+            assert synchronization_modes == [False, False]
+            assert state.failure_class == "rate_limited"
+        finally:
+            await session.rollback()
+            await session.close()
+            await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=40.0))
 
 
 async def _setup_db_and_run(
@@ -299,6 +357,76 @@ def test_per_question_error_failure_class_persisted(tmp_path: Path) -> None:
             assert fc == "rate_limited", (
                 f"expected failure_class=rate_limited from per-question error, got {fc!r}"
             )
+
+        await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(_run(), timeout=40.0))
+
+
+def test_per_question_failure_class_round_trips_through_snapshot(tmp_path: Path) -> None:
+    """A question-scoped generation failure survives recorder persistence and read_run."""
+    async def _run() -> None:
+        claimed, sessions, engine = await _setup_db_and_run(tmp_path, "question_snapshot.db")
+        run_id = claimed.run_id
+        question_id = f"q_{run_id}_001"
+
+        async def _error_then_done_stream(*args: Any, **kwargs: Any):
+            yield {
+                "event": "error",
+                "context": {
+                    "run_id": str(run_id),
+                    "question_id": question_id,
+                    "event_seq": 1,
+                },
+                "payload": {
+                    "code": "generation_failed",
+                    "message": "provider message must remain an error detail",
+                    "failure_class": "rate_limited",
+                },
+            }
+            yield {"event": "done", "payload": {}}
+
+        with patch(
+            "server.generate.run.generate_question_stream",
+            new=_error_then_done_stream,
+        ):
+            await asyncio.wait_for(
+                execute_run(
+                    claimed,
+                    app_state=_app_state(),
+                    config=_server_config(tmp_path),
+                    session_factory=sessions,
+                    host_id="fc-test-host",
+                    client_factory=None,
+                    subjects=None,
+                ),
+                timeout=30.0,
+            )
+
+        async with sessions() as session:
+            state = (
+                await session.execute(
+                    select(GenerationQuestionState).where(
+                        GenerationQuestionState.generation_log_id == run_id,
+                        GenerationQuestionState.question_id == question_id,
+                    )
+                )
+            ).scalar_one()
+            snapshot = await read_run(
+                run_id,
+                claimed.user_id,
+                session=session,
+                config=_server_config(tmp_path),
+            )
+
+        assert state.failure_class == "rate_limited"
+        assert snapshot is not None
+        assert snapshot["status"] == "failed"
+        assert snapshot["questions"][0]["failure_class"] == "rate_limited"
+        assert snapshot["questions"][0]["error"] == (
+            "provider message must remain an error detail"
+        )
+        assert snapshot["questions"][0]["failure_class"] != snapshot["questions"][0]["error"]
 
         await engine.dispose()
 
