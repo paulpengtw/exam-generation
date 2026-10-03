@@ -1,0 +1,124 @@
+{
+ "date": "2026-10-03",
+ "owner_verdicts": {
+  "seawater-vertical-properties|0|2": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "sea-ice-land-ice|0|3": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "大氣能見度|0|2": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "早餐論證A線上版|0|3": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "早餐論證A線上版|0|4": {
+   "final_label": "specific",
+   "right": "checker"
+  },
+  "烏賊線上版|0|4": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "生長素與向光性|0|3": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "運動與健康-糖尿病患者的健康生活|0|3": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "生物防治2-1|0|4": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "生物防治2-1|0|6": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "隕石探究|0|6": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "颱風資料庫|0|5": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "crazy-track|0|7": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "hot-pack|0|1": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "hot-pack|0|3": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "氣候變遷|0|5": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "社會領域_row4|0|4": {
+   "final_label": "vague",
+   "right": "labeller"
+  },
+  "entomopathogenic-fungi|0|5": {
+   "final_label": "vague",
+   "right": "checker"
+  },
+  "typhoon-database|0|4": {
+   "final_label": "vague",
+   "right": "checker"
+  },
+  "washing-machine-physics|0|5": {
+   "final_label": "vague",
+   "right": "checker"
+  },
+  "氣候變遷|0|4": {
+   "final_label": "vague",
+   "right": "checker"
+  },
+  "胡椒蛾的分子機制|0|3": {
+   "final_label": "vague",
+   "right": "checker"
+  },
+  "隕石探究|0|3": {
+   "final_label": "vague",
+   "right": "checker"
+  }
+ },
+ "relabelled_under_rule_v2": [
+  "black-white-car-heat|0|2",
+  "black-white-car-heat|0|4",
+  "cardboard-box-oven|0|6",
+  "crazy-track|0|6",
+  "entomopathogenic-fungi|0|4",
+  "fasting-method|0|2",
+  "fishing-harbor-renovation|0|2",
+  "hot-pack|0|4",
+  "hot-pack|0|5",
+  "moving-no-face|0|2",
+  "salt-soda|0|2",
+  "salt-soda|0|5",
+  "sea-ice-land-ice|0|2",
+  "seawater-vertical-properties|0|3",
+  "truck-cornering|0|3",
+  "typhoon-database|0|1",
+  "乒乓球|0|2",
+  "乒乓球|0|6",
+  "冰島冰河湖|0|5",
+  "塑膠線上版|0|3",
+  "拉塞福散射|0|3",
+  "早餐論證A線上版|0|1",
+  "氣候變遷|0|2",
+  "氣候變遷|0|3",
+  "self-heating-pack|0|2"
+ ]
+}

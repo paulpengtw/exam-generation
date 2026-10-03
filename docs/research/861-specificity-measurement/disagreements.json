@@ -1,0 +1,232 @@
+[
+ {
+  "key": "crazy-track|0|7",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 摩擦力與質量相關 only as an example; [1] 「提出部分合理原因但說明不足，或僅描述現象而未解釋科學原理」 is generic",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 提出合理的科學原因（如摩擦力與質量相關），並有科學概念支撐\n[1] 提出部分合理原因但說明不足，或僅描述現象而未解釋科學原理\n[0] 未提出任何科學原因，或答案與科學知識不符"
+ },
+ {
+  "key": "entomopathogenic-fungi|0|5",
+  "bucket": "BORDERLINE",
+  "labeller": "specific",
+  "labeller_borderline": true,
+  "labeller_reason": "[1] 「僅提出兩個問題之一」 refers back to the two problems named in [2]",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2]應直接列出兩個具體缺陷（初始蟲數基準不一、加總遮蔽個別趨勢變化），[1]應描述最可能出現的單一缺口（例：只指出加總基準問題，未察覺趨勢被遮蔽），並刪除「說明部分正確」等可套用任何題目的泛用措辭。",
+  "rubric_text": "[2] 能同時指出：(1)施藥前初始蟲數不同，加總會造成基準不一致；(2)加總方式忽略了個別趨勢變化（如抗藥性）\n[1] 僅提出兩個問題之一，或說明部分正確\n[0] 認為推論正確，或未能指出統計問題"
+ },
+ {
+  "key": "hot-pack|0|1",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 空氣（氧氣）量; [1] 「正確選擇實驗設計，但說明原因不完整或缺乏變因控制的概念」 names neither the design nor the gap",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 正確選擇實驗設計，且能合理說明需控制空氣（氧氣）量等變因不變的原因\n[1] 正確選擇實驗設計，但說明原因不完整或缺乏變因控制的概念\n[0] 選擇錯誤或未作答"
+ },
+ {
+  "key": "hot-pack|0|3",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 含／不含活性碳; [1] 「選出部分正確的實驗組合，但未能清楚說明控制變因的概念」 is generic",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 正確指出應比較含活性碳與不含活性碳（其他條件相同）的實驗組，並說明需控制其他變因\n[1] 選出部分正確的實驗組合，但未能清楚說明控制變因的概念\n[0] 選擇錯誤或未作答"
+ },
+ {
+  "key": "sea-ice-land-ice|0|3",
+  "bucket": "BORDERLINE",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「兩項均選擇合理器材，且理由充分說明為何比木板更適合」 never says which 器材; [1] 「一項選擇及理由正確，另一項有誤」 generic",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 兩項均選擇合理器材，且理由充分說明為何比木板更適合\n[1] 一項選擇及理由正確，另一項有誤或理由不充分\n[0] 選擇不合理或未作回答"
+ },
+ {
+  "key": "seawater-vertical-properties|0|2",
+  "bucket": "CLEAR",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「五點全部正確依深度排列」 restates the task without the order; [1] 「四點正確」 counts against it",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 五點全部正確依深度排列\n[1] 四點正確或有一處次序錯誤\n[0] 三點以下正確或排列方向完全錯誤"
+ },
+ {
+  "key": "typhoon-database|0|4",
+  "bucket": "BORDERLINE",
+  "labeller": "specific",
+  "labeller_borderline": false,
+  "labeller_reason": "[2] names the 判斷標準; [1] 「只評估部分推論」",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2] 應分別指名三項推論各自的正確判斷結果（例如推論一正確/不正確，原因為何），而非僅列出判斷標準；[1] 應指明最常見的缺口是哪一推論的評估不完整或缺少替代解釋的討論。",
+  "rubric_text": "[2] 能對三項推論提出具體判斷，並說明判斷標準（直接對應、有無替代解釋、是否過度外推）\n[1] 只評估部分推論，或判斷標準不明確\n[0] 無法評估推論合理性，或判斷完全錯誤"
+ },
+ {
+  "key": "washing-machine-physics|0|5",
+  "bucket": "BORDERLINE",
+  "labeller": "specific",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 變因趨勢 only by example (重量越重→轉速越低); [1] 「回答兩點但未說明趨勢」 is count-shaped",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2] 應指名本題型號B與A的具體差異觀察（如「脫水轉速隨衣物重量增加而降低」），[1] 應描述推理鏈的缺口（如觀察到變因差異但未說明趨勢方向或因果關係），不得以「回答兩點」計數區分等級。",
+  "rubric_text": "[2] 回答兩點以上，且能說明變因間的趨勢關聯（如重量越重→轉速越低）\n[1] 回答兩點但未說明趨勢，或只回答一點且有說明趨勢\n[0] 只回答一點且無趨勢說明，或答案錯誤"
+ },
+ {
+  "key": "大氣能見度|0|2",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「有兩個階層且判斷項目與準則正確」 gives the shape, not the items or criteria",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 有兩個階層且判斷項目與準則正確\n[1] 有兩個階層且判斷項目正確，但準則有誤\n[0] 階層只有一個或判斷項目有誤"
+ },
+ {
+  "key": "早餐論證A線上版|0|3",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「選擇一個合適因素，正確引用表中數字，說明該因素如何導致…」 restates the task; names no factor-to-weight link",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 選擇一個合適因素，正確引用表中數字，說明該因素如何導致不吃早餐組更容易增重\n[1] 選擇正確但未引用數字，或數字引用有誤但說明方向正確\n[0] 未作答或錯誤"
+ },
+ {
+  "key": "早餐論證A線上版|0|4",
+  "bucket": "BORDERLINE",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「正確選擇因素A，且分別說明B…和C…兩條推論路徑」 restates the answer frame; no content of a correct path",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 正確選擇因素A，且分別說明B（導致省略早餐）和C（導致變胖）兩條推論路徑，論述合理\n[1] 選擇適當因素A，但只說明一條路徑或論述不完整\n[0] 未作答或錯誤"
+ },
+ {
+  "key": "氣候變遷|0|4",
+  "bucket": "CONFORMING",
+  "labeller": "specific",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「相關不能推論因果關係」; [1] 「能運用不同趨勢來提出看法」 near-generic",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2] 應指名哪份具體資料（如「圖二近代工業革命後CO₂急速上升與溫度同步升高的趨勢」）以及如何用以反駁；[1] 應指名常見缺口，如「引用圖表資料但未說明相關性不等於因果關係的推論邏輯」。",
+  "rubric_text": "[2] 解釋圖表時，能了解數據間的相關不能推論因果關係\n[1] 解釋圖表時，能運用不同趨勢來提出看法\n[0] 錯誤答案或其他答案"
+ },
+ {
+  "key": "氣候變遷|0|5",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 1980年 only as an example; [1] 「能說明數據趨勢」 is generic",
+  "checker_specificity_violation": false,
+  "checker_details": "[評分規準檢核] 以「能說明數據趨勢」對應[1]、「趨勢加上特定年代差異」對應[2]屬數量計點，應改為以推理鏈缺口描述：[1]改為「僅描述整體正相關趨勢，未指出1980年代後太陽輻射與地表均溫走勢背離的關鍵反例」，以論證缺口取代計數。",
+  "rubric_text": "[2] 能說明數據趨勢，提出某年代（如1980年）之後的趨勢差異\n[1] 能說明數據趨勢\n[0] 錯誤答案或其他答案"
+ },
+ {
+  "key": "烏賊線上版|0|4",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「完整包含實驗設計排除干擾的說明、實驗結果描述和結論」 restates the stem's required parts",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 完整包含實驗設計排除干擾的說明、實驗結果描述和結論，論述連貫\n[1] 包含其中兩個要素，或論述不完整\n[0] 未作答或錯誤"
+ },
+ {
+  "key": "生物防治2-1|0|4",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": false,
+  "labeller_reason": "[2] 「研究問題能寫出特定的實驗條件下，自變項和依變項的關係」 names no variable of this item",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 研究問題能寫出特定的實驗條件下，自變項和依變項的關係\n[1] 研究問題只寫出自變項和依變項的關係，沒寫實驗條件\n[0] 其他"
+ },
+ {
+  "key": "生物防治2-1|0|6",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「說明所選因素影響交尾的關係，並能蒐集可說明此關係的資料」 restates the task; names no factor or data",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 說明所選因素影響交尾的關係，並能蒐集可說明此關係的資料\n[1] 說明所選因素影響交尾的關係，但蒐集的資料無法說明此關係\n[0] 無法說出所選因素影響交尾的關係"
+ },
+ {
+  "key": "生長素與向光性|0|3",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「X軸與Y軸標題正確，繪製折線圖，折線趨勢正確」 names neither axis nor trend",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] X軸與Y軸標題正確，繪製折線圖，折線趨勢正確\n[1] X軸與Y軸標題正確但圖形錯誤，或圖形正確但標題錯誤\n[0] X軸、Y軸顛倒或圖形錯誤"
+ },
+ {
+  "key": "胡椒蛾的分子機制|0|3",
+  "bucket": "CLEAR",
+  "labeller": "specific",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「符合Hardy-Weinberg條件違反的原因」 names the concept, not the causes; [1] counts",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2]「正確列舉三項以上符合Hardy-Weinberg條件違反的原因」未逐一指名五個條件成員；請改寫為：[2] 從H-W五個條件（突變、自然選擇、非隨機交配、遺傳漂變/小族群、基因流動）中正確列舉至少三項並對應至本題情境；[1] 僅提及一至兩項，應指明最常被遺漏的條件（如基因流動或遺傳漂變）作為缺口描述。",
+  "rubric_text": "[2] 正確列舉三項以上符合Hardy-Weinberg條件違反的原因\n[1] 正確列舉一至二項原因\n[0] 未作答或全部錯誤"
+ },
+ {
+  "key": "運動與健康-糖尿病患者的健康生活|0|3",
+  "bucket": "CLEAR",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "0/1 scale; top 「依據表(一)的數據正確畫出兩條折線」 restates the task",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[1] 依據表(一)的數據正確畫出兩條折線。\n[0] 僅畫出一條折線，或折線未能依據數據呈現。"
+ },
+ {
+  "key": "隕石探究|0|3",
+  "bucket": "CONFORMING",
+  "labeller": "specific",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「選擇不同形狀」 names the choice, not the hypothesis; [1] borrows",
+  "checker_specificity_violation": true,
+  "checker_details": "[評分規準檢核] [2] 應明確寫出本題正確的實驗假設內容（如「不同形狀的撞擊物會產生不同形狀的撞擊坑」），而非僅寫「實驗假設正確」這類通用字樣。",
+  "rubric_text": "[2] 選擇不同形狀、實驗假設正確\n[1] 選擇不同形狀、實驗假設未完整\n[0] 其他答案或錯誤答案"
+ },
+ {
+  "key": "隕石探究|0|6",
+  "bucket": "CLEAR",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] 「能說明兩數值與入射角度關係」 restates the task without the relationship",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 能說明兩數值與入射角度關係\n[1] 僅說明一項數值與入射角度關係\n[0] 其他答案或錯誤答案"
+ },
+ {
+  "key": "颱風資料庫|0|5",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": false,
+  "labeller_reason": "[2] 「正確判斷並引用圖表中具體數據說明理由，論述完整」",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 正確判斷並引用圖表中具體數據說明理由，論述完整\n[1] 判斷方向正確但未引用圖表數據，或論述不完整\n[0] 未作答或錯誤"
+ },
+ {
+  "key": "社會領域_row4|0|4",
+  "bucket": "CONFORMING",
+  "labeller": "vague",
+  "labeller_borderline": true,
+  "labeller_reason": "[2] names 水患風險或公共討論程序; [1] 「有立場但理由只部分連結文本」 is generic",
+  "checker_specificity_violation": false,
+  "checker_details": "",
+  "rubric_text": "[2] 能表明立場並引用文本中的水患風險或公共討論程序作為理由。\n[1] 有立場但理由只部分連結文本。\n[0] 沒有立場或理由與文本無關。\n[0X] 未作答。"
+ }
+]

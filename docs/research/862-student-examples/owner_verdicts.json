@@ -1,0 +1,16 @@
+{
+ "ticket": 862,
+ "spot_check": 879,
+ "date": "2026-10-03",
+ "given_in": "Claude Code session with the owner",
+ "verdicts": [
+  {"n": 1, "id": "fasting-method|0|4|2|0", "rule": "r1", "final": "narration", "right": "labeller"},
+  {"n": 2, "id": "truck-cornering|0|3|2|0", "rule": "r2", "final": "generic", "right": "checker"},
+  {"n": 3, "id": "truck-cornering|0|3|1|0", "rule": "r2", "final": "generic", "right": "checker"},
+  {"n": 4, "id": "weather-proverbs|0|4|1|0", "rule": "r2", "final": "generic", "right": "labeller"},
+  {"n": 5, "id": "社會領域_row4|0|4|1|0", "rule": "r2", "final": "generic", "right": "labeller"},
+  {"n": 6, "id": "jumping-bottle-cap|0|3|0|1", "rule": "r3", "final": "filler", "right": "labeller"},
+  {"n": 7, "id": "truck-cornering|0|3|0|1", "rule": "r3", "final": "filler", "right": "labeller"},
+  {"n": 8, "id": "社會領域_row4|0|4|2|0", "rule": "r2", "final": "generic", "right": "neither (both passed it; off the list)", "note": "本小題 also requires answering this 小題's question; same 文本, different question is generic"}
+ ]
+}
